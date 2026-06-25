@@ -1,0 +1,35 @@
+schema_version = 1
+skills_root = "skills"
+
+[defaults]
+install_mode = "copy"
+collision = "error"
+verify_after_install = true
+
+[targets.claude]
+enabled = true
+scope = "user"
+path = "~/.claude/skills"
+
+[targets.codex]
+enabled = true
+scope = "user"
+path = "~/.agents/skills"
+
+[targets.gemini]
+enabled = true
+scope = "user"
+path = "~/.gemini/skills"
+
+[targets.hermes]
+enabled = true
+scope = "user"
+path = "~/.hermes/skills"
+
+[skills.shared-agent-operation]
+enabled = true
+hosts = ["claude", "codex", "gemini", "hermes"]
+
+[skills.cli-inventory]
+enabled = true
+hosts = ["claude", "codex", "gemini", "hermes"]
