@@ -15,10 +15,9 @@ from pathlib import Path
 
 from . import config as config_mod
 from .config import Manifest, ManifestError, Skill, load_manifest, selected_skills
-from .hashing import hash_directory
 from .hosts import all_hosts
 from .installer import copy_install, uninstall
-from .planner import Action, plan_install, plan_uninstall
+from .planner import Action, Status, plan_install, plan_uninstall, status_of
 from .security import scan_skill
 from .state import State
 from .validation import ValidationResult, validate_skill
@@ -151,6 +150,44 @@ def _select(args: argparse.Namespace, manifest: Manifest) -> tuple[list[Skill], 
     return skills, hosts
 
 
+def _validate_selected(manifest: Manifest, skills: list[Skill]) -> bool:
+    """Print validation failures; return True if every skill is valid."""
+    ok = True
+    for skill in skills:
+        result = compose_validation(manifest.skills_dir / skill.name)
+        if not result.ok:
+            ok = False
+            print(f"[BLOCKED] {skill.name}: validation failed")
+            for error in result.errors:
+                print(f"  error: {error}")
+    return ok
+
+
+_BLOCK_ACTIONS = (Action.BLOCK_CONFLICT, Action.BLOCK_DRIFT, Action.CONFLICT)
+
+
+def _apply_plan(plan, state, mode: str) -> tuple[int, bool]:
+    """Execute CREATE/UPDATE, report the rest. Returns (changed_count, blocked)."""
+    changed = 0
+    blocked = False
+    for item in plan:
+        if item.action in (Action.CREATE, Action.UPDATE):
+            state.put(copy_install(item, mode=mode))
+            changed += 1
+            verb = "created" if item.action is Action.CREATE else "updated"
+            print(f"  {verb}: {item.skill} -> {item.host}")
+        elif item.action is Action.NOOP:
+            print(f"  unchanged: {item.skill} -> {item.host}")
+        elif item.action is Action.SKIP_UNSUPPORTED:
+            print(f"  skipped: {item.skill} -> {item.host} ({item.reason})")
+        elif item.action in _BLOCK_ACTIONS:
+            blocked = True
+            print(f"  BLOCKED: {item.skill} -> {item.host}")
+            print(f"    {item.reason}:")
+            print(f"    {item.destination}")
+    return changed, blocked
+
+
 def cmd_install(args: argparse.Namespace) -> int:
     try:
         manifest = _load(args)
@@ -172,16 +209,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    # Validate every selected skill before touching any host.
-    invalid = False
-    for skill in skills:
-        result = compose_validation(manifest.skills_dir / skill.name)
-        if not result.ok:
-            invalid = True
-            print(f"[BLOCKED] {skill.name}: validation failed")
-            for error in result.errors:
-                print(f"  error: {error}")
-    if invalid:
+    if not _validate_selected(manifest, skills):
         print("\nNo files were changed (fix validation errors first).", file=sys.stderr)
         return 1
 
@@ -194,45 +222,13 @@ def cmd_install(args: argparse.Namespace) -> int:
             print(f"  {item.action.value:16} {item.skill} -> {item.host}  ({item.reason})")
         return 0
 
-    blocked = False
-    changed = 0
-    for item in plan:
-        if item.action in (Action.CREATE, Action.UPDATE):
-            state.put(copy_install(item, mode=args.mode))
-            changed += 1
-            verb = "created" if item.action is Action.CREATE else "updated"
-            print(f"  {verb}: {item.skill} -> {item.host}")
-        elif item.action is Action.NOOP:
-            print(f"  unchanged: {item.skill} -> {item.host}")
-        elif item.action is Action.SKIP_UNSUPPORTED:
-            print(f"  skipped: {item.skill} -> {item.host} ({item.reason})")
-        elif item.action in (Action.BLOCK_CONFLICT, Action.BLOCK_DRIFT):
-            blocked = True
-            print(f"  BLOCKED: {item.skill} -> {item.host}")
-            print(f"    {item.reason}:")
-            print(f"    {item.destination}")
+    changed, blocked = _apply_plan(plan, state, args.mode)
     if changed:
         state.save()
     return 1 if blocked else 0
 
 
 # ------------------------------------------------------------------ status ---
-
-
-def _status_for(manifest: Manifest, skill: Skill, host: str, state: State) -> str:
-    if skill.hosts and host not in skill.hosts:
-        return "UNSUPPORTED"
-    dest = manifest.targets[host].path / skill.name
-    record = state.get(skill.name, host)
-    if record is None:
-        return "CONFLICT  (unmanaged copy present)" if dest.exists() else "MISSING"
-    if not dest.exists():
-        return "MISSING   (recorded but absent)"
-    if hash_directory(dest) != record.installed_hash:
-        return "DRIFTED   (installed copy modified)"
-    if hash_directory(manifest.skills_dir / skill.name) != record.source_hash:
-        return "STALE     (canonical changed)"
-    return "FRESH"
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -250,8 +246,48 @@ def cmd_status(args: argparse.Namespace) -> int:
     for skill in manifest.skills.values():
         print(skill.name)
         for host in hosts:
-            print(f"  {host:8} {_status_for(manifest, skill, host, state)}")
+            print(f"  {host:8} {status_of(manifest, skill, host, state).value}")
     return 0
+
+
+# -------------------------------------------------------------------- sync ---
+
+
+def cmd_sync(args: argparse.Namespace) -> int:
+    try:
+        manifest = _load(args)
+    except ManifestError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        skills, hosts = _select(args, manifest)
+    except ManifestError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    state = State.load()
+
+    if args.check:
+        drift = False
+        for skill in skills:
+            print(skill.name)
+            for host in hosts:
+                status = status_of(manifest, skill, host, state)
+                print(f"  {host:8} {status.value}")
+                if status not in (Status.FRESH, Status.UNSUPPORTED):
+                    drift = True
+        return 1 if drift else 0
+
+    if not _validate_selected(manifest, skills):
+        print("\nNo files were changed (fix validation errors first).", file=sys.stderr)
+        return 1
+
+    plan = plan_install(manifest, skills, hosts, state)
+    changed, blocked = _apply_plan(plan, state, "copy")
+    if changed:
+        state.save()
+    return 1 if blocked else 0
 
 
 # --------------------------------------------------------------- uninstall ---
@@ -326,6 +362,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_status = sub.add_parser("status", help="Show install status per skill and host")
     p_status.set_defaults(func=cmd_status)
+
+    p_sync = sub.add_parser("sync", help="Update managed installs from canonical (copy mode)")
+    p_sync.add_argument("skill", nargs="?", help="Skill name (default: enabled skills)")
+    p_sync.add_argument("--host", help="Target host name, or 'all' (default: enabled targets)")
+    p_sync.add_argument("--all", action="store_true", help="Include every registered skill")
+    p_sync.add_argument("--check", action="store_true", help="Report drift only; change nothing")
+    p_sync.set_defaults(func=cmd_sync)
 
     p_uninstall = sub.add_parser("uninstall", help="Remove managed installs")
     p_uninstall.add_argument("skill", nargs="?", help="Skill name")

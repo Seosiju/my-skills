@@ -23,8 +23,21 @@ class Action(str, Enum):
     REMOVE = "REMOVE"
     BLOCK_CONFLICT = "BLOCK_CONFLICT"
     BLOCK_DRIFT = "BLOCK_DRIFT"
+    CONFLICT = "CONFLICT"
     SKIP_UNSUPPORTED = "SKIP_UNSUPPORTED"
     NOT_MANAGED = "NOT_MANAGED"
+
+
+class Status(str, Enum):
+    """Read-only drift state of one (skill, host) pair (plan section 9.7)."""
+
+    FRESH = "FRESH"
+    STALE = "STALE"
+    DRIFTED = "DRIFTED"
+    MISSING = "MISSING"
+    CONFLICT = "CONFLICT"
+    UNMANAGED = "UNMANAGED"
+    UNSUPPORTED = "UNSUPPORTED"
 
 
 @dataclass
@@ -40,6 +53,31 @@ class PlanItem:
 
 def _destination(target: Target, skill_name: str) -> Path:
     return target.path / skill_name
+
+
+def status_of(manifest: Manifest, skill: Skill, host: str, state: State) -> Status:
+    """Read-only drift state for one (skill, host). Hashes but never writes."""
+    if skill.hosts and host not in skill.hosts:
+        return Status.UNSUPPORTED
+
+    source = manifest.skills_dir / skill.name
+    dest = _destination(manifest.targets[host], skill.name)
+    record = state.get(skill.name, host)
+
+    if record is None:
+        return Status.UNMANAGED if dest.exists() else Status.MISSING
+    if not dest.exists():
+        return Status.MISSING
+
+    install_modified = hash_directory(dest) != record.installed_hash
+    source_changed = hash_directory(source) != record.source_hash
+    if install_modified and source_changed:
+        return Status.CONFLICT
+    if install_modified:
+        return Status.DRIFTED
+    if source_changed:
+        return Status.STALE
+    return Status.FRESH
 
 
 def plan_install_one(
@@ -71,14 +109,23 @@ def plan_install_one(
             source_hash=source_hash,
         )
 
-    installed_now = hash_directory(destination)
-    if installed_now != record.installed_hash:
+    install_modified = hash_directory(destination) != record.installed_hash
+    source_changed = source_hash != record.source_hash
+
+    if install_modified and source_changed:
+        return PlanItem(
+            skill.name, host, source, destination,
+            Action.CONFLICT,
+            reason="canonical and installed copy both changed (no auto-merge)",
+            source_hash=source_hash,
+        )
+    if install_modified:
         return PlanItem(
             skill.name, host, source, destination,
             Action.BLOCK_DRIFT,
             reason="installed copy was modified locally", source_hash=source_hash,
         )
-    if source_hash != record.source_hash:
+    if source_changed:
         return PlanItem(
             skill.name, host, source, destination,
             Action.UPDATE, reason="canonical changed", source_hash=source_hash,
