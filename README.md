@@ -10,13 +10,14 @@ that carries YAML frontmatter (`name`, `description`).
 
 ## Status
 
-**Phase 2 — Safe install lifecycle.** On top of the Phase 1 core (manifest,
-canonical `skills/`, frontmatter parser, Agent Skills validation, security
-scan, host registry, `validate` / `doctor`), this adds copy-mode `install`,
-`status`, and `uninstall` with content hashing and machine-local install state.
+**Phase 3 — Sync and drift.** On top of the Phase 1 core (manifest, canonical
+`skills/`, validation, security scan, host registry, `validate` / `doctor`) and
+the Phase 2 install lifecycle (`install`, `status`, `uninstall` with content
+hashing and machine-local state), this adds `sync` and `sync --check` with
+3-way drift/conflict classification.
 
-The dedicated `sync` / `sync --check` command and `--mode link` are Phase 3 / 6
-and not implemented yet — see `docs/` for the full plan.
+`--mode link`, `import`, and watch mode are Phase 6 and not implemented yet —
+see `docs/` for the full plan.
 
 ## Requirements
 
@@ -41,11 +42,35 @@ uv run my-skills install email-drafting --host claude
 # Show install status per skill and host.
 uv run my-skills status
 
+# Detect drift without changing anything (non-zero exit if anything is not FRESH).
+uv run my-skills sync --check
+
+# Propagate canonical edits to managed installs (create missing, update stale).
+uv run my-skills sync
+
 # Remove a managed install (state-recorded destinations only).
 uv run my-skills uninstall email-drafting --host claude
 ```
 
-`validate` and `install` exit non-zero on errors/blocks, so they work in CI.
+`validate`, `install`, and `sync` (incl. `--check`) exit non-zero on
+errors/blocks/drift, so they work in CI.
+
+### Drift states
+
+`status` and `sync --check` classify each (skill, host):
+
+| State | Meaning |
+|-------|---------|
+| `FRESH` | installed copy matches canonical and the recorded state |
+| `STALE` | canonical changed; `sync` will update the install |
+| `DRIFTED` | the installed copy was edited locally; `sync` won't clobber it |
+| `CONFLICT` | both canonical and the installed copy changed — no auto-merge |
+| `MISSING` | registered but not installed |
+| `UNMANAGED` | a copy exists that my-skills did not install |
+| `UNSUPPORTED` | the host is not in the skill's `hosts` list |
+
+`sync` only writes the safe cases (create missing, update stale); `DRIFTED`,
+`CONFLICT`, and `UNMANAGED` are reported and block with a non-zero exit.
 
 ### Safety model
 
