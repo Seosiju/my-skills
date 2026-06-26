@@ -1,0 +1,18 @@
+# my-skills: canonical source is committed; machine-local state is not.
+.my-skills/
+my-skills.local.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+.pytest_cache/
+
+# Tooling / agent scratch (not part of the project)
+.omc/
+.omx/
+.codegraph
+.context/
