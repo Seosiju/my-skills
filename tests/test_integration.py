@@ -17,10 +17,6 @@ path = "~/.claude/skills"
 enabled = false
 path = "~/.agents/skills"
 
-[targets.gemini]
-enabled = false
-path = "~/.gemini/skills"
-
 [targets.hermes]
 enabled = false
 path = "~/.hermes/skills"

@@ -44,7 +44,7 @@ def test_load_manifest_reads_targets_and_skills(tmp_path):
     assert m.schema_version == 1
     assert m.skills_dir == tmp_path / "skills"
     # Built-in targets are present even when not all are listed in the manifest.
-    assert set(m.targets) >= {"claude", "codex", "gemini", "hermes"}
+    assert set(m.targets) >= {"claude", "codex", "hermes"}
     assert m.targets["claude"].path.is_absolute()
     assert set(m.skills) == {"alpha", "beta"}
 

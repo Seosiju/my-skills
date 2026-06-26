@@ -16,7 +16,6 @@ from pathlib import Path
 BUILTIN_TARGET_PATHS: dict[str, str] = {
     "claude": "~/.claude/skills",
     "codex": "~/.agents/skills",
-    "gemini": "~/.gemini/skills",
     "hermes": "~/.hermes/skills",
 }
 

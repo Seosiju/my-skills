@@ -7,7 +7,7 @@ from my_skills.hosts import HostConfig, all_hosts, get_host, host_names
 def test_no_duplicate_names():
     names = host_names()
     assert len(names) == len(set(names))
-    assert set(names) == {"claude", "codex", "gemini", "hermes"}
+    assert set(names) == {"claude", "codex", "hermes"}
 
 
 def test_get_host_unknown_raises():

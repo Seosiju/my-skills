@@ -5,11 +5,10 @@ from __future__ import annotations
 from .base import HostConfig
 from .claude import CLAUDE
 from .codex import CODEX
-from .gemini import GEMINI
 from .hermes import HERMES
 
 _HOSTS: dict[str, HostConfig] = {
-    host.name: host for host in (CLAUDE, CODEX, GEMINI, HERMES)
+    host.name: host for host in (CLAUDE, CODEX, HERMES)
 }
 
 

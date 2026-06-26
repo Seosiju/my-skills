@@ -2,7 +2,7 @@
 
 Personal cross-agent **Agent Skill registry**. Author a skill once, keep it in
 one canonical place, and (in later phases) install and sync it across Claude
-Code, Codex, Gemini CLI, and Hermes.
+Code, Codex, and Hermes.
 
 The canonical format is the [Agent Skills](https://agentskills.io/specification)
 standard: each skill is a directory under `skills/<name>/` with a `SKILL.md`

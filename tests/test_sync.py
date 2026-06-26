@@ -11,7 +11,7 @@ def _make_repo(tmp_path: Path) -> tuple[Path, Path, Path]:
     target = tmp_path / "hosts" / "claude"
     others = "\n".join(
         f'[targets.{h}]\nenabled = false\npath = "{tmp_path / "hosts" / h}"\n'
-        for h in ("codex", "gemini", "hermes")
+        for h in ("codex", "hermes")
     )
     (tmp_path / "my-skills.toml").write_text(
         'schema_version = 1\nskills_root = "skills"\n\n'
