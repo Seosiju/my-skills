@@ -15,17 +15,25 @@ confirm the required commands exist and to report any that are missing.
 
 ## Policy
 
-- The canonical skill records only the required-tool policy: tool names and why
-  they are needed.
-- Actual hostnames, absolute paths, account names, and auth state are
-  machine-local data and are never committed to the canonical skill.
+The canonical skill records only the required-tool policy — tool names and why
+they are needed. Actual hostnames, absolute paths, account names, versions, and
+auth state are machine-local data and are never committed to the canonical
+skill. See [the machine-local data boundary](references/required-tools.md) for
+where that data belongs instead.
 
-## Required tools (example policy)
-
-- A version-control client for repository operations.
-- A package or environment manager for dependency setup.
+The current required and optional tools are listed in
+[the required-tool policy](references/required-tools.md).
 
 ## Checking availability
 
-For each required tool, check whether it resolves on the current PATH and
-report the missing ones. Do not attempt to install tools automatically.
+Run [the check script](scripts/check_tools.py) to resolve each required tool on
+the current `PATH` and report the missing ones:
+
+```bash
+python3 scripts/check_tools.py
+```
+
+It exits non-zero when a required tool is missing. It only reports — it does not
+attempt to install tools automatically. To change the policy, edit the
+`REQUIRED` / `OPTIONAL` lists in the script and the tables in the policy
+reference together.
