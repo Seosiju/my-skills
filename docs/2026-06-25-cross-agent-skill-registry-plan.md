@@ -1105,8 +1105,9 @@ canonical fixture
 - [x] 경로를 생성·노출하는 헬퍼 `my-skills data-path <skill> [--create]`
       (manifest 불필요한 순수 path resolver, traversal 차단)
 - [x] §5.3 host 중립성에 대한 공식 예외로 문서화 (§15.4)
-- [ ] `personal-profile`을 이 규칙의 첫 적용 사례로 구현 (memory 패턴: 저장 후 재사용)
-      — 별도 후속 작업
+- [x] `personal-profile`을 이 규칙의 첫 적용 사례로 구현 (memory 패턴: 저장 후 재사용)
+      — `skills/personal-profile/` (SKILL.md + references/schema.md). canonical은
+      지침·schema만, 실제 프로필은 공유 데이터 루트에 저장(commit 안 함)
 
 ### Phase 6. 확장
 
