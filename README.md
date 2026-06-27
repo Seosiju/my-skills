@@ -27,6 +27,7 @@ see `docs/` for the full plan.
 | `repo-analysis` | Host-neutral routine for orienting in an unfamiliar repository (purpose, layout, build/test commands, entry points). |
 | `cli-inventory` | Declares the CLI tools a workflow requires and checks PATH availability via `scripts/check_tools.py`. The required-tool *policy* is committed; actual per-machine results stay machine-local. |
 | `shared-agent-operation` | Baseline, host-neutral operating conventions shared across AI coding agents. |
+| `personal-profile` | Memory-like skill: remembers durable user facts (identity, preferences) and applies them across agents. Canonical holds instructions + schema only; the profile data lives in the [shared data root](#shared-data-root), never committed. |
 
 **Machine-local boundary.** Canonical skills never store machine-specific data
 (hostnames, absolute paths, accounts, auth/versions). That data lives under a
