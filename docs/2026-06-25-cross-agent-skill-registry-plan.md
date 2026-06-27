@@ -11,7 +11,7 @@
 
 `my-skills`는 한 번 작성한 Agent Skill을 여러 AI agent에서 동일하게 사용할 수 있도록 관리, 설치, 동기화하는 개인용 로컬 registry다.
 
-사용자는 Claude Code, Codex, Gemini CLI, Hermes 중 어느 환경에서든 skill을 만들 수 있다. 완성된 skill은 `my-skills` 저장소의 canonical skill directory로 가져오며, 이후 `my-skills`가 각 host의 discovery 경로에 안전하게 배포한다.
+사용자는 Claude Code, Codex, Hermes 중 어느 환경에서든 skill을 만들 수 있다. 완성된 skill은 `my-skills` 저장소의 canonical skill directory로 가져오며, 이후 `my-skills`가 각 host의 discovery 경로에 안전하게 배포한다.
 
 ```text
 어느 agent에서든 skill 작성
@@ -22,7 +22,7 @@ Agent Skills 표준 검증
         ↓
 host별 설치 계획 생성
         ↓
-Claude / Codex / Gemini / Hermes에 설치
+Claude / Codex / Hermes에 설치
         ↓
 수정 사항 동기화 및 drift 검사
 ```
@@ -44,7 +44,6 @@ Claude / Codex / Gemini / Hermes에 설치
 ```text
 Claude: ~/.claude/skills/
 Codex:  ~/.agents/skills/
-Gemini: ~/.gemini/skills/ 또는 ~/.agents/skills/
 Hermes: ~/.hermes/skills/
 ```
 
@@ -83,7 +82,7 @@ Hermes: ~/.hermes/skills/
 
 1. `skills/<name>/`을 canonical source로 관리한다.
 2. Agent Skills 표준을 만족하는지 배포 전에 검증한다.
-3. Claude Code, Codex, Gemini CLI, Hermes에 같은 skill bundle을 설치한다.
+3. Claude Code, Codex, Hermes에 같은 skill bundle을 설치한다.
 4. 설치 전에 변경 사항과 충돌을 보여준다.
 5. `sync --check`로 canonical과 설치본 사이의 drift를 탐지한다.
 6. `uninstall`은 `my-skills`가 설치한 파일만 제거한다.
@@ -107,13 +106,13 @@ my-skills uninstall --host hermes
 
 MVP는 다음 조건을 모두 만족할 때 완료된다.
 
-- 하나의 canonical skill이 네 host에서 발견된다.
-- 네 host가 동일한 `SKILL.md`와 supporting files를 읽을 수 있다.
+- 하나의 canonical skill이 세 host에서 발견된다.
+- 세 host가 동일한 `SKILL.md`와 supporting files를 읽을 수 있다.
 - canonical 수정 후 한 번의 sync로 모든 관리 대상 설치본이 갱신된다.
 - unmanaged skill이나 사용자가 직접 만든 파일은 삭제하거나 덮어쓰지 않는다.
 - 동일 상태에서 sync를 반복해도 추가 변경이 발생하지 않는다.
 - clean temporary HOME에서 install, check, uninstall integration test가 통과한다.
-- 실제 Claude Code, Codex, Gemini CLI, Hermes에서 대표 skill을 한 번씩 호출해 동작을 확인한다.
+- 실제 Claude Code, Codex, Hermes에서 대표 skill을 한 번씩 호출해 동작을 확인한다.
 
 ---
 
@@ -173,7 +172,7 @@ Canonical frontmatter는 기본적으로 표준 필드만 사용한다.
 
 ### 5.2 변환보다 pass-through를 우선한다
 
-Claude Code, Codex, Gemini CLI, Hermes는 Agent Skills 표준을 지원한다. 따라서 MVP의 기본 배포는 canonical directory를 그대로 복사하는 방식이다.
+Claude Code, Codex, Hermes는 Agent Skills 표준을 지원한다. 따라서 MVP의 기본 배포는 canonical directory를 그대로 복사하는 방식이다.
 
 ```text
 canonical skill
@@ -376,10 +375,9 @@ MVP user scope 기본값:
 |------|-----------|------|
 | Claude Code | `~/.claude/skills/` | 개인 skill 경로 |
 | Codex | `~/.agents/skills/` | 공식 user scope |
-| Gemini CLI | `~/.gemini/skills/` | `~/.agents/skills/` alias 지원 |
 | Hermes | `~/.hermes/skills/` | primary skill directory |
 
-Codex와 Gemini가 모두 `~/.agents/skills/`를 지원하지만, MVP에서는 host별 소유권과 uninstall을 명확하게 하기 위해 각각의 기본 경로를 유지한다. 이후 shared target mode를 별도로 검토한다.
+MVP에서는 host별 소유권과 uninstall을 명확하게 하기 위해 각 host의 기본 경로를 유지한다. 이후 여러 host가 같은 skill directory를 안정적으로 공유할 수 있음이 확인되면 shared target mode를 별도로 검토한다.
 
 ### 결정 4. 설치 state가 소유권의 기준이다
 
@@ -487,7 +485,6 @@ my-skills sync --check
 email-drafting
   claude  FRESH
   codex   STALE    canonical changed
-  gemini  DRIFTED  installed copy was modified locally
   hermes  MISSING
 ```
 
@@ -652,11 +649,6 @@ enabled = true
 scope = "user"
 path = "~/.agents/skills"
 
-[targets.gemini]
-enabled = true
-scope = "user"
-path = "~/.gemini/skills"
-
 [targets.hermes]
 enabled = true
 scope = "user"
@@ -664,11 +656,11 @@ path = "~/.hermes/skills"
 
 [skills.shared-agent-operation]
 enabled = true
-hosts = ["claude", "codex", "gemini", "hermes"]
+hosts = ["claude", "codex", "hermes"]
 
 [skills.cli-inventory]
 enabled = true
-hosts = ["claude", "codex", "gemini", "hermes"]
+hosts = ["claude", "codex", "hermes"]
 ```
 
 Manifest 원칙:
@@ -860,7 +852,6 @@ my-skills/
 │           ├── base.py
 │           ├── claude.py
 │           ├── codex.py
-│           ├── gemini.py
 │           └── hermes.py
 │
 ├── tests/
@@ -1007,7 +998,7 @@ canonical fixture
 
 ### 16.5 Real host manual QA
 
-대표 skill 하나를 네 host에 설치하고 다음을 확인한다.
+대표 skill 하나를 세 host에 설치하고 다음을 확인한다.
 
 1. host가 skill을 목록에 표시한다.
 2. explicit invocation이 가능하다.
@@ -1041,7 +1032,7 @@ canonical fixture
 완료 증거:
 
 - malformed fixture가 정확한 오류로 실패
-- 네 host config가 공통 validation을 통과
+- 세 host config가 공통 validation을 통과
 
 ### Phase 2. Safe install lifecycle
 
@@ -1076,7 +1067,6 @@ canonical fixture
 
 - [ ] Claude Code
 - [ ] Codex
-- [ ] Gemini CLI
 - [ ] Hermes
 
 완료 증거:
@@ -1147,12 +1137,12 @@ removed
 예:
 
 ```text
-BLOCKED: email-drafting → gemini
+BLOCKED: email-drafting → hermes
 Destination already exists and is not managed by my-skills:
-  /Users/example/.gemini/skills/email-drafting
+  /Users/example/.hermes/skills/email-drafting
 
 No files were changed.
-Run `my-skills diff email-drafting --host gemini` to inspect the conflict.
+Run `my-skills diff email-drafting --host hermes` to inspect the conflict.
 ```
 
 ---
@@ -1225,9 +1215,9 @@ my-skills sync
 my-skills sync --check
 ```
 
-를 실행했을 때 첫 check는 drift를 탐지하고, sync는 네 host를 갱신하며, 마지막 check는 성공해야 한다.
+를 실행했을 때 첫 check는 drift를 탐지하고, sync는 세 host를 갱신하며, 마지막 check는 성공해야 한다.
 
-그리고 Claude Code, Codex, Gemini CLI, Hermes에서 동일한 대표 skill이 실제로 발견되고 호출되어야 한다.
+그리고 Claude Code, Codex, Hermes에서 동일한 대표 skill이 실제로 발견되고 호출되어야 한다.
 
 이 observable behavior가 확인되기 전에는 프로젝트가 완성된 것으로 보지 않는다.
 
@@ -1249,7 +1239,5 @@ my-skills sync --check
   https://code.claude.com/docs/en/skills
 - Codex skills  
   https://developers.openai.com/codex/skills
-- Gemini CLI Agent Skills  
-  https://geminicli.com/docs/cli/skills/
 - Hermes skills system  
   https://hermes-agent.nousresearch.com/docs/user-guide/features/skills
