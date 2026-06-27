@@ -2,6 +2,8 @@
 
 Phase 1: ``validate``, ``doctor``.
 Phase 2: ``install`` (with ``--dry-run``), ``status``, ``uninstall``.
+Phase 3: ``sync`` (with ``--check``).
+Phase 5.5: ``data-path`` (resolve a skill's shared machine-local data dir).
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from pathlib import Path
 
 from . import config as config_mod
 from .config import Manifest, ManifestError, Skill, load_manifest, selected_skills
+from .data import skill_data_path
 from .hosts import all_hosts
 from .installer import copy_install, uninstall
 from .planner import Action, Status, plan_install, plan_uninstall, status_of
@@ -331,6 +334,23 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
     return 1 if warned else 0
 
 
+# ---------------------------------------------------------------- data-path ---
+
+
+def cmd_data_path(args: argparse.Namespace) -> int:
+    """Print a skill's shared machine-local data directory (plan 15.4).
+
+    Pure path resolver: it needs no manifest/repo root, so it runs anywhere.
+    """
+    try:
+        path = skill_data_path(args.skill, create=args.create)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(path)
+    return 0
+
+
 # -------------------------------------------------------------------- main ---
 
 
@@ -374,6 +394,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_uninstall.add_argument("skill", nargs="?", help="Skill name")
     p_uninstall.add_argument("--host", help="Target host name, or 'all' (default: enabled targets)")
     p_uninstall.set_defaults(func=cmd_uninstall)
+
+    p_data = sub.add_parser(
+        "data-path",
+        help="Print a skill's shared machine-local data directory",
+    )
+    p_data.add_argument("skill", help="Skill name")
+    p_data.add_argument(
+        "--create", action="store_true", help="Create the directory if missing"
+    )
+    p_data.set_defaults(func=cmd_data_path)
 
     return parser
 
