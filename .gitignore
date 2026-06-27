@@ -1,6 +1,8 @@
 # my-skills: canonical source is committed; machine-local state is not.
 .my-skills/
 my-skills.local.toml
+# Machine-local private data (cli-inventory results, personal-profile data, etc.)
+local/
 
 # Python
 __pycache__/

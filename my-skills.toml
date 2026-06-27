@@ -21,10 +21,18 @@ enabled = true
 scope = "user"
 path = "~/.hermes/skills"
 
+[skills.repo-analysis]
+enabled = true
+hosts = ["claude", "codex", "hermes"]
+
 [skills.shared-agent-operation]
 enabled = true
 hosts = ["claude", "codex", "hermes"]
 
 [skills.cli-inventory]
+enabled = true
+hosts = ["claude", "codex", "hermes"]
+
+[skills.personal-profile]
 enabled = true
 hosts = ["claude", "codex", "hermes"]
