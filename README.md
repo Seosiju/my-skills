@@ -64,10 +64,32 @@ uv run my-skills sync
 
 # Remove a managed install (state-recorded destinations only).
 uv run my-skills uninstall email-drafting --host claude
+
+# Print a skill's shared machine-local data directory (--create to mkdir it).
+uv run my-skills data-path personal-profile
+uv run my-skills data-path personal-profile --create
 ```
 
 `validate`, `install`, and `sync` (incl. `--check`) exit non-zero on
 errors/blocks/drift, so they work in CI.
+
+### Shared data root
+
+Canonical skills are *copied* to each host on `sync`, so a copy-relative
+`local/` directory would diverge per host. Skills that hold real machine-local
+data (for example a `personal-profile` memory) instead read and write a single
+machine-level data root that every host shares:
+
+```text
+$XDG_DATA_HOME/my-skills/<skill>/        # POSIX (fallback ~/.local/share/...)
+%LOCALAPPDATA%\my-skills\data\<skill>\   # Windows
+```
+
+`my-skills data-path <skill>` resolves that path so a `SKILL.md` never hardcodes
+it. The data root is machine-local and never committed — it is the one
+sanctioned exception to skill host-neutrality (the path belongs to `my-skills`,
+not to any host). Pure-instruction skills (`repo-analysis`,
+`shared-agent-operation`) do not need it.
 
 ### Drift states
 
