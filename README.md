@@ -10,14 +10,28 @@ that carries YAML frontmatter (`name`, `description`).
 
 ## Status
 
-**Phase 3 — Sync and drift.** On top of the Phase 1 core (manifest, canonical
-`skills/`, validation, security scan, host registry, `validate` / `doctor`) and
-the Phase 2 install lifecycle (`install`, `status`, `uninstall` with content
-hashing and machine-local state), this adds `sync` and `sync --check` with
-3-way drift/conflict classification.
+**Phase 5 — first real skills.** The tooling is complete through Phase 3: the
+Phase 1 core (manifest, canonical `skills/`, validation, security scan, host
+registry, `validate` / `doctor`), the Phase 2 install lifecycle (`install`,
+`status`, `uninstall` with content hashing and machine-local state), and the
+Phase 3 `sync` / `sync --check` with 3-way drift/conflict classification. Phase
+5 adds the first real canonical skills on top of that pipeline.
 
 `--mode link`, `import`, and watch mode are Phase 6 and not implemented yet —
 see `docs/` for the full plan.
+
+### Available skills
+
+| Skill | What it does |
+|-------|--------------|
+| `repo-analysis` | Host-neutral routine for orienting in an unfamiliar repository (purpose, layout, build/test commands, entry points). |
+| `cli-inventory` | Declares the CLI tools a workflow requires and checks PATH availability via `scripts/check_tools.py`. The required-tool *policy* is committed; actual per-machine results stay machine-local. |
+| `shared-agent-operation` | Baseline, host-neutral operating conventions shared across AI coding agents. |
+
+**Machine-local boundary.** Canonical skills never store machine-specific data
+(hostnames, absolute paths, accounts, auth/versions). That data lives under a
+git-ignored `local/` directory (e.g. `local/cli-inventory/`) — see
+`skills/cli-inventory/references/required-tools.md`.
 
 ## Requirements
 
