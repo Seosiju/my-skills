@@ -63,9 +63,19 @@ def test_install_invalid_skill_blocks(tmp_path, monkeypatch, capsys):
     assert not (target / "alpha").exists()
 
 
-def test_link_mode_rejected(tmp_path, monkeypatch, capsys):
-    _prep(tmp_path, monkeypatch)
-    assert cli.main(["install", "--mode", "link"]) == 2
+def test_link_mode_installs_symlink_and_uninstall_keeps_source(tmp_path, monkeypatch, capsys):
+    repo, target = _prep(tmp_path, monkeypatch)
+    assert cli.main(["install", "--mode", "link"]) == 0
+    dest = target / "alpha"
+    assert dest.is_symlink()
+    capsys.readouterr()
+    # A linked install is always in sync with canonical.
+    cli.main(["status"])
+    assert "FRESH" in capsys.readouterr().out
+    # Uninstall removes only the link; the canonical source survives.
+    assert cli.main(["uninstall", "alpha"]) == 0
+    assert not dest.exists() and not dest.is_symlink()
+    assert (repo / "skills" / "alpha" / "SKILL.md").exists()
 
 
 def test_status_missing_then_fresh(tmp_path, monkeypatch, capsys):

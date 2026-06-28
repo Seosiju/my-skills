@@ -19,7 +19,7 @@ from . import config as config_mod
 from .config import Manifest, ManifestError, Skill, load_manifest, selected_skills
 from .data import skill_data_path
 from .hosts import all_hosts
-from .installer import copy_install, uninstall
+from .installer import copy_install, link_install, uninstall
 from .planner import Action, Status, plan_install, plan_uninstall, status_of
 from .security import scan_skill
 from .state import State
@@ -169,16 +169,20 @@ def _validate_selected(manifest: Manifest, skills: list[Skill]) -> bool:
 _BLOCK_ACTIONS = (Action.BLOCK_CONFLICT, Action.BLOCK_DRIFT, Action.CONFLICT)
 
 
-def _apply_plan(plan, state, mode: str) -> tuple[int, bool]:
-    """Execute CREATE/UPDATE, report the rest. Returns (changed_count, blocked)."""
+def _apply_plan(plan, state) -> tuple[int, bool]:
+    """Execute CREATE/UPDATE per item mode, report the rest. Returns (changed, blocked)."""
     changed = 0
     blocked = False
     for item in plan:
         if item.action in (Action.CREATE, Action.UPDATE):
-            state.put(copy_install(item, mode=mode))
+            if item.mode == "link":
+                state.put(link_install(item))
+            else:
+                state.put(copy_install(item, mode=item.mode))
             changed += 1
             verb = "created" if item.action is Action.CREATE else "updated"
-            print(f"  {verb}: {item.skill} -> {item.host}")
+            suffix = " (link)" if item.mode == "link" else ""
+            print(f"  {verb}: {item.skill} -> {item.host}{suffix}")
         elif item.action is Action.NOOP:
             print(f"  unchanged: {item.skill} -> {item.host}")
         elif item.action is Action.SKIP_UNSUPPORTED:
@@ -198,14 +202,6 @@ def cmd_install(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    if args.mode == "link":
-        print(
-            "error: --mode link is not supported yet (planned for a later phase); "
-            "use the default copy mode",
-            file=sys.stderr,
-        )
-        return 2
-
     try:
         skills, hosts = _select(args, manifest)
     except ManifestError as exc:
@@ -217,15 +213,19 @@ def cmd_install(args: argparse.Namespace) -> int:
         return 1
 
     state = State.load()
-    plan = plan_install(manifest, skills, hosts, state)
+    plan = plan_install(manifest, skills, hosts, state, requested_mode=args.mode)
 
     if args.dry_run:
         print("Dry run — planned actions (nothing written):")
         for item in plan:
-            print(f"  {item.action.value:16} {item.skill} -> {item.host}  ({item.reason})")
+            tag = f" [{item.mode}]" if item.mode == "link" else ""
+            print(
+                f"  {item.action.value:16} {item.skill} -> {item.host}{tag}  "
+                f"({item.reason})"
+            )
         return 0
 
-    changed, blocked = _apply_plan(plan, state, args.mode)
+    changed, blocked = _apply_plan(plan, state)
     if changed:
         state.save()
     return 1 if blocked else 0
@@ -287,7 +287,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
         return 1
 
     plan = plan_install(manifest, skills, hosts, state)
-    changed, blocked = _apply_plan(plan, state, "copy")
+    changed, blocked = _apply_plan(plan, state)
     if changed:
         state.save()
     return 1 if blocked else 0
