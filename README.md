@@ -17,8 +17,9 @@ registry, `validate` / `doctor`), the Phase 2 install lifecycle (`install`,
 Phase 3 `sync` / `sync --check` with 3-way drift/conflict classification. Phase
 5 adds the first real canonical skills on top of that pipeline.
 
-`--mode link`, `import`, and watch mode are Phase 6 and not implemented yet —
-see `docs/` for the full plan.
+Phase 6 adds `import` and `--mode link` (below). Remaining Phase 6 items — watch
+mode, `gh skill` publish, APM export, upgrade migration, and real Windows/WSL2
+verification — are deferred; see `docs/` for the full plan and rationale.
 
 ### Available skills
 
@@ -69,6 +70,12 @@ uv run my-skills uninstall email-drafting --host claude
 # Print a skill's shared machine-local data directory (--create to mkdir it).
 uv run my-skills data-path personal-profile
 uv run my-skills data-path personal-profile --create
+
+# Development install: symlink the host copy to canonical (edits reflect live).
+uv run my-skills install repo-analysis --host claude --mode link
+
+# Import an external skill directory into canonical skills/ (--force to overwrite).
+uv run my-skills import ~/.hermes/skills/repo-analysis
 ```
 
 `validate`, `install`, and `sync` (incl. `--check`) exit non-zero on
@@ -91,6 +98,24 @@ it. The data root is machine-local and never committed — it is the one
 sanctioned exception to skill host-neutrality (the path belongs to `my-skills`,
 not to any host). Pure-instruction skills (`repo-analysis`,
 `shared-agent-operation`) do not need it.
+
+### Development mode (`--mode link`)
+
+`install --mode link` makes the host copy a **directory symlink** to the
+canonical skill, so edits show up immediately without a `sync`. A linked install
+always reports `FRESH`; if the link is replaced it reports `DRIFTED`, and if it
+is deleted a re-install re-links it (never copies). `uninstall` removes only the
+symlink — the canonical source it points at is never deleted. If the OS cannot
+create a symlink, the command fails with an explicit message rather than
+silently copying. Copy mode remains the default.
+
+### Importing an existing skill
+
+`import <path>` brings a skill you authored in some host into the canonical
+`skills/`. It validates the source (standard + security scan), then copies it in
+under its frontmatter `name`. An identical skill is a no-op; a *different*
+existing skill is left untouched unless you pass `--force`. Import only writes to
+`skills/` — afterwards add `[skills.<name>]` to `my-skills.toml` and run `sync`.
 
 ### Drift states
 

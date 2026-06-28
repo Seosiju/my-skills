@@ -4,6 +4,7 @@ Phase 1: ``validate``, ``doctor``.
 Phase 2: ``install`` (with ``--dry-run``), ``status``, ``uninstall``.
 Phase 3: ``sync`` (with ``--check``).
 Phase 5.5: ``data-path`` (resolve a skill's shared machine-local data dir).
+Phase 6: ``import`` (host skill -> canonical) and ``install --mode link``.
 """
 
 from __future__ import annotations
@@ -18,8 +19,10 @@ from pathlib import Path
 from . import config as config_mod
 from .config import Manifest, ManifestError, Skill, load_manifest, selected_skills
 from .data import skill_data_path
+from .frontmatter import FrontmatterError, parse_frontmatter
+from .hashing import hash_directory
 from .hosts import all_hosts
-from .installer import copy_install, uninstall
+from .installer import copy_install, link_install, uninstall
 from .planner import Action, Status, plan_install, plan_uninstall, status_of
 from .security import scan_skill
 from .state import State
@@ -169,16 +172,20 @@ def _validate_selected(manifest: Manifest, skills: list[Skill]) -> bool:
 _BLOCK_ACTIONS = (Action.BLOCK_CONFLICT, Action.BLOCK_DRIFT, Action.CONFLICT)
 
 
-def _apply_plan(plan, state, mode: str) -> tuple[int, bool]:
-    """Execute CREATE/UPDATE, report the rest. Returns (changed_count, blocked)."""
+def _apply_plan(plan, state) -> tuple[int, bool]:
+    """Execute CREATE/UPDATE per item mode, report the rest. Returns (changed, blocked)."""
     changed = 0
     blocked = False
     for item in plan:
         if item.action in (Action.CREATE, Action.UPDATE):
-            state.put(copy_install(item, mode=mode))
+            if item.mode == "link":
+                state.put(link_install(item))
+            else:
+                state.put(copy_install(item, mode=item.mode))
             changed += 1
             verb = "created" if item.action is Action.CREATE else "updated"
-            print(f"  {verb}: {item.skill} -> {item.host}")
+            suffix = " (link)" if item.mode == "link" else ""
+            print(f"  {verb}: {item.skill} -> {item.host}{suffix}")
         elif item.action is Action.NOOP:
             print(f"  unchanged: {item.skill} -> {item.host}")
         elif item.action is Action.SKIP_UNSUPPORTED:
@@ -198,14 +205,6 @@ def cmd_install(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    if args.mode == "link":
-        print(
-            "error: --mode link is not supported yet (planned for a later phase); "
-            "use the default copy mode",
-            file=sys.stderr,
-        )
-        return 2
-
     try:
         skills, hosts = _select(args, manifest)
     except ManifestError as exc:
@@ -217,15 +216,19 @@ def cmd_install(args: argparse.Namespace) -> int:
         return 1
 
     state = State.load()
-    plan = plan_install(manifest, skills, hosts, state)
+    plan = plan_install(manifest, skills, hosts, state, requested_mode=args.mode)
 
     if args.dry_run:
         print("Dry run — planned actions (nothing written):")
         for item in plan:
-            print(f"  {item.action.value:16} {item.skill} -> {item.host}  ({item.reason})")
+            tag = f" [{item.mode}]" if item.mode == "link" else ""
+            print(
+                f"  {item.action.value:16} {item.skill} -> {item.host}{tag}  "
+                f"({item.reason})"
+            )
         return 0
 
-    changed, blocked = _apply_plan(plan, state, args.mode)
+    changed, blocked = _apply_plan(plan, state)
     if changed:
         state.save()
     return 1 if blocked else 0
@@ -287,7 +290,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
         return 1
 
     plan = plan_install(manifest, skills, hosts, state)
-    changed, blocked = _apply_plan(plan, state, "copy")
+    changed, blocked = _apply_plan(plan, state)
     if changed:
         state.save()
     return 1 if blocked else 0
@@ -332,6 +335,57 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
     if removed:
         state.save()
     return 1 if warned else 0
+
+
+# ------------------------------------------------------------------ import ---
+
+
+def cmd_import(args: argparse.Namespace) -> int:
+    """Import an external skill directory into canonical ``skills/`` (plan 8.3)."""
+    try:
+        manifest = _load(args)
+    except ManifestError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    source = Path(args.source).expanduser()
+    if not (source / "SKILL.md").is_file():
+        print(f"error: {source} is not an Agent Skill (no SKILL.md)", file=sys.stderr)
+        return 2
+
+    # Validate the source against the standard + security scan before trusting it.
+    result = compose_validation(source)
+    if not result.ok:
+        print(f"[BLOCKED] {source.name}: validation failed")
+        for error in result.errors:
+            print(f"  error: {error}")
+        print("\nNothing was imported (fix the source first).", file=sys.stderr)
+        return 1
+
+    try:
+        meta, _ = parse_frontmatter((source / "SKILL.md").read_text(encoding="utf-8"))
+    except FrontmatterError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    name = str(meta["name"])
+    target_dir = manifest.skills_dir / name
+
+    if target_dir.exists():
+        if hash_directory(target_dir) == hash_directory(source):
+            print(f"up to date: {name} already matches the canonical skill")
+            return 0
+        if not args.force:
+            print(f"[BLOCKED] {name}: a different canonical skill already exists at")
+            print(f"  {target_dir}")
+            print("Re-run with --force to overwrite it. Nothing was changed.", file=sys.stderr)
+            return 1
+        shutil.rmtree(target_dir)
+
+    target_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source, target_dir)
+    print(f"imported: {name} -> {target_dir}")
+    print(f"Next: add [skills.{name}] to my-skills.toml, then `my-skills sync`.")
+    return 0
 
 
 # ---------------------------------------------------------------- data-path ---
@@ -394,6 +448,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_uninstall.add_argument("skill", nargs="?", help="Skill name")
     p_uninstall.add_argument("--host", help="Target host name, or 'all' (default: enabled targets)")
     p_uninstall.set_defaults(func=cmd_uninstall)
+
+    p_import = sub.add_parser(
+        "import", help="Import an external skill directory into canonical skills/"
+    )
+    p_import.add_argument("source", help="Path to a skill directory (contains SKILL.md)")
+    p_import.add_argument(
+        "--force", action="store_true", help="Overwrite an existing different canonical skill"
+    )
+    p_import.set_defaults(func=cmd_import)
 
     p_data = sub.add_parser(
         "data-path",

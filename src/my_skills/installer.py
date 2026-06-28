@@ -68,8 +68,55 @@ def copy_install(item: PlanItem, mode: str = "copy") -> InstallRecord:
     )
 
 
+def link_install(item: PlanItem) -> InstallRecord:
+    """Install ``item.source`` to ``item.destination`` as a directory symlink.
+
+    Development mode (plan 12.3): the destination points at the canonical skill
+    so edits are reflected immediately. Symlink creation failures are surfaced,
+    never silently downgraded to a copy.
+    """
+    source = Path(item.source)
+    dest = Path(item.destination)
+    if not source.is_dir():
+        raise FileNotFoundError(f"source skill directory not found: {source}")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    # Re-linking: drop a previous managed link first (never touch its target).
+    if dest.is_symlink():
+        dest.unlink()
+
+    target = source.resolve()
+    try:
+        dest.symlink_to(target, target_is_directory=True)
+    except OSError as exc:
+        raise OSError(
+            f"cannot create a symlink at {dest}: {exc}. Link mode requires "
+            "symlink support (on Windows, enable Developer Mode or run elevated). "
+            "Not falling back to copy silently — use the default copy mode instead."
+        ) from exc
+
+    source_hash = item.source_hash or hash_directory(source)
+    return InstallRecord(
+        skill=item.skill,
+        host=item.host,
+        mode="link",
+        source=str(source),
+        destination=str(dest),
+        # A link's installed content IS the canonical content.
+        source_hash=source_hash,
+        installed_hash=source_hash,
+        installed_at=_utcnow(),
+    )
+
+
 def uninstall(record_destination: str | Path) -> None:
-    """Remove a managed install destination directory if it exists."""
+    """Remove a managed install destination.
+
+    A symlink is unlinked (so the canonical source it points at is never
+    deleted); a real directory is removed recursively.
+    """
     dest = Path(record_destination)
-    if dest.exists():
+    if dest.is_symlink():
+        dest.unlink()
+    elif dest.exists():
         shutil.rmtree(dest)
