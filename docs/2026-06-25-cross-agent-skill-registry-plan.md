@@ -1101,13 +1101,25 @@ canonical fixture
 
 ### Phase 6. 확장
 
-- [ ] `import`
-- [ ] link development mode
-- [ ] Windows 및 WSL2 실제 검증
-- [ ] watch mode
-- [ ] `gh skill` publish integration
-- [ ] APM export 또는 dependency integration
-- [ ] upgrade migration
+구현됨 (자율 구현·검증 가능 항목):
+
+- [x] `import` — `my-skills import <path> [--force]`. 표준+보안 검증 후 frontmatter
+      name으로 canonical `skills/`에 복사. 동일=no-op, 상이=`--force` 없으면 차단.
+      skills/만 수정하고 manifest 등록/sync는 사용자 후속 단계로 안내 (8.3)
+- [x] link development mode — `install --mode link`. host 사본을 canonical로의
+      directory symlink로 설치(즉시 반영). uninstall은 symlink만 해제하고 원본은
+      절대 삭제하지 않음. symlink 불가 시 copy로 조용히 fallback하지 않고 명시 실패
+      (Decision 2 / 12.3)
+
+보류 (이유 명시 — 외부 서비스·실머신·non-goal·시기상조):
+
+- [ ] Windows 및 WSL2 실제 검증 — 실제 머신 필요(수동). 단 코드는 Windows-aware
+      유지(`%LOCALAPPDATA%` 경로, symlink 실패 시 명시 오류)
+- [ ] watch mode — §4 non-goal("background daemon", "자동 watch mode"). 장기 실행
+      데몬이라 ralph 자동 검증 부적합
+- [ ] `gh skill` publish integration — 외부 서비스/auth 필요
+- [ ] APM export 또는 dependency integration — 외부/스펙 미확정
+- [ ] upgrade migration — 현재 schema_version 1뿐이라 마이그레이션 대상 없음(시기상조)
 
 ---
 
