@@ -241,7 +241,10 @@ def _replace_canonical(source: Path, canonical: Path, *, force: bool) -> None:
     if canonical.exists():
         if not force:
             raise ShareBlockedError(f"{canonical.name}: canonical skill already exists")
-        shutil.rmtree(canonical)
+        if canonical.is_dir() and not canonical.is_symlink():
+            shutil.rmtree(canonical)
+        else:
+            canonical.unlink()
     canonical.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source, canonical)
 

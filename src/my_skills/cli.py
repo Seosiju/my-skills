@@ -295,7 +295,7 @@ def cmd_share(args: argparse.Namespace) -> int:
     except ShareBlockedError as exc:
         print(f"[BLOCKED] {exc}")
         return 1
-    except ManifestEditError as exc:
+    except (ManifestError, ManifestEditError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
