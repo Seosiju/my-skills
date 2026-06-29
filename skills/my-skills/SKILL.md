@@ -72,3 +72,12 @@ After changes, validate the affected skill:
 ```bash
 uv run my-skills validate <skill>
 ```
+
+## Other Commands
+
+This skill covers the common flows. For the full command surface — including
+`status`, `validate`, `import`, `data-path`, `uninstall`, and `doctor` — run:
+
+```bash
+uv run my-skills --help
+```

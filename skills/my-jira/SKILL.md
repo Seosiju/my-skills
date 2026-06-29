@@ -49,6 +49,8 @@ twg jira workitem query \
 
 ## 검증된 환경 값 (요약 — 단일 진실원은 config.json)
 
+> 스냅샷 — 정본은 config.json. 값이 다르면 config.json이 맞다.
+
 | 항목 | 값 |
 |---|---|
 | 바이너리 | PATH의 `twg` (보통 `~/.local/bin/twg`). skill 폴더의 `./twg` **아님** |

@@ -1,39 +1,74 @@
 ---
 name: cli-inventory
-description: Declares the command-line tools a workflow requires and checks whether they are available. Use when a task depends on external CLIs and you need to confirm the environment provides them before proceeding.
+description: Discovers the command-line tools installed on this machine — scanning PATH and package managers (Homebrew, npm, pipx, cargo, gem, pip) — and records them to a shared inventory you can read back quickly. Use when you need to know whether a tool is installed, find where it lives, or get an overview of the available CLIs before running a workflow.
 ---
 
 # CLI Inventory
 
-Declares the command-line tools a workflow depends on and verifies their
-presence, without storing any machine-specific data in the canonical skill.
+Finds the command-line tools installed on the current machine and keeps a
+readable inventory of them. The canonical skill holds only the scan *method*;
+the actual results are machine-local data stored at the shared data root and are
+never committed.
 
 ## When to use
 
-Use this skill before running a workflow that shells out to external tools, to
-confirm the required commands exist and to report any that are missing.
+- Before a workflow that shells out to external tools, to confirm what is
+  installed and where.
+- When you need to know whether a specific CLI exists on this machine, or find
+  its path or version.
+- When you want an overview of the available CLIs (PATH executables and
+  packages installed via Homebrew, npm, pipx, cargo, gem, or pip).
 
-## Policy
+## Where the inventory lives
 
-The canonical skill records only the required-tool policy — tool names and why
-they are needed. Actual hostnames, absolute paths, account names, versions, and
-auth state are machine-local data and are never committed to the canonical
-skill. See [the machine-local data boundary](references/required-tools.md) for
-where that data belongs instead.
+The inventory is stored at the **shared data root**, not inside this skill
+directory. It is the same machine-local location every host shares, so Claude,
+Codex, and Hermes all read the one inventory:
 
-The current required and optional tools are listed in
-[the required-tool policy](references/required-tools.md).
+1. If the `my-skills` CLI is available, run `my-skills data-path cli-inventory`
+   (add `--create` to make it on first use). Use the path it prints.
+2. Otherwise follow the rule directly: `$XDG_DATA_HOME/my-skills/cli-inventory`
+   if `XDG_DATA_HOME` is set, else `~/.local/share/my-skills/cli-inventory`.
 
-## Checking availability
+Two files live there: `inventory.md` (a readable summary) and `inventory.json`
+(the complete record). Both are machine-local and never committed.
 
-Run [the check script](scripts/check_tools.py) to resolve each required tool on
-the current `PATH` and report the missing ones:
+## Reading the inventory (do this first)
+
+For a quick lookup, read `inventory.md` from the data root. It lists the
+"expected tools" present/missing check and every package installed via a package
+manager. For the full set of PATH executables (names → paths), read the
+`path_tools` map in `inventory.json`.
+
+If neither file exists yet, the machine has not been scanned — run the scan
+below, then read the result.
+
+## Refreshing the inventory (scan the machine)
+
+Run [the scan script](scripts/scan_tools.py) to re-discover what is installed
+and rewrite both files at the data root:
 
 ```bash
-python3 scripts/check_tools.py
+python3 scripts/scan_tools.py
 ```
 
-It exits non-zero when a required tool is missing. It only reports — it does not
-attempt to install tools automatically. To change the policy, edit the
-`REQUIRED` / `OPTIONAL` lists in the script and the tables in the policy
-reference together.
+It walks every directory on `PATH` for executables and queries each package
+manager that is present, then writes `inventory.md` and `inventory.json` to the
+data root and prints a short summary. It never installs anything — it only reads
+the machine and records what it finds. Re-run it whenever you install or remove
+tools and want the inventory current.
+
+## Expected tools
+
+The script also checks a small set of commonly needed tools (for example `git`,
+`python3`, `uv`, `gh`, `rg`, `jq`) and reports any that are missing, exposed as
+the `expected` block in both output files. To change that set, edit the
+`EXPECTED` tuple at the top of `scripts/scan_tools.py`.
+
+## Machine-local boundary
+
+The canonical skill defines *how* to scan and *what* to highlight. Everything
+machine-specific — the resolved tool paths, versions, hostnames, and the full
+inventory — stays at the data root and is never committed. See
+[the inventory schema](references/inventory-schema.md) for the output format and
+this boundary in detail.

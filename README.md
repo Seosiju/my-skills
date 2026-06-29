@@ -6,6 +6,11 @@ _One canonical home for your skills — installed, synced, and shared across Cla
 
 **English** | [한국어](README.ko.md)
 
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
+[![built with uv](https://img.shields.io/badge/built%20with-uv-purple.svg)](https://docs.astral.sh/uv/)
+[![spec: Agent Skills](https://img.shields.io/badge/spec-Agent%20Skills-green.svg)](https://agentskills.io/specification)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+
 `my-skills` is a small CLI that keeps your [Agent Skills](https://agentskills.io/specification)
 in a single place and installs the same skill into every AI coding agent you use.
 Edit a skill once; `sync` propagates it everywhere — and tells you when a copy has
@@ -44,13 +49,21 @@ uv run my-skills install    # install enabled skills into your agents
 
 That's it — your skills are now available in every detected agent.
 
+`skills` shows every skill and where it's installed across your hosts:
+
+```text
+SKILL             ENABLED  CLAUDE   CODEX    HERMES
+----------------  -------  -------  -------  -------
+cli-inventory     yes      fresh    fresh    missing
+personal-profile  yes      fresh    stale    missing
+my-skills         yes      fresh    fresh    fresh
+```
+
 ## Included skills
 
 | Skill | What it does |
 |-------|--------------|
-| `repo-analysis` | Orient quickly in an unfamiliar repository (purpose, layout, build/test commands, entry points). |
-| `cli-inventory` | Declare the CLI tools a workflow needs and check PATH availability. |
-| `shared-agent-operation` | Baseline operating conventions shared across AI coding agents. |
+| `cli-inventory` | Discover the CLI tools installed on this machine (PATH + Homebrew/npm/pipx/cargo/gem/pip) and record them to a machine-local inventory you can read back quickly. |
 | `personal-profile` | Remembers durable user facts (identity, preferences) and applies them across agents. |
 | `my-skills` | Agent-facing skill that guides catalog, share, install, and sync workflows through the CLI. |
 
@@ -64,35 +77,35 @@ uv run my-skills status              # install status per skill and host
 # Install / update.
 uv run my-skills install --dry-run   # preview the plan, write nothing
 uv run my-skills install             # enabled skills -> enabled hosts
-uv run my-skills install repo-analysis --host claude
+uv run my-skills install cli-inventory --host claude
 uv run my-skills sync                # push canonical edits to managed installs
 uv run my-skills sync --check        # detect drift only (non-zero exit if not fresh)
 
 # Remove a managed install (recorded destinations only).
-uv run my-skills uninstall repo-analysis --host claude
+uv run my-skills uninstall cli-inventory --host claude
 
 # Turn a skill on/off for default install/sync selection.
-uv run my-skills enable repo-analysis
-uv run my-skills disable repo-analysis
+uv run my-skills enable cli-inventory
+uv run my-skills disable cli-inventory
 ```
 
 ### Bring in a skill you already wrote
 
 ```bash
 # Import an external skill directory into canonical skills/.
-uv run my-skills import ~/.hermes/skills/repo-analysis
+uv run my-skills import ~/.hermes/skills/cli-inventory
 
 # Or review a host's local skills, then promote one into my-skills.
 uv run my-skills share --from claude --plan --json
-uv run my-skills share --from claude repo-analysis --enable
-uv run my-skills sync repo-analysis
+uv run my-skills share --from claude cli-inventory --enable
+uv run my-skills sync cli-inventory
 ```
 
 ### Develop a skill live
 
 ```bash
 # Symlink the host copy to canonical so edits show up without a sync.
-uv run my-skills install repo-analysis --host claude --mode link
+uv run my-skills install cli-inventory --host claude --mode link
 ```
 
 A linked install always reports `FRESH`; `uninstall` removes only the symlink and
@@ -150,3 +163,7 @@ targets only `enabled = true` skills; pass `--all` to target every registered sk
 ```bash
 uv run pytest
 ```
+
+## License
+
+[MIT](LICENSE)

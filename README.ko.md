@@ -6,6 +6,11 @@ _스킬을 위한 하나의 정규(canonical) 위치 — Claude Code·Codex·Her
 
 [English](README.md) | **한국어**
 
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
+[![built with uv](https://img.shields.io/badge/built%20with-uv-purple.svg)](https://docs.astral.sh/uv/)
+[![spec: Agent Skills](https://img.shields.io/badge/spec-Agent%20Skills-green.svg)](https://agentskills.io/specification)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+
 `my-skills`는 당신의 [Agent Skills](https://agentskills.io/specification)를
 한곳에 보관하고, 같은 스킬을 사용하는 모든 AI 코딩 에이전트에 설치하는 작은
 CLI입니다. 스킬을 한 번 편집하면 `sync`가 어디든 전파하며, 복사본이 변경(drift)됐을
@@ -45,13 +50,21 @@ uv run my-skills install    # 활성 스킬을 에이전트에 설치
 
 이게 전부입니다 — 이제 감지된 모든 에이전트에서 스킬을 사용할 수 있습니다.
 
+`skills`는 모든 스킬과 호스트별 설치 위치를 보여줍니다:
+
+```text
+SKILL             ENABLED  CLAUDE   CODEX    HERMES
+----------------  -------  -------  -------  -------
+cli-inventory     yes      fresh    fresh    missing
+personal-profile  yes      fresh    stale    missing
+my-skills         yes      fresh    fresh    fresh
+```
+
 ## 포함된 스킬
 
 | 스킬 | 하는 일 |
 |------|---------|
-| `repo-analysis` | 낯선 저장소에서 빠르게 방향 잡기(목적, 구조, 빌드/테스트 명령, 엔트리 포인트). |
-| `cli-inventory` | 워크플로가 필요로 하는 CLI 도구를 선언하고 PATH 가용성을 확인. |
-| `shared-agent-operation` | AI 코딩 에이전트 전반에서 공유하는 기본 운영 관례. |
+| `cli-inventory` | 이 머신에 설치된 CLI 도구를 발견(PATH + Homebrew/npm/pipx/cargo/gem/pip)해 머신-로컬 인벤토리로 기록하고 빠르게 다시 읽기. |
 | `personal-profile` | 사용자에 대한 지속적인 사실(정체성, 선호)을 기억하고 에이전트 전반에 적용. |
 | `my-skills` | 카탈로그·share·install·sync 워크플로를 CLI로 안내하는 에이전트용 스킬. |
 
@@ -65,35 +78,35 @@ uv run my-skills status              # 스킬별·호스트별 설치 상태
 # 설치 / 갱신.
 uv run my-skills install --dry-run   # 계획만 미리 보기, 아무것도 안 씀
 uv run my-skills install             # 활성 스킬 -> 활성 호스트
-uv run my-skills install repo-analysis --host claude
+uv run my-skills install cli-inventory --host claude
 uv run my-skills sync                # 정규 편집을 관리되는 설치본으로 전파
 uv run my-skills sync --check        # 드리프트만 감지 (fresh 아니면 비정상 종료코드)
 
 # 관리되는 설치본 제거 (기록된 대상만).
-uv run my-skills uninstall repo-analysis --host claude
+uv run my-skills uninstall cli-inventory --host claude
 
 # 기본 install/sync 선택을 위해 스킬 켜기/끄기.
-uv run my-skills enable repo-analysis
-uv run my-skills disable repo-analysis
+uv run my-skills enable cli-inventory
+uv run my-skills disable cli-inventory
 ```
 
 ### 이미 작성한 스킬 가져오기
 
 ```bash
 # 외부 스킬 디렉터리를 정규 skills/로 가져온다.
-uv run my-skills import ~/.hermes/skills/repo-analysis
+uv run my-skills import ~/.hermes/skills/cli-inventory
 
 # 또는 호스트의 로컬 스킬을 검토한 뒤 하나를 my-skills로 승격한다.
 uv run my-skills share --from claude --plan --json
-uv run my-skills share --from claude repo-analysis --enable
-uv run my-skills sync repo-analysis
+uv run my-skills share --from claude cli-inventory --enable
+uv run my-skills sync cli-inventory
 ```
 
 ### 스킬을 실시간으로 개발하기
 
 ```bash
 # 호스트 복사본을 정규에 심볼릭 링크해 sync 없이도 편집이 반영되게 한다.
-uv run my-skills install repo-analysis --host claude --mode link
+uv run my-skills install cli-inventory --host claude --mode link
 ```
 
 링크된 설치본은 항상 `FRESH`로 보고됩니다. `uninstall`은 심볼릭 링크만 제거하며
@@ -153,3 +166,7 @@ tests/                    # 단위 + 픽스처 기반 테스트
 ```bash
 uv run pytest
 ```
+
+## 라이선스
+
+[MIT](LICENSE)
