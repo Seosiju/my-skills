@@ -10,6 +10,7 @@ Phase 6: ``import`` (host skill -> canonical) and ``install --mode link``.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
 import shutil
@@ -17,6 +18,7 @@ import sys
 from pathlib import Path
 
 from . import config as config_mod
+from .catalog import catalog_rows, rows_json, rows_table, selected_status_hosts
 from .config import Manifest, ManifestError, Skill, load_manifest, selected_skills
 from .data import skill_data_path
 from .frontmatter import FrontmatterError, parse_frontmatter
@@ -256,6 +258,47 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+# ------------------------------------------------------------------ skills ---
+
+
+def cmd_skills(args: argparse.Namespace) -> int:
+    try:
+        manifest = _load(args)
+    except ManifestError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    host = args.host
+    enabled = True if args.enabled else None
+    if args.disabled:
+        enabled = False
+
+    state = State.load() if args.with_status else None
+    status_hosts = selected_status_hosts(manifest, host) if args.with_status else None
+
+    try:
+        rows = catalog_rows(
+            manifest,
+            host=host,
+            enabled=enabled,
+            status_hosts=status_hosts,
+            status_lookup=(
+                None
+                if state is None
+                else lambda skill, target: status_of(manifest, skill, target, state)
+            ),
+        )
+    except ManifestError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(rows_json(rows), indent=2))
+    else:
+        print(rows_table(rows, with_status=args.with_status))
+    return 0
+
+
 # -------------------------------------------------------------------- sync ---
 
 
@@ -436,6 +479,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_status = sub.add_parser("status", help="Show install status per skill and host")
     p_status.set_defaults(func=cmd_status)
+
+    p_skills = sub.add_parser("skills", help="List registered canonical skills")
+    p_skills.add_argument("--json", action="store_true", help="Print machine-readable JSON")
+    p_skills.add_argument("--host", help="Show skills compatible with a host")
+    state_filter = p_skills.add_mutually_exclusive_group()
+    state_filter.add_argument("--enabled", action="store_true", help="Only enabled skills")
+    state_filter.add_argument("--disabled", action="store_true", help="Only disabled skills")
+    p_skills.add_argument("--with-status", action="store_true", help="Include install status")
+    p_skills.set_defaults(func=cmd_skills)
 
     p_sync = sub.add_parser("sync", help="Update managed installs from canonical (copy mode)")
     p_sync.add_argument("skill", nargs="?", help="Skill name (default: enabled skills)")
