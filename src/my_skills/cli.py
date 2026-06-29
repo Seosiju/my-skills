@@ -27,7 +27,7 @@ from .hashing import hash_directory
 from .hosts import all_hosts
 from .installer import copy_install, link_install, uninstall
 from .manifest_edit import ManifestEditError, set_skill_enabled
-from .planner import Action, Status, plan_install, plan_uninstall, status_of
+from .planner import Action, PlanItem, Status, plan_install, plan_uninstall, status_of
 from .sharing import (
     ShareBlockedError,
     apply_share_from_host,
@@ -195,7 +195,7 @@ def _apply_plan(plan, state) -> tuple[int, bool]:
     return changed, blocked
 
 
-def _install_plan_json(plan) -> dict:
+def _install_plan_json(plan: list[PlanItem]) -> dict[str, list[dict[str, str]]]:
     return {
         "actions": [
             {
