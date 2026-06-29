@@ -1,8 +1,8 @@
 # my-skills
 
 Personal cross-agent **Agent Skill registry**. Author a skill once, keep it in
-one canonical place, and (in later phases) install and sync it across Claude
-Code, Codex, and Hermes.
+one canonical place, and install, sync, or share it across Claude Code, Codex,
+and Hermes.
 
 The canonical format is the [Agent Skills](https://agentskills.io/specification)
 standard: each skill is a directory under `skills/<name>/` with a `SKILL.md`
@@ -10,16 +10,13 @@ that carries YAML frontmatter (`name`, `description`).
 
 ## Status
 
-**Phase 5 — first real skills.** The tooling is complete through Phase 3: the
-Phase 1 core (manifest, canonical `skills/`, validation, security scan, host
-registry, `validate` / `doctor`), the Phase 2 install lifecycle (`install`,
-`status`, `uninstall` with content hashing and machine-local state), and the
-Phase 3 `sync` / `sync --check` with 3-way drift/conflict classification. Phase
-5 adds the first real canonical skills on top of that pipeline.
+**Phase 7 — catalog and sharing UX.** The registry now covers the portable skill
+core, safe install/status/uninstall lifecycle, drift-aware `sync`, shared data
+roots, `import`, development `--mode link`, the read-only `skills` catalog, and
+the `share` workflow for promoting host-local skills into canonical `skills/`.
 
-Phase 6 adds `import` and `--mode link` (below). Remaining Phase 6 items — watch
-mode, `gh skill` publish, APM export, upgrade migration, and real Windows/WSL2
-verification — are deferred; see `docs/` for the full plan and rationale.
+Deferred items such as watch mode, marketplace-style publish/export, upgrade
+migration, and real Windows/WSL2 verification remain in `docs/` as future work.
 
 ### Available skills
 
@@ -29,6 +26,7 @@ verification — are deferred; see `docs/` for the full plan and rationale.
 | `cli-inventory` | Declares the CLI tools a workflow requires and checks PATH availability via `scripts/check_tools.py`. The required-tool *policy* is committed; actual per-machine results stay machine-local. |
 | `shared-agent-operation` | Baseline, host-neutral operating conventions shared across AI coding agents. |
 | `personal-profile` | Memory-like skill: remembers durable user facts (identity, preferences) and applies them across agents. Canonical holds instructions + schema only; the profile data lives in the [shared data root](#shared-data-root), never committed. |
+| `my-skills` | Agent-facing management skill that guides catalog, share, install, sync, enable, and disable workflows through the CLI. |
 
 **Machine-local boundary.** Canonical skills never store machine-specific data
 (hostnames, absolute paths, accounts, auth/versions). That data lives under a
@@ -50,8 +48,14 @@ uv run my-skills validate shared-agent-operation
 # Report environment, detected hosts, target paths, and manifest health.
 uv run my-skills doctor
 
+# List registered canonical skills. Add --json for agent/UI consumption.
+uv run my-skills skills
+uv run my-skills skills --json
+uv run my-skills skills --with-status
+
 # Preview the install plan without writing anything, then install.
 uv run my-skills install --dry-run
+uv run my-skills install --dry-run --json
 uv run my-skills install            # enabled skills -> enabled targets (copy)
 uv run my-skills install email-drafting --host claude
 
@@ -76,6 +80,18 @@ uv run my-skills install repo-analysis --host claude --mode link
 
 # Import an external skill directory into canonical skills/ (--force to overwrite).
 uv run my-skills import ~/.hermes/skills/repo-analysis
+
+# Review host-local skills before sharing them into canonical my-skills.
+uv run my-skills share --from claude --plan --json
+
+# Share one host-local skill, register it in the manifest, then sync it.
+uv run my-skills share --from claude repo-analysis --enable
+uv run my-skills share --from claude repo-analysis --disable
+uv run my-skills sync repo-analysis
+
+# Toggle manifest participation for default install/sync selection.
+uv run my-skills enable repo-analysis
+uv run my-skills disable repo-analysis
 ```
 
 `validate`, `install`, and `sync` (incl. `--check`) exit non-zero on
@@ -117,6 +133,40 @@ under its frontmatter `name`. An identical skill is a no-op; a *different*
 existing skill is left untouched unless you pass `--force`. Import only writes to
 `skills/` — afterwards add `[skills.<name>]` to `my-skills.toml` and run `sync`.
 
+### Sharing a host-local skill
+
+`share --from <host> --plan --json` scans a host skill directory and emits
+deterministic candidate/risk JSON for agent conversations. Each candidate reports
+the source path, canonical status, content hash, validation/security risks,
+available choices, and the recommended default.
+
+After reviewing the plan, apply one selected skill:
+
+```bash
+uv run my-skills share --from claude repo-analysis --enable
+uv run my-skills share --from claude repo-analysis --disable
+```
+
+`share` validates the source, copies it into canonical `skills/`, registers
+`[skills.<name>]` for all enabled targets, validates the canonical copy, and
+adopts the source host's existing copy into local state so `sync <skill>` can
+continue without treating that source host as an unmanaged collision. A different
+canonical copy is never overwritten unless `--force` is passed explicitly.
+
+### Agent management skill
+
+The canonical `my-skills` skill is installed like any other skill:
+
+```bash
+uv run my-skills install my-skills --host all
+```
+
+In Claude Code it can be invoked as `/my-skills` when the host exposes skills as
+slash commands. In Codex and Hermes, use the host's native skill invocation. The
+skill does not modify files directly; it guides the agent to run `my-skills`
+commands, show the user plan/risk output, and apply only the user's selected
+choice.
+
 ### Drift states
 
 `status` and `sync --check` classify each (skill, host):
@@ -137,8 +187,9 @@ existing skill is left untouched unless you pass `--force`. Import only writes t
 ### Safety model
 
 - **Copy by default.** Installs copy the canonical directory; the installed
-  copy does not change until the next `install`. (`--mode link` is rejected for
-  now — no silent fallback.)
+  copy does not change until the next `install` or `sync`. `--mode link` is an
+  explicit development mode; if symlink creation fails, the command errors
+  instead of silently falling back to copy.
 - **Collision = block.** If a destination already exists and is *not* recorded
   as managed by my-skills, the install is blocked and nothing is overwritten.
 - **Drift-protected.** If an installed copy was modified locally, install and
