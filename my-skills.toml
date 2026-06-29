@@ -40,3 +40,7 @@ hosts = ["claude", "codex", "hermes"]
 [skills.my-skills]
 enabled = true
 hosts = ["claude", "codex", "hermes"]
+
+[skills.my-jira]
+enabled = true
+hosts = ["claude", "codex", "hermes"]
