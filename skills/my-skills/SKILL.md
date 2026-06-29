@@ -5,23 +5,47 @@ description: Manage the shared my-skills registry from an agent conversation. Us
 
 # My Skills Registry
 
-Use the `my-skills` CLI as the source of truth. Do not edit host skill directories directly when a CLI command can plan, share, install, sync, enable, or disable the skill.
+Use the `my-skills` CLI as the source of truth. Do not edit host skill
+directories directly when a CLI command can plan, share, install, sync, enable,
+or disable the skill.
+
+## Running the CLI (read this first)
+
+Invoke the installed command directly — **not** `uv run my-skills`, which only
+works inside the cloned repo:
+
+```bash
+my-skills <command> ...
+```
+
+The CLI needs to know where the project (the `my-skills.toml` manifest and
+`skills/`) lives. It resolves the root in this order: `$MY_SKILLS_ROOT`, then the
+current directory or any parent, then a path cached from a previous successful
+run. So once any command has run once from the clone, later commands work from
+**any** directory.
+
+If a command fails with `my-skills.toml not found`, the root has never been
+seen on this machine. Fix it once, then retry:
+
+```bash
+export MY_SKILLS_ROOT=/path/to/your/my-skills   # the clone's directory
+```
+
+If the `my-skills` command itself is not on `PATH`, fall back to running it from
+the clone: `cd "$MY_SKILLS_ROOT" && uv run my-skills <command>`.
 
 ## List
 
-Run:
-
 ```bash
-uv run my-skills skills
+my-skills skills
 ```
 
-The list shows each skill, whether it is enabled, and its install status per host
-(`fresh`, `drifted`, `missing`, or `-` when the skill does not target that host).
-
-Use JSON when another agent or UI needs a structured list:
+Shows each skill, whether it is enabled, and its install status per host
+(`fresh`, `stale`, `drifted`, `missing`, or `-` when the skill does not target
+that host). Add `--json` when another agent or UI needs a structured list:
 
 ```bash
-uv run my-skills skills --json
+my-skills skills --json
 ```
 
 ## Share From A Host
@@ -29,48 +53,44 @@ uv run my-skills skills --json
 First produce a read-only plan:
 
 ```bash
-uv run my-skills share --from <claude|codex|hermes> --plan --json
+my-skills share --from <claude|codex|hermes> --plan --json
 ```
 
-Show the user the candidate skills, validation risks, canonical status, and available choices. Continue only after the user chooses `share-enable`, `share-disable`, or `skip`.
-
-Apply the selected choice:
+Show the user the candidate skills, validation risks, canonical status, and
+available choices. Continue only after the user chooses to enable, disable, or
+skip. Apply the selected choice:
 
 ```bash
-uv run my-skills share --from <host> <skill> --enable
-uv run my-skills share --from <host> <skill> --disable
+my-skills share --from <host> <skill> --enable
+my-skills share --from <host> <skill> --disable
 ```
 
-Use `--force` only when the plan reports a different canonical skill and the user explicitly confirms overwriting it.
+Use `--force` only when the plan reports a *different* canonical skill and the
+user explicitly confirms overwriting it.
 
 ## Install Or Sync
 
 Before writing into host directories, show the dry-run plan:
 
 ```bash
-uv run my-skills install <skill> --host <host|all> --dry-run --json
+my-skills install <skill> --host <host|all> --dry-run --json
 ```
 
-If the plan is acceptable, run the matching install or sync command:
+If the plan is acceptable, run the matching command:
 
 ```bash
-uv run my-skills install <skill> --host <host|all>
-uv run my-skills sync <skill>
+my-skills install <skill> --host <host|all>
+my-skills sync <skill>
 ```
 
 ## Enable Or Disable
 
-Use manifest toggles instead of editing TOML by hand:
+Use manifest toggles instead of editing TOML by hand, then validate:
 
 ```bash
-uv run my-skills enable <skill>
-uv run my-skills disable <skill>
-```
-
-After changes, validate the affected skill:
-
-```bash
-uv run my-skills validate <skill>
+my-skills enable <skill>
+my-skills disable <skill>
+my-skills validate <skill>
 ```
 
 ## Other Commands
@@ -79,5 +99,5 @@ This skill covers the common flows. For the full command surface — including
 `status`, `validate`, `import`, `data-path`, `uninstall`, and `doctor` — run:
 
 ```bash
-uv run my-skills --help
+my-skills --help
 ```
