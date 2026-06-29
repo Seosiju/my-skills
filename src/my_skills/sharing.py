@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +10,8 @@ from .checks import compose_validation
 from .config import Manifest, ManifestError
 from .frontmatter import FrontmatterError, parse_frontmatter
 from .hashing import hash_directory
+from .manifest_edit import register_skill
+from .state import InstallRecord, State
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +38,20 @@ class SharePlan:
     from_host: str
     source: Path
     candidates: tuple[ShareCandidate, ...]
+
+
+class ShareBlockedError(ValueError):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class ShareApplyResult:
+    name: str
+    source: Path
+    canonical: Path
+    enabled: bool
+    hosts: tuple[str, ...]
+    adopted_host: str
 
 
 def plan_share_from_host(manifest: Manifest, from_host: str) -> SharePlan:
@@ -78,6 +96,59 @@ def share_plan_table(plan: SharePlan) -> str:
     lines.append(_format_table_line(["-" * width for width in widths], widths))
     lines.extend(_format_table_line(row, widths) for row in rows)
     return "\n".join(lines)
+
+
+def apply_share_from_host(
+    manifest: Manifest,
+    manifest_path: Path,
+    from_host: str,
+    skill: str,
+    *,
+    enabled: bool,
+    force: bool,
+    state: State,
+) -> ShareApplyResult:
+    if from_host not in manifest.targets:
+        raise ManifestError(f"unknown host: {from_host}")
+
+    source = manifest.targets[from_host].path / skill
+    if not (source / "SKILL.md").is_file():
+        raise ManifestError(f"{source} is not an Agent Skill (no SKILL.md)")
+
+    candidate = _candidate_for_source(manifest, source)
+    errors = [risk.message for risk in candidate.risks if risk.severity == "error"]
+    if errors:
+        raise ShareBlockedError(
+            f"{candidate.name}: validation failed: {'; '.join(errors)}"
+        )
+    if candidate.canonical_status == "different" and not force:
+        raise ShareBlockedError(
+            f"{candidate.name}: a different canonical skill already exists at "
+            f"{candidate.canonical}; re-run with --force to overwrite it"
+        )
+
+    if candidate.canonical_status != "identical":
+        _replace_canonical(source, candidate.canonical, force=force)
+
+    result = compose_validation(candidate.canonical)
+    if not result.ok:
+        raise ShareBlockedError(
+            f"{candidate.name}: canonical validation failed after import: "
+            f"{'; '.join(result.errors)}"
+        )
+
+    hosts = tuple(name for name, target in manifest.targets.items() if target.enabled)
+    register_skill(manifest_path, candidate.name, enabled=enabled, hosts=hosts)
+    _adopt_source_host(state, candidate.name, from_host, candidate.canonical, source)
+    state.save()
+    return ShareApplyResult(
+        name=candidate.name,
+        source=source,
+        canonical=candidate.canonical,
+        enabled=enabled,
+        hosts=hosts,
+        adopted_host=from_host,
+    )
 
 
 def _host_skill_dirs(source_root: Path) -> list[Path]:
@@ -164,3 +235,37 @@ def _risk_summary(risks: tuple[Risk, ...]) -> str:
 
 def _format_table_line(items: list[str], widths: list[int]) -> str:
     return "  ".join(item.ljust(widths[index]) for index, item in enumerate(items))
+
+
+def _replace_canonical(source: Path, canonical: Path, *, force: bool) -> None:
+    if canonical.exists():
+        if not force:
+            raise ShareBlockedError(f"{canonical.name}: canonical skill already exists")
+        shutil.rmtree(canonical)
+    canonical.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source, canonical)
+
+
+def _adopt_source_host(
+    state: State,
+    skill: str,
+    host: str,
+    canonical: Path,
+    source: Path,
+) -> None:
+    state.put(
+        InstallRecord(
+            skill=skill,
+            host=host,
+            mode="copy",
+            source=str(canonical),
+            destination=str(source),
+            source_hash=hash_directory(canonical),
+            installed_hash=hash_directory(source),
+            installed_at=_utcnow(),
+        )
+    )
+
+
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

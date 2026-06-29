@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from my_skills import cli
+from my_skills.config import load_manifest
 
 
 def _skill(path: Path, name: str, description: str, body: str = "") -> Path:
@@ -13,7 +14,7 @@ def _skill(path: Path, name: str, description: str, body: str = "") -> Path:
     return skill_dir
 
 
-def _repo_with_targets(tmp_path: Path) -> tuple[Path, Path, Path]:
+def _repo_with_targets(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     repo = tmp_path / "repo"
     claude = tmp_path / "hosts" / "claude"
     codex = tmp_path / "hosts" / "codex"
@@ -36,13 +37,13 @@ def _repo_with_targets(tmp_path: Path) -> tuple[Path, Path, Path]:
         'hosts = ["claude", "codex", "hermes"]\n'
     )
     _skill(repo / "skills", "alpha", "Canonical alpha.")
-    return repo, claude, codex
+    return repo, claude, codex, hermes
 
 
 def test_install_dry_run_json_reports_plan_and_writes_nothing(
     tmp_path, monkeypatch, capsys
 ):
-    repo, claude, _codex = _repo_with_targets(tmp_path)
+    repo, claude, _codex, _hermes = _repo_with_targets(tmp_path)
     monkeypatch.chdir(repo)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
 
@@ -68,7 +69,7 @@ def test_install_dry_run_json_reports_plan_and_writes_nothing(
 
 
 def test_share_plan_json_lists_host_candidates_and_risks(tmp_path, monkeypatch, capsys):
-    repo, claude, _codex = _repo_with_targets(tmp_path)
+    repo, claude, _codex, _hermes = _repo_with_targets(tmp_path)
     _skill(claude, "brand", "A host-only skill.")
     bad = claude / "bad"
     bad.mkdir(parents=True)
@@ -96,3 +97,50 @@ def test_share_plan_json_lists_host_candidates_and_risks(tmp_path, monkeypatch, 
     assert brand_plan["recommended"] == "share-enable"
     assert brand_plan["choices"] == ["share-enable", "share-disable", "skip"]
     assert brand_plan["risks"] == []
+
+
+def test_share_apply_imports_registers_adopts_source_and_syncs(
+    tmp_path, monkeypatch, capsys
+):
+    repo, claude, codex, _hermes = _repo_with_targets(tmp_path)
+    _skill(claude, "repo-analysis", "A host-only skill.")
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+    assert cli.main(["share", "--from", "claude", "repo-analysis", "--enable"]) == 0
+
+    manifest = load_manifest(repo)
+    assert manifest.skills["repo-analysis"].enabled is True
+    assert manifest.skills["repo-analysis"].hosts == ["claude", "codex", "hermes"]
+    assert (repo / "skills" / "repo-analysis" / "SKILL.md").exists()
+
+    assert cli.main(["sync", "repo-analysis"]) == 0
+    assert "unchanged: repo-analysis -> claude" in capsys.readouterr().out
+    assert (codex / "repo-analysis" / "SKILL.md").exists()
+
+
+def test_share_apply_blocks_different_canonical_without_force(
+    tmp_path, monkeypatch, capsys
+):
+    repo, claude, _codex, _hermes = _repo_with_targets(tmp_path)
+    _skill(claude, "brand", "A host-only skill.", body="host body\n")
+    _skill(repo / "skills", "brand", "Existing canonical.", body="canonical body\n")
+    monkeypatch.chdir(repo)
+
+    assert cli.main(["share", "--from", "claude", "brand", "--enable"]) == 1
+    assert "canonical body" in (repo / "skills" / "brand" / "SKILL.md").read_text()
+
+    assert cli.main(["share", "--from", "claude", "brand", "--enable", "--force"]) == 0
+    assert "host body" in (repo / "skills" / "brand" / "SKILL.md").read_text()
+
+
+def test_share_apply_disable_registers_disabled_skill(tmp_path, monkeypatch, capsys):
+    repo, claude, _codex, _hermes = _repo_with_targets(tmp_path)
+    _skill(claude, "brand", "A host-only skill.")
+    monkeypatch.chdir(repo)
+
+    assert cli.main(["share", "--from", "claude", "brand", "--disable"]) == 0
+
+    manifest = load_manifest(repo)
+    assert manifest.skills["brand"].enabled is False
+    assert (repo / "skills" / "brand" / "SKILL.md").exists()

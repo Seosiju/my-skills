@@ -28,7 +28,13 @@ from .hosts import all_hosts
 from .installer import copy_install, link_install, uninstall
 from .manifest_edit import ManifestEditError, set_skill_enabled
 from .planner import Action, Status, plan_install, plan_uninstall, status_of
-from .sharing import plan_share_from_host, share_plan_json, share_plan_table
+from .sharing import (
+    ShareBlockedError,
+    apply_share_from_host,
+    plan_share_from_host,
+    share_plan_json,
+    share_plan_table,
+)
 from .state import State
 
 
@@ -251,21 +257,52 @@ def cmd_install(args: argparse.Namespace) -> int:
 
 def cmd_share(args: argparse.Namespace) -> int:
     try:
-        manifest = _load(args)
-        plan = plan_share_from_host(manifest, args.from_host)
+        root = find_repo_root()
+        manifest = load_manifest(root)
     except ManifestError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
     if args.plan:
+        try:
+            plan = plan_share_from_host(manifest, args.from_host)
+        except ManifestError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
         if args.json:
             print(json.dumps(share_plan_json(plan), indent=2))
         else:
             print(share_plan_table(plan))
         return 0
 
-    print("error: share currently requires --plan", file=sys.stderr)
-    return 2
+    if not args.skill:
+        print("error: share requires a skill name unless --plan is used", file=sys.stderr)
+        return 2
+    if args.enable == args.disable:
+        print("error: share requires exactly one of --enable or --disable", file=sys.stderr)
+        return 2
+
+    try:
+        result = apply_share_from_host(
+            manifest,
+            root / "my-skills.toml",
+            args.from_host,
+            args.skill,
+            enabled=args.enable,
+            force=args.force,
+            state=State.load(),
+        )
+    except ShareBlockedError as exc:
+        print(f"[BLOCKED] {exc}")
+        return 1
+    except ManifestEditError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    state = "enabled" if result.enabled else "disabled"
+    print(f"shared: {result.name} -> {result.canonical} ({state})")
+    print(f"adopted: {result.name} -> {result.adopted_host}")
+    return 0
 
 
 def _cmd_set_enabled(args: argparse.Namespace, enabled: bool) -> int:
@@ -536,6 +573,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_share.add_argument("--from", dest="from_host", required=True, help="Source host name")
     p_share.add_argument("--plan", action="store_true", help="Show candidate plan; change nothing")
     p_share.add_argument("--json", action="store_true", help="Print machine-readable JSON")
+    share_state = p_share.add_mutually_exclusive_group()
+    share_state.add_argument("--enable", action="store_true", help="Register shared skill as enabled")
+    share_state.add_argument("--disable", action="store_true", help="Register shared skill as disabled")
+    p_share.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing different canonical skill",
+    )
     p_share.set_defaults(func=cmd_share)
 
     p_enable = sub.add_parser("enable", help="Enable a registered skill in the manifest")
