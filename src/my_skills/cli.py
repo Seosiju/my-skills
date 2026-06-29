@@ -26,6 +26,7 @@ from .frontmatter import FrontmatterError, parse_frontmatter
 from .hashing import hash_directory
 from .hosts import all_hosts
 from .installer import copy_install, link_install, uninstall
+from .manifest_edit import ManifestEditError, set_skill_enabled
 from .planner import Action, Status, plan_install, plan_uninstall, status_of
 from .sharing import plan_share_from_host, share_plan_json, share_plan_table
 from .state import State
@@ -265,6 +266,27 @@ def cmd_share(args: argparse.Namespace) -> int:
 
     print("error: share currently requires --plan", file=sys.stderr)
     return 2
+
+
+def _cmd_set_enabled(args: argparse.Namespace, enabled: bool) -> int:
+    try:
+        root = find_repo_root()
+        load_manifest(root)
+        set_skill_enabled(root / "my-skills.toml", args.skill, enabled)
+    except (ManifestError, ManifestEditError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    verb = "enabled" if enabled else "disabled"
+    print(f"{verb}: {args.skill}")
+    return 0
+
+
+def cmd_enable(args: argparse.Namespace) -> int:
+    return _cmd_set_enabled(args, True)
+
+
+def cmd_disable(args: argparse.Namespace) -> int:
+    return _cmd_set_enabled(args, False)
 
 
 # ------------------------------------------------------------------ status ---
@@ -515,6 +537,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_share.add_argument("--plan", action="store_true", help="Show candidate plan; change nothing")
     p_share.add_argument("--json", action="store_true", help="Print machine-readable JSON")
     p_share.set_defaults(func=cmd_share)
+
+    p_enable = sub.add_parser("enable", help="Enable a registered skill in the manifest")
+    p_enable.add_argument("skill", help="Skill name")
+    p_enable.set_defaults(func=cmd_enable)
+
+    p_disable = sub.add_parser("disable", help="Disable a registered skill in the manifest")
+    p_disable.add_argument("skill", help="Skill name")
+    p_disable.set_defaults(func=cmd_disable)
 
     p_status = sub.add_parser("status", help="Show install status per skill and host")
     p_status.set_defaults(func=cmd_status)
