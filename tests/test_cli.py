@@ -1,4 +1,7 @@
+import json
 from pathlib import Path
+
+import pytest
 
 from my_skills import cli
 
@@ -40,3 +43,121 @@ def test_doctor_exit_zero(tmp_path, monkeypatch, capsys):
 def test_no_command_prints_help(capsys):
     assert cli.main([]) == 0
     assert "usage" in capsys.readouterr().out.lower()
+
+
+def _make_skills_repo(tmp_path: Path) -> Path:
+    manifest = """schema_version = 1
+skills_root = "skills"
+
+[targets.claude]
+enabled = true
+scope = "user"
+path = "./installed/claude"
+
+[targets.codex]
+enabled = true
+scope = "user"
+path = "./installed/codex"
+
+[skills.alpha]
+enabled = true
+hosts = ["claude", "codex"]
+
+[skills.beta]
+enabled = false
+hosts = ["codex"]
+
+[skills.gamma]
+enabled = true
+hosts = []
+"""
+    (tmp_path / "my-skills.toml").write_text(manifest)
+    for name, description in (
+        ("alpha", "Alpha summary from frontmatter."),
+        ("beta", "Beta summary from frontmatter."),
+        ("gamma", "Gamma summary from frontmatter."),
+    ):
+        skill_dir = tmp_path / "skills" / name
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: {description}\n---\n\n# {name}\n"
+        )
+    return tmp_path
+
+
+def test_skills_table_lists_manifest_skills_with_frontmatter_summary(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.chdir(_make_skills_repo(tmp_path))
+
+    rc = cli.main(["skills"])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Skill" in out
+    assert "Enabled" in out
+    assert "Hosts" in out
+    assert "Summary" in out
+    assert "alpha" in out
+    assert "Alpha summary from frontmatter." in out
+    assert "beta" in out
+    assert "Beta summary from frontmatter." in out
+
+
+def test_skills_json_filters_by_host_and_enabled_state(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(_make_skills_repo(tmp_path))
+
+    rc = cli.main(["skills", "--json", "--host", "codex", "--enabled"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert payload == {
+        "skills": [
+            {
+                "name": "alpha",
+                "enabled": True,
+                "hosts": ["claude", "codex"],
+                "description": "Alpha summary from frontmatter.",
+                "path": "skills/alpha",
+            },
+            {
+                "name": "gamma",
+                "enabled": True,
+                "hosts": [],
+                "description": "Gamma summary from frontmatter.",
+                "path": "skills/gamma",
+            },
+        ]
+    }
+
+
+def test_skills_with_status_uses_selected_host_only(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.chdir(_make_skills_repo(tmp_path))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+    rc = cli.main(["skills", "--json", "--host", "codex", "--disabled", "--with-status"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert {row["name"]: row["status"] for row in payload["skills"]} == {
+        "beta": {"codex": "MISSING"},
+    }
+
+
+def test_skills_rejects_unknown_host(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(_make_skills_repo(tmp_path))
+
+    rc = cli.main(["skills", "--host", "ghost"])
+
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "unknown host: ghost" in err
+
+
+def test_skills_enabled_and_disabled_are_mutually_exclusive():
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["skills", "--enabled", "--disabled"])
+
+    assert excinfo.value.code == 2
