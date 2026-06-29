@@ -4,7 +4,7 @@ import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 from .checks import compose_validation
 from .config import Manifest, ManifestError
@@ -54,6 +54,29 @@ class ShareApplyResult:
     adopted_host: str
 
 
+class RiskJson(TypedDict):
+    severity: str
+    message: str
+
+
+class ShareCandidateJson(TypedDict):
+    name: str
+    description: str
+    source: str
+    canonical: str
+    canonical_status: str
+    content_hash: str
+    risks: list[RiskJson]
+    choices: list[str]
+    recommended: str
+
+
+SharePlanJson = TypedDict(
+    "SharePlanJson",
+    {"from": str, "source": str, "candidates": list[ShareCandidateJson]},
+)
+
+
 def plan_share_from_host(manifest: Manifest, from_host: str) -> SharePlan:
     if from_host not in manifest.targets:
         raise ManifestError(f"unknown host: {from_host}")
@@ -66,7 +89,7 @@ def plan_share_from_host(manifest: Manifest, from_host: str) -> SharePlan:
     return SharePlan(from_host=from_host, source=source_root, candidates=candidates)
 
 
-def share_plan_json(plan: SharePlan) -> dict[str, Any]:
+def share_plan_json(plan: SharePlan) -> SharePlanJson:
     return {
         "from": plan.from_host,
         "source": str(plan.source),
@@ -210,7 +233,11 @@ def _choices(risks: tuple[Risk, ...], canonical_status: str) -> tuple[tuple[str,
     return ("share-enable", "share-disable", "skip"), "share-enable"
 
 
-def _candidate_json(candidate: ShareCandidate) -> dict[str, Any]:
+def _risk_json(risk: Risk) -> RiskJson:
+    return {"severity": risk.severity, "message": risk.message}
+
+
+def _candidate_json(candidate: ShareCandidate) -> ShareCandidateJson:
     return {
         "name": candidate.name,
         "description": candidate.description,
@@ -218,10 +245,7 @@ def _candidate_json(candidate: ShareCandidate) -> dict[str, Any]:
         "canonical": str(candidate.canonical),
         "canonical_status": candidate.canonical_status,
         "content_hash": candidate.content_hash,
-        "risks": [
-            {"severity": risk.severity, "message": risk.message}
-            for risk in candidate.risks
-        ],
+        "risks": [_risk_json(risk) for risk in candidate.risks],
         "choices": list(candidate.choices),
         "recommended": candidate.recommended,
     }

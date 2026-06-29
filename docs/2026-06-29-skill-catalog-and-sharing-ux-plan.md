@@ -1,8 +1,8 @@
 # my-skills Skill Catalog and Sharing UX Plan
 
-> 작성일: 2026-06-29  
-> 상태: 제안안  
-> 대상 저장소: `my-skills`  
+> 작성일: 2026-06-29
+> 상태: 제안안
+> 대상 저장소: `my-skills`
 > 관련 문서: `docs/2026-06-25-cross-agent-skill-registry-plan.md`
 
 ---
