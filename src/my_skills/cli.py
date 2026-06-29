@@ -19,6 +19,7 @@ from pathlib import Path
 
 from . import config as config_mod
 from .catalog import catalog_rows, rows_json, rows_table, selected_status_hosts
+from .checks import compose_validation
 from .config import Manifest, ManifestError, Skill, load_manifest, selected_skills
 from .data import skill_data_path
 from .frontmatter import FrontmatterError, parse_frontmatter
@@ -26,9 +27,8 @@ from .hashing import hash_directory
 from .hosts import all_hosts
 from .installer import copy_install, link_install, uninstall
 from .planner import Action, Status, plan_install, plan_uninstall, status_of
-from .security import scan_skill
+from .sharing import plan_share_from_host, share_plan_json, share_plan_table
 from .state import State
-from .validation import ValidationResult, validate_skill
 
 
 def find_repo_root(start: Path | None = None) -> Path:
@@ -40,18 +40,6 @@ def find_repo_root(start: Path | None = None) -> Path:
     raise ManifestError(
         "my-skills.toml not found in the current directory or any parent"
     )
-
-
-def compose_validation(skill_dir: Path) -> ValidationResult:
-    """Run structural validation and the security scan, merged by severity."""
-    result = validate_skill(skill_dir)
-    for finding in scan_skill(skill_dir):
-        line = f"security: {finding.file}: {finding.message}"
-        if finding.severity == "error":
-            result.errors.append(line)
-        else:
-            result.warnings.append(line)
-    return result
 
 
 def _resolve_hosts(manifest: Manifest, host_arg: str | None) -> list[str]:
@@ -200,6 +188,23 @@ def _apply_plan(plan, state) -> tuple[int, bool]:
     return changed, blocked
 
 
+def _install_plan_json(plan) -> dict:
+    return {
+        "actions": [
+            {
+                "skill": item.skill,
+                "host": item.host,
+                "action": item.action.value,
+                "reason": item.reason,
+                "mode": item.mode,
+                "source": str(item.source),
+                "destination": str(item.destination),
+            }
+            for item in plan
+        ]
+    }
+
+
 def cmd_install(args: argparse.Namespace) -> int:
     try:
         manifest = _load(args)
@@ -213,6 +218,10 @@ def cmd_install(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    if args.json and not args.dry_run:
+        print("error: install --json requires --dry-run", file=sys.stderr)
+        return 2
+
     if not _validate_selected(manifest, skills):
         print("\nNo files were changed (fix validation errors first).", file=sys.stderr)
         return 1
@@ -221,6 +230,9 @@ def cmd_install(args: argparse.Namespace) -> int:
     plan = plan_install(manifest, skills, hosts, state, requested_mode=args.mode)
 
     if args.dry_run:
+        if args.json:
+            print(json.dumps(_install_plan_json(plan), indent=2))
+            return 0
         print("Dry run — planned actions (nothing written):")
         for item in plan:
             tag = f" [{item.mode}]" if item.mode == "link" else ""
@@ -234,6 +246,25 @@ def cmd_install(args: argparse.Namespace) -> int:
     if changed:
         state.save()
     return 1 if blocked else 0
+
+
+def cmd_share(args: argparse.Namespace) -> int:
+    try:
+        manifest = _load(args)
+        plan = plan_share_from_host(manifest, args.from_host)
+    except ManifestError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.plan:
+        if args.json:
+            print(json.dumps(share_plan_json(plan), indent=2))
+        else:
+            print(share_plan_table(plan))
+        return 0
+
+    print("error: share currently requires --plan", file=sys.stderr)
+    return 2
 
 
 # ------------------------------------------------------------------ status ---
@@ -475,7 +506,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_install.add_argument("--all", action="store_true", help="Include every registered skill")
     p_install.add_argument("--mode", choices=("copy", "link"), default="copy", help="Install mode")
     p_install.add_argument("--dry-run", action="store_true", help="Show the plan; change nothing")
+    p_install.add_argument("--json", action="store_true", help="Print dry-run plan as JSON")
     p_install.set_defaults(func=cmd_install)
+
+    p_share = sub.add_parser("share", help="Plan sharing host-local skills into canonical")
+    p_share.add_argument("skill", nargs="?", help="Host skill name")
+    p_share.add_argument("--from", dest="from_host", required=True, help="Source host name")
+    p_share.add_argument("--plan", action="store_true", help="Show candidate plan; change nothing")
+    p_share.add_argument("--json", action="store_true", help="Print machine-readable JSON")
+    p_share.set_defaults(func=cmd_share)
 
     p_status = sub.add_parser("status", help="Show install status per skill and host")
     p_status.set_defaults(func=cmd_status)
