@@ -36,3 +36,7 @@ hosts = ["claude", "codex", "hermes"]
 [skills.personal-profile]
 enabled = true
 hosts = ["claude", "codex", "hermes"]
+
+[skills.my-skills]
+enabled = true
+hosts = ["claude", "codex", "hermes"]
