@@ -12,13 +12,16 @@ Use the `my-skills` CLI as the source of truth. Do not edit host skill directori
 Run:
 
 ```bash
-uv run my-skills skills --with-status
+uv run my-skills skills
 ```
+
+The list shows each skill, whether it is enabled, and its install status per host
+(`fresh`, `drifted`, `missing`, or `-` when the skill does not target that host).
 
 Use JSON when another agent or UI needs a structured list:
 
 ```bash
-uv run my-skills skills --json --with-status
+uv run my-skills skills --json
 ```
 
 ## Share From A Host

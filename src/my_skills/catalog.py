@@ -67,21 +67,16 @@ def rows_json(rows: list[CatalogRow]) -> CatalogJson:
     return {"skills": [_row_json(row) for row in rows]}
 
 
-def rows_table(rows: list[CatalogRow], *, with_status: bool = False) -> str:
-    headers = ["Skill", "Enabled", "Hosts", "Summary"]
+def rows_table(rows: list[CatalogRow], status_hosts: list[str]) -> str:
+    headers = ["SKILL", "ENABLED", *(host.upper() for host in status_hosts)]
     raw_rows = [
         [
             row.name,
             "yes" if row.enabled else "no",
-            ", ".join(row.hosts) if row.hosts else "all",
-            row.description,
+            *(_status_cell(row, host) for host in status_hosts),
         ]
         for row in rows
     ]
-    if with_status:
-        headers.append("Status")
-        for raw, row in zip(raw_rows, rows, strict=True):
-            raw.append(_status_text(row))
 
     widths = [
         max(len(item) for item in [header, *(raw[index] for raw in raw_rows)])
@@ -134,13 +129,17 @@ def _row_json(row: CatalogRow) -> SkillJsonRow:
     return raw
 
 
-def _status_text(row: CatalogRow) -> str:
-    if row.status is None:
-        return ""
-    return ", ".join(
-        f"{host}:{status.value}" for host, status in row.status.items()
-    )
+def _status_cell(row: CatalogRow, host: str) -> str:
+    """One per-host status cell: ``-`` when the skill does not target the host
+    or status was not computed, otherwise the lowercased install status."""
+    supported = (not row.hosts) or (host in row.hosts)
+    if not supported or row.status is None:
+        return "-"
+    status = row.status.get(host)
+    return status.value.lower() if status is not None else "-"
 
 
 def _format_table_line(items: list[str], widths: list[int]) -> str:
-    return "  ".join(item.ljust(widths[index]) for index, item in enumerate(items))
+    return "  ".join(
+        item.ljust(widths[index]) for index, item in enumerate(items)
+    ).rstrip()

@@ -122,8 +122,8 @@ def cmd_skills(args: argparse.Namespace) -> int:
     if args.disabled:
         enabled = False
 
-    state = State.load() if args.with_status else None
-    status_hosts = selected_status_hosts(manifest, host) if args.with_status else None
+    state = State.load()
+    status_hosts = selected_status_hosts(manifest, host)
 
     try:
         rows = catalog_rows(
@@ -131,11 +131,7 @@ def cmd_skills(args: argparse.Namespace) -> int:
             host=host,
             enabled=enabled,
             status_hosts=status_hosts,
-            status_lookup=(
-                None
-                if state is None
-                else lambda skill, target: status_of(manifest, skill, target, state)
-            ),
+            status_lookup=lambda skill, target: status_of(manifest, skill, target, state),
         )
     except ManifestError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -144,5 +140,5 @@ def cmd_skills(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(rows_json(rows), indent=2))
     else:
-        print(rows_table(rows, with_status=args.with_status))
+        print(rows_table(rows, status_hosts))
     return 0

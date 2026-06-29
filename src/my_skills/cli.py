@@ -77,7 +77,11 @@ def build_parser() -> argparse.ArgumentParser:
     state_filter = p_skills.add_mutually_exclusive_group()
     state_filter.add_argument("--enabled", action="store_true", help="Only enabled skills")
     state_filter.add_argument("--disabled", action="store_true", help="Only disabled skills")
-    p_skills.add_argument("--with-status", action="store_true", help="Include install status")
+    p_skills.add_argument(
+        "--with-status",
+        action="store_true",
+        help="(deprecated) install status is always shown",
+    )
     p_skills.set_defaults(func=cmd_skills)
 
     p_sync = sub.add_parser("sync", help="Update managed installs from canonical (copy mode)")

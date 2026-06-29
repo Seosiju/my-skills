@@ -1,5 +1,7 @@
 # my-skills
 
+**English** | [한국어](README.ko.md)
+
 Personal cross-agent **Agent Skill registry**. Author a skill once, keep it in
 one canonical place, and install, sync, or share it across Claude Code, Codex,
 and Hermes.
@@ -12,8 +14,9 @@ that carries YAML frontmatter (`name`, `description`).
 
 **Phase 7 — catalog and sharing UX.** The registry now covers the portable skill
 core, safe install/status/uninstall lifecycle, drift-aware `sync`, shared data
-roots, `import`, development `--mode link`, the read-only `skills` catalog, and
-the `share` workflow for promoting host-local skills into canonical `skills/`.
+roots, `import`, development `--mode link`, the `skills` catalog (which now shows
+per-host install status inline by default), and the `share` workflow for
+promoting host-local skills into canonical `skills/`.
 
 Deferred items such as watch mode, marketplace-style publish/export, upgrade
 migration, and real Windows/WSL2 verification remain in `docs/` as future work.
@@ -48,10 +51,10 @@ uv run my-skills validate shared-agent-operation
 # Report environment, detected hosts, target paths, and manifest health.
 uv run my-skills doctor
 
-# List registered canonical skills. Add --json for agent/UI consumption.
+# List registered canonical skills with per-host install status.
+# Add --json for agent/UI consumption.
 uv run my-skills skills
 uv run my-skills skills --json
-uv run my-skills skills --with-status
 
 # Preview the install plan without writing anything, then install.
 uv run my-skills install --dry-run

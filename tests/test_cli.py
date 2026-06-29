@@ -85,27 +85,35 @@ hosts = []
     return tmp_path
 
 
-def test_skills_table_lists_manifest_skills_with_frontmatter_summary(
+def test_skills_table_shows_per_host_status_columns_without_summary(
     tmp_path, monkeypatch, capsys
 ):
     monkeypatch.chdir(_make_skills_repo(tmp_path))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
 
     rc = cli.main(["skills"])
 
     out = capsys.readouterr().out
     assert rc == 0
-    assert "Skill" in out
-    assert "Enabled" in out
-    assert "Hosts" in out
-    assert "Summary" in out
+    # header: skill name, enabled flag, one column per enabled host target
+    assert "SKILL" in out
+    assert "ENABLED" in out
+    assert "CLAUDE" in out
+    assert "CODEX" in out
+    # summary/description is no longer rendered in the list view
+    assert "Summary" not in out
+    assert "Alpha summary from frontmatter." not in out
+    # every skill is listed
     assert "alpha" in out
-    assert "Alpha summary from frontmatter." in out
     assert "beta" in out
-    assert "Beta summary from frontmatter." in out
+    assert "gamma" in out
+    # beta targets only codex, so its claude cell is "-" (not targeted)
+    assert "-" in out
 
 
 def test_skills_json_filters_by_host_and_enabled_state(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(_make_skills_repo(tmp_path))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
 
     rc = cli.main(["skills", "--json", "--host", "codex", "--enabled"])
 
@@ -119,6 +127,7 @@ def test_skills_json_filters_by_host_and_enabled_state(tmp_path, monkeypatch, ca
                 "hosts": ["claude", "codex"],
                 "description": "Alpha summary from frontmatter.",
                 "path": "skills/alpha",
+                "status": {"codex": "MISSING"},
             },
             {
                 "name": "gamma",
@@ -126,6 +135,7 @@ def test_skills_json_filters_by_host_and_enabled_state(tmp_path, monkeypatch, ca
                 "hosts": [],
                 "description": "Gamma summary from frontmatter.",
                 "path": "skills/gamma",
+                "status": {"codex": "MISSING"},
             },
         ]
     }
