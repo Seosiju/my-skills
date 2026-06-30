@@ -74,24 +74,32 @@ Default to the current host when the user asks to install a skill from inside a
 specific agent. Use `--host all` only when the user explicitly asks for every
 host or cross-agent installation.
 
+A status table showing stale or missing entries across multiple hosts is
+informational only. It is not permission to update every host. If the user says
+"update" without saying "all hosts", "every host", or "cross-agent", update only
+the current host.
+
+Never add `--yes` yourself to a multi-host write. `--yes` means the user already
+approved that exact multi-host plan. If the user has not explicitly approved all
+hosts, stop after the dry-run and ask which host to update.
+
 Before writing into host directories, show the dry-run plan:
 
 ```bash
 my-skills install <skill> --host <host> --dry-run --json
-my-skills install <skill> --host all --dry-run --json
 ```
 
 If the plan is acceptable, run the matching command:
 
 ```bash
 my-skills install <skill> --host <host>
-my-skills install <skill> --host all --yes
-my-skills sync <skill>
-my-skills sync <skill> --host all --yes
+my-skills sync <skill> --host <host>
 ```
 
 Multi-host writes require `--yes` after a reviewed dry-run plan. Read-only
 checks such as `install --dry-run` and `sync --check` do not need `--yes`.
+Only use `--host all --yes` when the user's request explicitly names all hosts
+and the dry-run plan has been shown or otherwise reviewed.
 
 ## Enable Or Disable
 
