@@ -42,12 +42,21 @@ Requirements: **Python 3.11+** and [uv](https://docs.astral.sh/uv/).
 git clone https://github.com/Seosiju/my-skills.git
 cd my-skills
 
-uv run my-skills doctor     # check environment, detected hosts, target paths
-uv run my-skills skills     # list skills + per-host install status
-uv run my-skills install    # install enabled skills into your agents
+uv run my-skills bootstrap  # install the my-skills command + enabled skills
+my-skills doctor            # check environment, detected hosts, target paths
+my-skills skills            # list skills + per-host install status
 ```
 
-That's it — your skills are now available in every detected agent.
+That's it — your skills are now available in every enabled agent, and the
+`my-skills` command works from any directory. `bootstrap` installs this project as
+an editable uv tool, caches the repo root for cwd-independent runs, and runs the
+normal skill installer with explicit first-run multi-host confirmation.
+
+Preview the first-run writes without changing anything:
+
+```bash
+uv run my-skills bootstrap --dry-run
+```
 
 `skills` shows every skill and where it's installed across your hosts:
 
@@ -71,42 +80,42 @@ my-skills         yes      fresh    fresh    fresh
 
 ```bash
 # See what exists and where it's installed.
-uv run my-skills skills              # add --json for agents/UIs
-uv run my-skills status              # install status per skill and host
+my-skills skills              # add --json for agents/UIs
+my-skills status              # install status per skill and host
 
 # Install / update.
-uv run my-skills install --dry-run   # preview the plan, write nothing
-uv run my-skills install             # enabled skills -> enabled hosts
-uv run my-skills install cli-inventory --host claude
-uv run my-skills install cli-inventory --host all --yes  # explicit multi-host write
-uv run my-skills sync                # push canonical edits to managed installs
-uv run my-skills sync --check        # detect drift only (non-zero exit if not fresh)
+my-skills install --dry-run   # preview the plan, write nothing
+my-skills install             # enabled skills -> enabled hosts
+my-skills install cli-inventory --host claude
+my-skills install cli-inventory --host all --yes  # explicit multi-host write
+my-skills sync                # push canonical edits to managed installs
+my-skills sync --check        # detect drift only (non-zero exit if not fresh)
 
 # Remove a managed install (recorded destinations only).
-uv run my-skills uninstall cli-inventory --host claude
+my-skills uninstall cli-inventory --host claude
 
 # Turn a skill on/off for default install/sync selection.
-uv run my-skills enable cli-inventory
-uv run my-skills disable cli-inventory
+my-skills enable cli-inventory
+my-skills disable cli-inventory
 ```
 
 ### Bring in a skill you already wrote
 
 ```bash
 # Import an external skill directory into canonical skills/.
-uv run my-skills import ~/.hermes/skills/cli-inventory
+my-skills import ~/.hermes/skills/cli-inventory
 
 # Or review a host's local skills, then promote one into my-skills.
-uv run my-skills share --from claude --plan --json
-uv run my-skills share --from claude cli-inventory --enable
-uv run my-skills sync cli-inventory
+my-skills share --from claude --plan --json
+my-skills share --from claude cli-inventory --enable
+my-skills sync cli-inventory
 ```
 
 ### Develop a skill live
 
 ```bash
 # Symlink the host copy to canonical so edits show up without a sync.
-uv run my-skills install cli-inventory --host claude --mode link
+my-skills install cli-inventory --host claude --mode link
 ```
 
 A linked install always reports `FRESH`; `uninstall` removes only the symlink and
@@ -143,8 +152,8 @@ Canonical skills never store machine-specific data. Skills that need real local 
 (e.g. the `personal-profile` memory) read and write a single shared data root instead:
 
 ```bash
-uv run my-skills data-path personal-profile          # resolve the path
-uv run my-skills data-path personal-profile --create # and create it
+my-skills data-path personal-profile          # resolve the path
+my-skills data-path personal-profile --create # and create it
 ```
 
 The data root is machine-local and never committed.
