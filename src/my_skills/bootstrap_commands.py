@@ -47,6 +47,7 @@ def _install_args(args: argparse.Namespace) -> argparse.Namespace:
         dry_run=False,
         json=False,
         yes=True,
+        skip_audit=False,
     )
 
 

@@ -3,8 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import replace
 from typing import TypedDict
 
+from .audit.formatting import format_gate, gate_json
+from .audit.gate import audit_metadata, audit_policy_from_manifest, audit_skills
 from .checks import compose_validation
 from .cli_runtime import load_manifest_from_cwd, resolve_hosts, select_requested
 from .config import Manifest, ManifestError, Skill
@@ -59,14 +62,26 @@ def _confirm_multi_host_write(args: argparse.Namespace, hosts: list[str]) -> boo
 
 
 def _apply_plan(plan: list[PlanItem], state: State) -> tuple[int, bool]:
+    return _apply_plan_with_audit(plan, state, {})
+
+
+def _apply_plan_with_audit(
+    plan: list[PlanItem],
+    state: State,
+    audit_by_skill: dict[str, dict[str, str]],
+) -> tuple[int, bool]:
     changed = 0
     blocked = False
     for item in plan:
         if item.action in (Action.CREATE, Action.UPDATE):
             if item.mode == "link":
-                state.put(link_install(item))
+                record = link_install(item)
             else:
-                state.put(copy_install(item, mode=item.mode))
+                record = copy_install(item, mode=item.mode)
+            metadata = audit_by_skill.get(item.skill)
+            if metadata:
+                record = replace(record, **metadata)
+            state.put(record)
             changed += 1
             verb = "created" if item.action is Action.CREATE else "updated"
             suffix = " (link)" if item.mode == "link" else ""
@@ -100,6 +115,15 @@ def _install_plan_json(plan: list[PlanItem]) -> InstallPlanJson:
     }
 
 
+def _audit_selected(manifest: Manifest, skills: list[Skill], *, skip: bool):
+    paths = tuple(manifest.skills_dir / skill.name for skill in skills)
+    return audit_skills(paths, policy=audit_policy_from_manifest(manifest), skip=skip)
+
+
+def _audit_by_skill(gate) -> dict[str, dict[str, str]]:
+    return {result.skill: audit_metadata(result) for result in gate.results}
+
+
 def cmd_install(args: argparse.Namespace) -> int:
     try:
         manifest = load_manifest_from_cwd()
@@ -121,13 +145,17 @@ def cmd_install(args: argparse.Namespace) -> int:
         print("\nNo files were changed (fix validation errors first).", file=sys.stderr)
         return 1
 
+    gate = _audit_selected(manifest, skills, skip=args.skip_audit)
     state = State.load()
     plan = plan_install(manifest, skills, hosts, state, requested_mode=args.mode)
 
     if args.dry_run:
         if args.json:
-            print(json.dumps(_install_plan_json(plan), indent=2))
+            payload = _install_plan_json(plan)
+            payload["audit"] = gate_json(gate)
+            print(json.dumps(payload, indent=2))
             return 0
+        print(format_gate(gate, blocked_title="AUDIT WOULD BLOCK"))
         print("Dry run — planned actions (nothing written):")
         for item in plan:
             tag = f" [{item.mode}]" if item.mode == "link" else ""
@@ -140,7 +168,14 @@ def cmd_install(args: argparse.Namespace) -> int:
     if not _confirm_multi_host_write(args, hosts):
         return 2
 
-    changed, blocked = _apply_plan(plan, state)
+    if gate.skipped:
+        print(format_gate(gate))
+    elif gate.blocked:
+        print(format_gate(gate))
+        print("\nNo files were changed (audit blocked).", file=sys.stderr)
+        return 1
+
+    changed, blocked = _apply_plan_with_audit(plan, state, _audit_by_skill(gate))
     if changed:
         state.save()
     return 1 if blocked else 0
@@ -179,8 +214,16 @@ def cmd_sync(args: argparse.Namespace) -> int:
         print("\nNo files were changed (fix validation errors first).", file=sys.stderr)
         return 1
 
+    gate = _audit_selected(manifest, skills, skip=args.skip_audit)
+    if gate.skipped:
+        print(format_gate(gate))
+    elif gate.blocked:
+        print(format_gate(gate))
+        print("\nNo files were changed (audit blocked).", file=sys.stderr)
+        return 1
+
     plan = plan_install(manifest, skills, hosts, state)
-    changed, blocked = _apply_plan(plan, state)
+    changed, blocked = _apply_plan_with_audit(plan, state, _audit_by_skill(gate))
     if changed:
         state.save()
     return 1 if blocked else 0

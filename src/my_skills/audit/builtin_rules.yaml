@@ -1,0 +1,31 @@
+rules:
+  - id: bidi-unicode
+    category: stealth
+    severity: critical
+  - id: private-key
+    category: credential
+    severity: critical
+  - id: aws-key
+    category: credential
+    severity: critical
+  - id: secret
+    category: credential
+    severity: critical
+  - id: abs-user-path
+    category: privacy
+    severity: high
+  - id: prompt-injection
+    category: prompt-injection
+    severity: critical
+  - id: output-suppression
+    category: prompt-injection
+    severity: high
+  - id: destructive-command
+    category: command
+    severity: high
+  - id: suspicious-fetch
+    category: network
+    severity: high
+  - id: path-traversal
+    category: traversal
+    severity: critical

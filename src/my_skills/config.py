@@ -44,6 +44,14 @@ class Defaults:
 
 
 @dataclass
+class AuditSettings:
+    enabled: bool = True
+    profile: str = "default"
+    threshold: str | None = None
+    disabled_rules: list[str] = field(default_factory=list)
+
+
+@dataclass
 class Target:
     name: str
     enabled: bool
@@ -66,6 +74,7 @@ class Manifest:
     targets: dict[str, Target]
     skills: dict[str, Skill]
     root: Path
+    audit: AuditSettings = field(default_factory=AuditSettings)
 
     @property
     def skills_dir(self) -> Path:
@@ -86,6 +95,16 @@ def _resolve_defaults(data: dict, local: dict) -> Defaults:
         install_mode=merged.get("install_mode", "copy"),
         collision=merged.get("collision", "error"),
         verify_after_install=merged.get("verify_after_install", True),
+    )
+
+
+def _resolve_audit(data: dict, local: dict) -> AuditSettings:
+    merged = {**data.get("audit", {}), **local.get("audit", {})}
+    return AuditSettings(
+        enabled=bool(merged.get("enabled", True)),
+        profile=str(merged.get("profile", "default")),
+        threshold=merged.get("threshold"),
+        disabled_rules=list(merged.get("disabled_rules", [])),
     )
 
 
@@ -160,6 +179,7 @@ def load_manifest(
         schema_version=int(data.get("schema_version", 1)),
         skills_root=skills_root,
         defaults=_resolve_defaults(data, local),
+        audit=_resolve_audit(data, local),
         targets=_resolve_targets(data, local, cli),
         skills=_resolve_skills(data, local),
         root=root,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 
+from .audit_commands import cmd_audit
 from .bootstrap_commands import cmd_bootstrap
 from .cli_runtime import find_repo_root
 from .inspection_commands import cmd_doctor, cmd_skills, cmd_status, cmd_validate
@@ -29,6 +30,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_validate.add_argument("skill", nargs="?", help="Skill name (default: all)")
     p_validate.set_defaults(func=cmd_validate)
+
+    p_audit = sub.add_parser(
+        "audit", help="Audit canonical skills for agent-skill security risks"
+    )
+    p_audit.add_argument("skill", nargs="?", help="Skill name (default: enabled skills)")
+    p_audit.add_argument("--all", action="store_true", help="Include every registered skill")
+    p_audit.add_argument("--json", action="store_true", help="Print machine-readable JSON")
+    p_audit.set_defaults(func=cmd_audit)
 
     p_doctor = sub.add_parser(
         "doctor", help="Report environment, hosts, and manifest health"
@@ -82,6 +91,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_install.add_argument("--dry-run", action="store_true", help="Show the plan; change nothing")
     p_install.add_argument("--json", action="store_true", help="Print dry-run plan as JSON")
     p_install.add_argument(
+        "--skip-audit",
+        action="store_true",
+        help="Explicitly bypass the audit gate before writing",
+    )
+    p_install.add_argument(
         "--yes",
         action="store_true",
         help="Confirm writing to multiple host directories",
@@ -100,6 +114,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--force",
         action="store_true",
         help="Overwrite an existing different canonical skill",
+    )
+    p_share.add_argument(
+        "--skip-audit",
+        action="store_true",
+        help="Explicitly bypass the audit gate before writing",
     )
     p_share.set_defaults(func=cmd_share)
 
@@ -137,6 +156,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Confirm writing to multiple host directories",
     )
+    p_sync.add_argument(
+        "--skip-audit",
+        action="store_true",
+        help="Explicitly bypass the audit gate before writing",
+    )
     p_sync.set_defaults(func=cmd_sync)
 
     p_uninstall = sub.add_parser("uninstall", help="Remove managed installs")
@@ -155,6 +179,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_import.add_argument("source", help="Path to a skill directory (contains SKILL.md)")
     p_import.add_argument(
         "--force", action="store_true", help="Overwrite an existing different canonical skill"
+    )
+    p_import.add_argument(
+        "--skip-audit",
+        action="store_true",
+        help="Explicitly bypass the audit gate before writing",
     )
     p_import.set_defaults(func=cmd_import)
 

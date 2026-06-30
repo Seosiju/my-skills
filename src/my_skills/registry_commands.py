@@ -6,6 +6,8 @@ import shutil
 import sys
 from pathlib import Path
 
+from .audit.formatting import format_gate
+from .audit.gate import audit_policy_from_manifest, audit_skills
 from .checks import compose_validation
 from .cli_runtime import find_repo_root
 from .config import ManifestError, load_manifest
@@ -59,6 +61,7 @@ def cmd_share(args: argparse.Namespace) -> int:
             enabled=args.enable,
             force=args.force,
             state=State.load(),
+            skip_audit=args.skip_audit,
         )
     except ShareBlockedError as exc:
         print(f"[BLOCKED] {exc}")
@@ -68,6 +71,10 @@ def cmd_share(args: argparse.Namespace) -> int:
         return 2
 
     state = "enabled" if result.enabled else "disabled"
+    if args.force:
+        print("WARN: force overwrite allowed for existing canonical skill")
+    if args.skip_audit:
+        print("WARN: audit skipped by explicit --skip-audit")
     print(f"shared: {result.name} -> {result.canonical} ({state})")
     print(f"adopted: {result.name} -> {result.adopted_host}")
     return 0
@@ -115,6 +122,18 @@ def cmd_import(args: argparse.Namespace) -> int:
         print("\nNothing was imported (fix the source first).", file=sys.stderr)
         return 1
 
+    gate = audit_skills(
+        (source,),
+        policy=audit_policy_from_manifest(manifest),
+        skip=args.skip_audit,
+    )
+    if gate.skipped:
+        print(format_gate(gate))
+    elif gate.blocked:
+        print(format_gate(gate))
+        print("\nNothing was imported (audit blocked).", file=sys.stderr)
+        return 1
+
     try:
         meta, _ = parse_frontmatter((source / "SKILL.md").read_text(encoding="utf-8"))
     except FrontmatterError as exc:
@@ -132,6 +151,7 @@ def cmd_import(args: argparse.Namespace) -> int:
             print(f"  {target_dir}")
             print("Re-run with --force to overwrite it. Nothing was changed.", file=sys.stderr)
             return 1
+        print(f"WARN: force overwrite allowed for existing canonical skill: {target_dir}")
         shutil.rmtree(target_dir)
 
     target_dir.parent.mkdir(parents=True, exist_ok=True)

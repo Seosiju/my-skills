@@ -51,18 +51,31 @@ def test_install_dry_run_json_reports_plan_and_writes_nothing(
 
     payload = json.loads(capsys.readouterr().out)
     assert rc == 0
-    assert payload == {
-        "actions": [
+    assert payload["actions"] == [
+        {
+            "skill": "alpha",
+            "host": "claude",
+            "action": "CREATE",
+            "reason": "destination missing",
+            "mode": "copy",
+            "source": str(repo / "skills" / "alpha"),
+            "destination": str(claude / "alpha"),
+        }
+    ]
+    assert payload["audit"] == {
+        "skipped": False,
+        "blocked": False,
+        "skills": [
             {
                 "skill": "alpha",
-                "host": "claude",
-                "action": "CREATE",
-                "reason": "destination missing",
-                "mode": "copy",
-                "source": str(repo / "skills" / "alpha"),
-                "destination": str(claude / "alpha"),
+                "path": str(repo / "skills" / "alpha"),
+                "profile": "default",
+                "threshold": "critical",
+                "blocked": False,
+                "result_hash": payload["audit"]["skills"][0]["result_hash"],
+                "findings": [],
             }
-        ]
+        ],
     }
     assert not (claude / "alpha").exists()
     assert not (tmp_path / "state" / "my-skills" / "state.json").exists()

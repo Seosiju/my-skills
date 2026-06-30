@@ -32,6 +32,13 @@ class InstallRecord:
     source_hash: str
     installed_hash: str
     installed_at: str
+    source_type: str = "canonical"
+    source_url: str = ""
+    source_revision: str = ""
+    last_audit_at: str = ""
+    last_audit_result_hash: str = ""
+    audit_profile: str = ""
+    audit_threshold: str = ""
 
     @property
     def key(self) -> tuple[str, str]:

@@ -593,6 +593,22 @@ A(현재 검증)는 B(장기 렌더링)의 우회로가 아니라 토대다. 둘
   우회된다.
 - 정식 trust tier는 없더라도 source metadata와 last audit metadata는 저장된다.
 
+확인 기록(2026-07-01, 현재 브랜치 `codex/my-skills-open-source-roadmap`):
+
+- `src/my_skills/audit/` 1차 패키지를 추가했다: models, analyzer protocol,
+  static/structure analyzers, policy, gate, JSON/human formatting, builtin rule metadata.
+- `my-skills audit [skill] --json`를 추가했고, `install`, `sync`, `share`, `import`
+  write path에 write 전 audit gate를 연결했다.
+- `install --dry-run --json`은 audit would-block 정보를 포함하고, apply 경로는
+  threshold 이상의 finding을 write 전에 차단한다.
+- `--skip-audit`는 별도 명시 옵션과 출력으로만 보안 gate를 우회하며, `--force`는
+  overwrite 의사만 표시한다.
+- install state에는 `source_type`, `last_audit_at`, `last_audit_result_hash`,
+  `audit_profile`, `audit_threshold`를 저장한다.
+- RED evidence: `tests/test_audit.py`가 audit package 부재로 실패한 뒤 구현했다.
+- `uv run pytest`, focused audit/write-path tests, `python -m compileall`, `uv build`,
+  CLI surface smoke(audit block, no write, skip-audit write)가 통과했다.
+
 ### Phase 3: agent UX and governance
 
 목표: agent 대화에서 안전한 plan/apply 흐름이 자연스럽다.

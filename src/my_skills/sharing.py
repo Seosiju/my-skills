@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict
 
+from .audit.analyzers import run_audit
+from .audit.gate import audit_policy_from_manifest
 from .checks import compose_validation
 from .config import Manifest, ManifestError
 from .frontmatter import FrontmatterError, parse_frontmatter
@@ -130,6 +132,7 @@ def apply_share_from_host(
     enabled: bool,
     force: bool,
     state: State,
+    skip_audit: bool = False,
 ) -> ShareApplyResult:
     if from_host not in manifest.targets:
         raise ManifestError(f"unknown host: {from_host}")
@@ -138,8 +141,8 @@ def apply_share_from_host(
     if not (source / "SKILL.md").is_file():
         raise ManifestError(f"{source} is not an Agent Skill (no SKILL.md)")
 
-    candidate = _candidate_for_source(manifest, source)
-    errors = [risk.message for risk in candidate.risks if risk.severity == "error"]
+    candidate = _candidate_for_source(manifest, source, skip_audit=skip_audit)
+    errors = [risk.message for risk in candidate.risks if risk.severity in ("critical", "error")]
     if errors:
         raise ShareBlockedError(
             f"{candidate.name}: validation failed: {'; '.join(errors)}"
@@ -184,10 +187,10 @@ def _host_skill_dirs(source_root: Path) -> list[Path]:
     ]
 
 
-def _candidate_for_source(manifest: Manifest, source: Path) -> ShareCandidate:
+def _candidate_for_source(manifest: Manifest, source: Path, *, skip_audit: bool = False) -> ShareCandidate:
     name, description = _metadata(source)
     canonical = manifest.skills_dir / name
-    risks = _risks(source)
+    risks = _risks(manifest, source, skip_audit=skip_audit)
     canonical_status = _canonical_status(canonical, source)
     choices, recommended = _choices(risks, canonical_status)
     return ShareCandidate(
@@ -211,12 +214,17 @@ def _metadata(source: Path) -> tuple[str, str]:
     return str(meta.get("name") or source.name), str(meta.get("description") or "")
 
 
-def _risks(source: Path) -> tuple[Risk, ...]:
+def _risks(manifest: Manifest, source: Path, *, skip_audit: bool) -> tuple[Risk, ...]:
     result = compose_validation(source)
-    return tuple(
-        [Risk("error", message) for message in result.errors]
-        + [Risk("warning", message) for message in result.warnings]
-    )
+    risks = [Risk("error", message) for message in result.errors]
+    risks.extend(Risk("warning", message) for message in result.warnings)
+    if not skip_audit:
+        audit = run_audit(source, policy=audit_policy_from_manifest(manifest))
+        for finding in audit.findings:
+            risks.append(
+                Risk(finding.severity.label, f"{finding.rule_id}: {finding.file}: {finding.message}")
+            )
+    return tuple(risks)
 
 
 def _canonical_status(canonical: Path, source: Path) -> str:
@@ -228,7 +236,7 @@ def _canonical_status(canonical: Path, source: Path) -> str:
 
 
 def _choices(risks: tuple[Risk, ...], canonical_status: str) -> tuple[tuple[str, ...], str]:
-    if any(risk.severity == "error" for risk in risks) or canonical_status == "different":
+    if any(risk.severity in ("critical", "error") for risk in risks) or canonical_status == "different":
         return ("skip",), "skip"
     return ("share-enable", "share-disable", "skip"), "share-enable"
 
