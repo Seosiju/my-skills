@@ -490,18 +490,18 @@ agent UX 완료:
 - `--force`와 `--skip-audit`는 분리한다.
 - default audit threshold는 `CRITICAL`, strict threshold는 `HIGH`로 시작한다.
 - trust tier는 Phase 3에서 진행한다.
-
-아직 결정이 필요한 것:
-
-- project/user override 위치를 `.my-skills/audit-rules.yaml`로 할지 `my-skills.toml [audit]`로
-  할지
+- audit override는 역할을 분리한다.
+  - 1차는 `my-skills.toml [audit]`만 지원한다. profile, threshold, audit on/off 같은
+    단순 정책 설정을 둔다.
+  - `.my-skills/audit-rules.yaml`은 2차 이후에 추가한다. custom rule, rule disable,
+    project-specific allowlist, severity override 같은 규칙 확장 전용으로 둔다.
 
 권장 기본값:
 
 - builtin rule file은 1차부터 둔다. 규칙을 코드에 박아두지 않고 데이터로 관리하기 위해서다.
-- 다만 사용자가 직접 override하는 external rule file은 2차로 미룬다. rule schema, merge
-  order, precedence, disable semantics가 정해지지 않은 상태에서 열면 정책 복잡도가 커진다.
-- 1차 override는 `my-skills.toml [audit]`의 profile/threshold 정도로 제한한다.
+- 1차 project/user override는 `my-skills.toml [audit]`의 profile/threshold 정도로 제한한다.
+- 사용자가 직접 override하는 external rule file은 2차로 미룬다. rule schema, merge order,
+  precedence, disable semantics가 정해지지 않은 상태에서 열면 정책 복잡도가 커진다.
 
 ## 12. 바로 다음 작업
 
