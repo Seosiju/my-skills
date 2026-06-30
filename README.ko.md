@@ -57,25 +57,49 @@ flowchart LR
 
 요구 사항: **Python 3.11+** 와 [uv](https://docs.astral.sh/uv/).
 
+canonical registry를 clone한 뒤 GitHub에서 릴리스된 CLI를 설치합니다:
+
 ```bash
 git clone https://github.com/Seosiju/my-skills.git
 cd my-skills
 
-uv run my-skills bootstrap  # my-skills 명령 + 활성 스킬 설치
-my-skills doctor            # 환경, 감지된 호스트, 대상 경로 확인
-my-skills skills            # 스킬 목록 + 호스트별 설치 상태
+uv tool install git+https://github.com/Seosiju/my-skills.git
+
+my-skills bootstrap --dry-run  # 첫 설정과 스킬 쓰기 작업 미리 보기
+my-skills doctor               # 환경, 감지된 호스트, 대상 경로 확인
+my-skills skills --json        # 머신 판독용 스킬 카탈로그 + 호스트 상태
 ```
 
-이게 전부입니다 — 이제 활성화된 모든 에이전트에서 스킬을 사용할 수 있고,
-`my-skills` 명령을 어느 디렉터리에서든 실행할 수 있습니다. `bootstrap`은 이
-프로젝트를 editable uv tool로 설치하고, cwd와 무관한 실행을 위해 repo root를
-캐시한 뒤, 첫 설치에 필요한 다중 호스트 쓰기 확인을 명시적으로 포함해 일반
-스킬 installer를 실행합니다.
-
-첫 설치가 무엇을 쓸지 미리 보려면:
+`my-skills`는 현재 clone, `MY_SKILLS_ROOT`, 또는 캐시된 repo root를
+`my-skills.toml`과 `skills/`의 canonical source로 사용합니다. tool을 먼저 설치하지
+않고 소스에서 직접 실행하려면:
 
 ```bash
 uv run my-skills bootstrap --dry-run
+uv run my-skills doctor
+uv run my-skills skills --json
+uv run my-skills install my-skills --host hermes --dry-run
+```
+
+호스트에 실제 설치본을 쓰려면 설치된 CLI에서 다음을 실행합니다:
+
+```bash
+my-skills bootstrap
+```
+
+소스 체크아웃에서는 다음을 사용합니다:
+
+```bash
+uv run my-skills bootstrap
+```
+
+`bootstrap`은 `my-skills` 명령을 설치하고, cwd와 무관한 실행을 위해 repo root를
+캐시한 뒤, 첫 설치에 필요한 다중 호스트 쓰기 확인을 명시적으로 포함해 일반
+스킬 installer를 실행합니다. 먼저 다음 명령으로 쓰기 작업을 미리 보세요:
+
+```bash
+my-skills bootstrap --dry-run
+uv run my-skills bootstrap --dry-run  # 소스 체크아웃
 ```
 
 `skills`는 모든 스킬과 호스트별 설치 위치를 보여줍니다:
@@ -208,7 +232,26 @@ tests/                    # 단위 + 픽스처 기반 테스트
 
 ```bash
 uv run pytest
+uv build
 ```
+
+릴리스 hygiene에는 다음도 포함됩니다:
+
+```bash
+uv run my-skills doctor
+uv run my-skills skills --json
+uv run my-skills bootstrap --dry-run
+uv run my-skills install my-skills --host hermes --dry-run
+
+uv tool install --force git+https://github.com/Seosiju/my-skills.git
+my-skills bootstrap --dry-run
+my-skills doctor
+my-skills skills --json
+my-skills install my-skills --host hermes --dry-run
+```
+
+GitHub Release 태그를 만들기 전
+[docs/release-checklist.md](docs/release-checklist.md)를 확인하세요.
 
 ## 라이선스
 

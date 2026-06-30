@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-build-smoke:
+    name: Test, build, and smoke
+    runs-on: ubuntu-latest
+    env:
+      UV_PYTHON: "3.11"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Run tests
+        run: uv run pytest
+
+      - name: Build package
+        run: uv build
+
+      - name: Run CLI smoke checks
+        run: |
+          uv run my-skills doctor
+          uv run my-skills skills --json
+          uv run my-skills bootstrap --dry-run
+          uv run my-skills install my-skills --host hermes --dry-run
+
+      - name: Run uv tool install smoke checks
+        run: |
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/tools" "$tmp/bin" "$tmp/home" "$tmp/state" "$tmp/data" "$tmp/config"
+          UV_TOOL_DIR="$tmp/tools" UV_TOOL_BIN_DIR="$tmp/bin" \
+            uv tool install --force "git+file://$GITHUB_WORKSPACE"
+          PATH="$tmp/bin:$PATH" \
+          HOME="$tmp/home" \
+          XDG_STATE_HOME="$tmp/state" \
+          XDG_DATA_HOME="$tmp/data" \
+          XDG_CONFIG_HOME="$tmp/config" \
+            my-skills bootstrap --dry-run
+          PATH="$tmp/bin:$PATH" \
+          HOME="$tmp/home" \
+          XDG_STATE_HOME="$tmp/state" \
+          XDG_DATA_HOME="$tmp/data" \
+          XDG_CONFIG_HOME="$tmp/config" \
+            my-skills doctor
+          PATH="$tmp/bin:$PATH" \
+          HOME="$tmp/home" \
+          XDG_STATE_HOME="$tmp/state" \
+          XDG_DATA_HOME="$tmp/data" \
+          XDG_CONFIG_HOME="$tmp/config" \
+            my-skills skills --json
+          PATH="$tmp/bin:$PATH" \
+          HOME="$tmp/home" \
+          XDG_STATE_HOME="$tmp/state" \
+          XDG_DATA_HOME="$tmp/data" \
+          XDG_CONFIG_HOME="$tmp/config" \
+            my-skills install my-skills --host hermes --dry-run

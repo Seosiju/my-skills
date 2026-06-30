@@ -56,24 +56,49 @@ flowchart LR
 
 Requirements: **Python 3.11+** and [uv](https://docs.astral.sh/uv/).
 
+Clone the canonical registry, then install the released CLI from GitHub:
+
 ```bash
 git clone https://github.com/Seosiju/my-skills.git
 cd my-skills
 
-uv run my-skills bootstrap  # install the my-skills command + enabled skills
-my-skills doctor            # check environment, detected hosts, target paths
-my-skills skills            # list skills + per-host install status
+uv tool install git+https://github.com/Seosiju/my-skills.git
+
+my-skills bootstrap --dry-run  # preview first-run setup and skill writes
+my-skills doctor               # check environment, detected hosts, target paths
+my-skills skills --json        # machine-readable skill catalog + host status
 ```
 
-That's it — your skills are now available in every enabled agent, and the
-`my-skills` command works from any directory. `bootstrap` installs this project as
-an editable uv tool, caches the repo root for cwd-independent runs, and runs the
-normal skill installer with explicit first-run multi-host confirmation.
-
-Preview the first-run writes without changing anything:
+`my-skills` uses the current clone, `MY_SKILLS_ROOT`, or the cached repo root as
+the canonical source for `my-skills.toml` and `skills/`. If you want to run
+directly from source instead of installing the tool first:
 
 ```bash
 uv run my-skills bootstrap --dry-run
+uv run my-skills doctor
+uv run my-skills skills --json
+uv run my-skills install my-skills --host hermes --dry-run
+```
+
+When you are ready to write host installs, run the installed CLI:
+
+```bash
+my-skills bootstrap
+```
+
+From a source checkout, use:
+
+```bash
+uv run my-skills bootstrap
+```
+
+`bootstrap` installs the `my-skills` command, caches the repo root for
+cwd-independent runs, and runs the normal skill installer with explicit first-run
+multi-host confirmation. Preview those writes first with:
+
+```bash
+my-skills bootstrap --dry-run
+uv run my-skills bootstrap --dry-run  # source checkout
 ```
 
 `skills` shows every skill and where it's installed across your hosts:
@@ -205,7 +230,26 @@ targets only `enabled = true` skills; pass `--all` to target every registered sk
 
 ```bash
 uv run pytest
+uv build
 ```
+
+Release hygiene also expects:
+
+```bash
+uv run my-skills doctor
+uv run my-skills skills --json
+uv run my-skills bootstrap --dry-run
+uv run my-skills install my-skills --host hermes --dry-run
+
+uv tool install --force git+https://github.com/Seosiju/my-skills.git
+my-skills bootstrap --dry-run
+my-skills doctor
+my-skills skills --json
+my-skills install my-skills --host hermes --dry-run
+```
+
+See [docs/release-checklist.md](docs/release-checklist.md) before tagging a
+GitHub Release.
 
 ## License
 

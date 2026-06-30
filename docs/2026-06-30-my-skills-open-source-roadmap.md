@@ -541,6 +541,18 @@ A(현재 검증)는 B(장기 렌더링)의 우회로가 아니라 토대다. 둘
   - `my-skills skills --json`
   - `my-skills install my-skills --host hermes --dry-run`
 
+확인 기록(2026-07-01, 현재 브랜치 `codex/my-skills-open-source-roadmap`):
+
+- GitHub Actions CI, bug report template, `CONTRIBUTING.md`, `SECURITY.md`,
+  `CHANGELOG.md`, `docs/release-checklist.md`를 추가했다.
+- README와 한국어 README에 GitHub-first install, source checkout smoke,
+  release hygiene 명령을 문서화했다.
+- CI의 `actions/checkout@v7`, `astral-sh/setup-uv@v8.2.0` 태그가 upstream에
+  존재함을 확인했다.
+- `uv run pytest`, `uv build`, CI YAML parse, clean HOME/XDG source smoke,
+  임시 tool/home 환경의 `uv tool install git+file://...` smoke가 통과했다.
+- `uv build` 산출물은 검증 후 repo 밖 상태로 정리했고 commit 대상에 포함하지 않는다.
+
 ### Phase 2: minimal audit gate
 
 목표: write path가 기본 audit policy를 통과해야 한다.
