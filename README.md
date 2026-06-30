@@ -34,6 +34,24 @@ skill into a host; `sync` keeps those copies up to date. Because copies can be e
 in place, `my-skills` tracks **drift** so a `sync` never overwrites local changes
 without telling you.
 
+Think of `skills/` as your source and each host copy as a build output:
+
+```mermaid
+flowchart LR
+    edit["✏️ You"] --> src["skills/&lt;name&gt;<br/><b>source (canonical)</b>"]
+    ext["external skill"] -.->|import / share| src
+    src -->|"install (first deploy)"| out
+    src -->|"sync (re-deploy)"| out
+
+    subgraph out["build output (each host)"]
+        c["Claude Code"]
+        x["Codex"]
+        h["Hermes"]
+    end
+
+    out -. "if edited directly" .-> drift["⚠️ DRIFTED<br/>sync won't overwrite"]
+```
+
 ## Quick start
 
 Requirements: **Python 3.11+** and [uv](https://docs.astral.sh/uv/).
