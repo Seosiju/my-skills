@@ -26,6 +26,11 @@ edit points (`SERVICE_LABELS`, `EXCLUDE`); everything machine-specific — the
 resolved paths, versions, the full raw scan — is machine-local data at the
 shared data root and is never committed.
 
+When you report the inventory back to the user, write your summary in the
+user's conversation language (e.g. Korean if they are writing in Korean). Keep
+command names, versions, paths, and the group headings' meaning intact — only
+the surrounding prose is localized.
+
 ## When to use
 
 - When you need to know which command drives a service here ("what do I call to
