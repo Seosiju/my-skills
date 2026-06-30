@@ -70,18 +70,28 @@ user explicitly confirms overwriting it.
 
 ## Install Or Sync
 
+Default to the current host when the user asks to install a skill from inside a
+specific agent. Use `--host all` only when the user explicitly asks for every
+host or cross-agent installation.
+
 Before writing into host directories, show the dry-run plan:
 
 ```bash
-my-skills install <skill> --host <host|all> --dry-run --json
+my-skills install <skill> --host <host> --dry-run --json
+my-skills install <skill> --host all --dry-run --json
 ```
 
 If the plan is acceptable, run the matching command:
 
 ```bash
-my-skills install <skill> --host <host|all>
+my-skills install <skill> --host <host>
+my-skills install <skill> --host all --yes
 my-skills sync <skill>
+my-skills sync <skill> --host all --yes
 ```
+
+Multi-host writes require `--yes` after a reviewed dry-run plan. Read-only
+checks such as `install --dry-run` and `sync --check` do not need `--yes`.
 
 ## Enable Or Disable
 

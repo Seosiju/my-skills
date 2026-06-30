@@ -43,6 +43,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_install.add_argument("--mode", choices=("copy", "link"), default="copy", help="Install mode")
     p_install.add_argument("--dry-run", action="store_true", help="Show the plan; change nothing")
     p_install.add_argument("--json", action="store_true", help="Print dry-run plan as JSON")
+    p_install.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirm writing to multiple host directories",
+    )
     p_install.set_defaults(func=cmd_install)
 
     p_share = sub.add_parser("share", help="Plan sharing host-local skills into canonical")
@@ -89,11 +94,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_sync.add_argument("--host", help="Target host name, or 'all' (default: enabled targets)")
     p_sync.add_argument("--all", action="store_true", help="Include every registered skill")
     p_sync.add_argument("--check", action="store_true", help="Report drift only; change nothing")
+    p_sync.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirm writing to multiple host directories",
+    )
     p_sync.set_defaults(func=cmd_sync)
 
     p_uninstall = sub.add_parser("uninstall", help="Remove managed installs")
     p_uninstall.add_argument("skill", nargs="?", help="Skill name")
     p_uninstall.add_argument("--host", help="Target host name, or 'all' (default: enabled targets)")
+    p_uninstall.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirm removing from multiple host directories",
+    )
     p_uninstall.set_defaults(func=cmd_uninstall)
 
     p_import = sub.add_parser(

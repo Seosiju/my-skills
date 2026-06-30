@@ -24,6 +24,24 @@ def _make_repo(tmp_path: Path) -> tuple[Path, Path]:
     return tmp_path, target
 
 
+def _make_multi_host_repo(tmp_path: Path) -> tuple[Path, Path, Path]:
+    claude = tmp_path / "hosts" / "claude"
+    codex = tmp_path / "hosts" / "codex"
+    (tmp_path / "my-skills.toml").write_text(
+        'schema_version = 1\nskills_root = "skills"\n\n'
+        f'[targets.claude]\nenabled = true\nscope = "user"\npath = "{claude}"\n\n'
+        f'[targets.codex]\nenabled = true\nscope = "user"\npath = "{codex}"\n\n'
+        f'[targets.hermes]\nenabled = false\nscope = "user"\npath = "{tmp_path / "hosts" / "hermes"}"\n\n'
+        '[skills.alpha]\nenabled = true\nhosts = ["claude", "codex"]\n'
+    )
+    skill = tmp_path / "skills" / "alpha"
+    skill.mkdir(parents=True)
+    skill.joinpath("SKILL.md").write_text(
+        "---\nname: alpha\ndescription: A valid multi-host skill.\n---\n\n# Alpha\n"
+    )
+    return tmp_path, claude, codex
+
+
 def _prep(tmp_path, monkeypatch):
     repo, target = _make_repo(tmp_path)
     monkeypatch.chdir(repo)
@@ -37,6 +55,25 @@ def test_install_dry_run_writes_nothing(tmp_path, monkeypatch, capsys):
     assert "Dry run" in capsys.readouterr().out
     assert not (target / "alpha").exists()
     assert not (tmp_path / "state" / "my-skills" / "state.json").exists()
+
+
+def test_install_multi_host_requires_yes_after_dry_run(tmp_path, monkeypatch, capsys):
+    repo, claude, codex = _make_multi_host_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+    assert cli.main(["install", "alpha", "--host", "all", "--dry-run"]) == 0
+    assert "CREATE" in capsys.readouterr().out
+
+    assert cli.main(["install", "alpha", "--host", "all"]) == 2
+    err = capsys.readouterr().err
+    assert "--yes" in err
+    assert not (claude / "alpha").exists()
+    assert not (codex / "alpha").exists()
+
+    assert cli.main(["install", "alpha", "--host", "all", "--yes"]) == 0
+    assert (claude / "alpha" / "SKILL.md").exists()
+    assert (codex / "alpha" / "SKILL.md").exists()
 
 
 def test_install_creates_then_noop(tmp_path, monkeypatch, capsys):
@@ -94,3 +131,21 @@ def test_uninstall_managed(tmp_path, monkeypatch, capsys):
     capsys.readouterr()
     assert cli.main(["uninstall", "alpha"]) == 0
     assert not (target / "alpha").exists()
+
+
+def test_uninstall_multi_host_requires_yes(tmp_path, monkeypatch, capsys):
+    repo, claude, codex = _make_multi_host_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+    assert cli.main(["install", "alpha", "--host", "all", "--yes"]) == 0
+    capsys.readouterr()
+
+    assert cli.main(["uninstall", "alpha", "--host", "all"]) == 2
+    assert "--yes" in capsys.readouterr().err
+    assert (claude / "alpha" / "SKILL.md").exists()
+    assert (codex / "alpha" / "SKILL.md").exists()
+
+    assert cli.main(["uninstall", "alpha", "--host", "all", "--yes"]) == 0
+    assert not (claude / "alpha").exists()
+    assert not (codex / "alpha").exists()

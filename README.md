@@ -78,6 +78,7 @@ uv run my-skills status              # install status per skill and host
 uv run my-skills install --dry-run   # preview the plan, write nothing
 uv run my-skills install             # enabled skills -> enabled hosts
 uv run my-skills install cli-inventory --host claude
+uv run my-skills install cli-inventory --host all --yes  # explicit multi-host write
 uv run my-skills sync                # push canonical edits to managed installs
 uv run my-skills sync --check        # detect drift only (non-zero exit if not fresh)
 
@@ -114,6 +115,8 @@ never the canonical source. Copy mode is the default.
 ## How it stays safe
 
 - **Copy by default.** Installs copy the canonical directory; nothing changes until the next `install` or `sync`.
+- **Multi-host writes require confirmation.** `--host all` and other multi-host writes
+  need `--yes` after you review a dry-run plan. Read-only checks still run without it.
 - **Collision = block.** A pre-existing, unmanaged destination is never overwritten.
 - **Drift-protected.** A locally edited copy is reported, not clobbered.
 - **Atomic writes.** Installs stage to a temp dir and swap into place; failures roll back.

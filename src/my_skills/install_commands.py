@@ -42,6 +42,22 @@ def _validate_selected(manifest: Manifest, skills: list[Skill]) -> bool:
 _BLOCK_ACTIONS = (Action.BLOCK_CONFLICT, Action.BLOCK_DRIFT, Action.CONFLICT)
 
 
+def _confirm_multi_host_write(args: argparse.Namespace, hosts: list[str]) -> bool:
+    confirmed = bool(getattr(args, "yes", False))
+    if len(hosts) <= 1 or confirmed:
+        return True
+    host_list = ", ".join(hosts)
+    message = (
+        f"error: this command writes to multiple hosts ({host_list}). "
+        "Re-run with --yes after reviewing a dry-run plan."
+    )
+    print(
+        message,
+        file=sys.stderr,
+    )
+    return False
+
+
 def _apply_plan(plan: list[PlanItem], state: State) -> tuple[int, bool]:
     changed = 0
     blocked = False
@@ -121,6 +137,9 @@ def cmd_install(args: argparse.Namespace) -> int:
             )
         return 0
 
+    if not _confirm_multi_host_write(args, hosts):
+        return 2
+
     changed, blocked = _apply_plan(plan, state)
     if changed:
         state.save()
@@ -153,6 +172,9 @@ def cmd_sync(args: argparse.Namespace) -> int:
                     drift = True
         return 1 if drift else 0
 
+    if not _confirm_multi_host_write(args, hosts):
+        return 2
+
     if not _validate_selected(manifest, skills):
         print("\nNo files were changed (fix validation errors first).", file=sys.stderr)
         return 1
@@ -183,6 +205,9 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
 
     state = State.load()
     plan = plan_uninstall(manifest, args.skill, hosts, state)
+    if not _confirm_multi_host_write(args, hosts):
+        return 2
+
     removed = 0
     warned = False
     for item in plan:

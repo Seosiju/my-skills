@@ -114,7 +114,11 @@ def test_share_apply_imports_registers_adopts_source_and_syncs(
     assert manifest.skills["repo-analysis"].hosts == ["claude", "codex", "hermes"]
     assert (repo / "skills" / "repo-analysis" / "SKILL.md").exists()
 
-    assert cli.main(["sync", "repo-analysis"]) == 0
+    assert cli.main(["sync", "repo-analysis"]) == 2
+    assert "--yes" in capsys.readouterr().err
+    assert not (codex / "repo-analysis").exists()
+
+    assert cli.main(["sync", "repo-analysis", "--yes"]) == 0
     assert "unchanged: repo-analysis -> claude" in capsys.readouterr().out
     assert (codex / "repo-analysis" / "SKILL.md").exists()
 

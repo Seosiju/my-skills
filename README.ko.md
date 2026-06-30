@@ -79,6 +79,7 @@ uv run my-skills status              # 스킬별·호스트별 설치 상태
 uv run my-skills install --dry-run   # 계획만 미리 보기, 아무것도 안 씀
 uv run my-skills install             # 활성 스킬 -> 활성 호스트
 uv run my-skills install cli-inventory --host claude
+uv run my-skills install cli-inventory --host all --yes  # 명시적인 다중 호스트 쓰기
 uv run my-skills sync                # 정규 편집을 관리되는 설치본으로 전파
 uv run my-skills sync --check        # 드리프트만 감지 (fresh 아니면 비정상 종료코드)
 
@@ -115,6 +116,9 @@ uv run my-skills install cli-inventory --host claude --mode link
 ## 안전성은 이렇게 지켜집니다
 
 - **기본은 복사.** 설치는 정규 디렉터리를 복사하며, 다음 `install` 또는 `sync` 전까지 아무것도 바뀌지 않습니다.
+- **다중 호스트 쓰기는 확인이 필요합니다.** `--host all` 등 여러 호스트에 쓰는
+  명령은 dry-run 계획을 확인한 뒤 `--yes`를 붙여야 합니다. 읽기 전용 확인은
+  `--yes` 없이 실행됩니다.
 - **충돌 = 차단.** 이미 존재하는 비관리 대상은 절대 덮어쓰지 않습니다.
 - **드리프트 보호.** 로컬에서 편집된 복사본은 덮어쓰지 않고 보고합니다.
 - **원자적 쓰기.** 설치는 임시 디렉터리에 준비한 뒤 제자리로 교체하며, 실패 시 롤백합니다.
