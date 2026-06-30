@@ -667,6 +667,24 @@ A(현재 검증)는 B(장기 렌더링)의 우회로가 아니라 토대다. 둘
 - credential reader x network sender 같은 bundle-level risk가 표시된다.
 - strict profile에서 더 보수적으로 block할 수 있다.
 
+확인 기록(2026-07-01, 현재 브랜치 `codex/my-skills-open-source-roadmap`):
+
+- Markdown analyzer가 remote image URL을 `markdown-remote-image` finding으로 표시한다.
+- command tier analyzer가 credential reader와 network sender 명령을 별도 finding으로
+  분류한다.
+- dataflow analyzer가 한 skill bundle 안의 credential reader x network sender 조합을
+  critical `credential-network-flow`로 표시한다.
+- `my-skills audit --all --json`은 선택된 skill 집합의 cross-skill
+  `cross-skill-credential-network` bundle finding을 최상위에 표시한다.
+- `strict` profile은 high severity command-tier finding도 block하며, 기본 profile은
+  critical threshold를 유지한다.
+- `disabled_rules`는 analyzer id뿐 아니라 개별 rule id override에도 적용된다.
+- RED evidence: `phase4-red-deeper-audit.txt`가 markdown/command/dataflow/cross-skill/
+  rule-id override 부재로 5개 실패한 뒤 구현했다.
+- `phase4-green-audit.txt`, `phase4-audit-cli-smoke.json`, `phase4-pytest.txt`,
+  `phase4-compileall.txt`, `phase4-uv-build.txt`, `phase4-diff-check.txt` 검증을
+  통과했다.
+
 ## 10. 성공 기준
 
 오픈소스 배포 준비 완료:

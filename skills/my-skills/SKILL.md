@@ -88,8 +88,12 @@ skill is safe to install:
 
 ```bash
 my-skills audit <skill> --json
+my-skills audit --all --json
 my-skills skills --json --with-status
 ```
+
+Use `audit --all --json` before applying multiple skills so bundle-level and
+cross-skill findings are visible.
 
 If audit returns `blocked: true`, stop and show the finding. Do not install,
 sync, share, or import that skill. The only bypass is `--skip-audit`, and that

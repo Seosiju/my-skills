@@ -37,10 +37,19 @@ TEXT_SUFFIXES = {
 
 
 def default_analyzers() -> tuple[Analyzer, ...]:
+    from .commands import CommandAnalyzer
+    from .dataflow import DataflowAnalyzer
+    from .markdown import MarkdownAnalyzer
     from .static import StaticAnalyzer
     from .structure import StructureAnalyzer
 
-    return (StaticAnalyzer(), StructureAnalyzer())
+    return (
+        StaticAnalyzer(),
+        StructureAnalyzer(),
+        MarkdownAnalyzer(),
+        CommandAnalyzer(),
+        DataflowAnalyzer(),
+    )
 
 
 def run_audit(
@@ -62,10 +71,17 @@ def run_audit(
 
     for analyzer in selected:
         if analyzer.scope is AnalyzerScope.SKILL:
-            findings.extend(_safe_analyze(analyzer, AuditContext(root=root)))
+            findings.extend(
+                _active_findings(
+                    _safe_analyze(analyzer, AuditContext(root=root)),
+                    active_policy,
+                )
+            )
         else:
             for context in _file_contexts(root):
-                findings.extend(_safe_analyze(analyzer, context))
+                findings.extend(
+                    _active_findings(_safe_analyze(analyzer, context), active_policy)
+                )
 
     return AuditResult(
         skill=root.name,
@@ -128,3 +144,12 @@ def _safe_analyze(analyzer: Analyzer, context: AuditContext) -> tuple[AuditFindi
                 message=f"{analyzer.id} failed: {exc}",
             ),
         )
+
+
+def _active_findings(
+    findings: tuple[AuditFinding, ...],
+    policy: AuditPolicy,
+) -> tuple[AuditFinding, ...]:
+    return tuple(
+        finding for finding in findings if finding.rule_id not in policy.disabled_rules
+    )

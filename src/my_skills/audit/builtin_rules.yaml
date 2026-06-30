@@ -29,3 +29,18 @@ rules:
   - id: path-traversal
     category: traversal
     severity: critical
+  - id: markdown-remote-image
+    category: markdown
+    severity: medium
+  - id: credential-reader
+    category: credential
+    severity: high
+  - id: network-sender
+    category: network
+    severity: medium
+  - id: credential-network-flow
+    category: dataflow
+    severity: critical
+  - id: cross-skill-credential-network
+    category: bundle
+    severity: critical
