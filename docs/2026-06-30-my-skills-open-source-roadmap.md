@@ -508,6 +508,16 @@ A(현재 검증)는 B(장기 렌더링)의 우회로가 아니라 토대다. 둘
 - 공개 repo에 실제 개인 계정/토큰/path가 없다.
 - 개인 skill은 예제 또는 local-only로 분리되어 있다.
 
+확인 기록(2026-07-01, 현재 브랜치 `codex/my-skills-open-source-roadmap`):
+
+- Phase 0 완료 커밋 `d021624`, `6c28f4f`가 현재 `HEAD`에 포함되어 있음을 확인했다.
+- `skills/my-jira/config.json`은 tracked file이 아니고, placeholder
+  `skills/my-jira/config.example.json`만 tracked file이다.
+- README에는 `my-skills data-path`, `my-skills.local.toml`, `local/`을 통한
+  machine-local/private data 분리 방법이 문서화되어 있다.
+- `tests/test_public_hygiene.py`, 전체 `uv run pytest`, clean clone + 임시
+  HOME/XDG 환경의 `uv run pytest`, `my-skills bootstrap --dry-run`이 통과했다.
+
 ### Phase 1: release-ready hygiene
 
 목표: 다른 사용자가 설치하고 검증할 수 있다.
