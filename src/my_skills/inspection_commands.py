@@ -8,6 +8,8 @@ import shutil
 import sys
 from pathlib import Path
 
+from .audit.analyzers import run_audit
+from .audit.gate import audit_policy_from_manifest
 from . import config as config_mod
 from .catalog import catalog_rows, rows_json, rows_table, selected_status_hosts
 from .checks import compose_validation
@@ -124,6 +126,9 @@ def cmd_skills(args: argparse.Namespace) -> int:
 
     state = State.load()
     status_hosts = selected_status_hosts(manifest, host)
+    governance_lookup = None
+    if args.with_status:
+        governance_lookup = lambda skill: _governance_for_skill(manifest, skill.name, state)
 
     try:
         rows = catalog_rows(
@@ -132,6 +137,7 @@ def cmd_skills(args: argparse.Namespace) -> int:
             enabled=enabled,
             status_hosts=status_hosts,
             status_lookup=lambda skill, target: status_of(manifest, skill, target, state),
+            governance_lookup=governance_lookup,
         )
     except ManifestError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -142,3 +148,37 @@ def cmd_skills(args: argparse.Namespace) -> int:
     else:
         print(rows_table(rows, status_hosts))
     return 0
+
+
+def _governance_for_skill(
+    manifest: Manifest,
+    skill_name: str,
+    state: State,
+) -> tuple[dict[str, str], dict[str, str]]:
+    result = run_audit(manifest.skills_dir / skill_name, policy=audit_policy_from_manifest(manifest))
+    records = [
+        record
+        for record in state.records()
+        if record.skill == skill_name and record.last_audit_result_hash
+    ]
+    record = next((item for item in records if item.source_type == "host"), None)
+    record = record or (records[0] if records else None)
+    last_hash = record.last_audit_result_hash if record else result.result_hash
+    source_type = record.source_type if record else "canonical"
+    trust_tier = "imported-local" if source_type == "host" else "local-authored"
+    status = "blocked" if result.blocked else "ok"
+    threshold = result.threshold.label if result.threshold else "none"
+    return (
+        {
+            "status": status,
+            "profile": result.profile,
+            "threshold": threshold,
+            "result_hash": result.result_hash,
+            "findings": str(len(result.findings)),
+        },
+        {
+            "source_type": source_type,
+            "trust_tier": trust_tier,
+            "last_audit_result_hash": last_hash,
+        },
+    )

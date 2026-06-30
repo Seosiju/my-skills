@@ -66,9 +66,9 @@ First produce a read-only plan:
 my-skills share --from <claude|codex|hermes> --plan --json
 ```
 
-Show the user the candidate skills, validation risks, canonical status, and
-available choices. Continue only after the user chooses to enable, disable, or
-skip. Apply the selected choice:
+Show the user the candidate skills, validation/audit risks, canonical status,
+and available choices. Continue only after the user chooses to enable, disable,
+or skip. Apply the selected choice:
 
 ```bash
 my-skills share --from <host> <skill> --enable
@@ -77,6 +77,23 @@ my-skills share --from <host> <skill> --disable
 
 Use `--force` only when the plan reports a *different* canonical skill and the
 user explicitly confirms overwriting it.
+
+Never use `--skip-audit` for share/import unless the user explicitly accepts the
+audit risk. `--force` only answers "may overwrite?"; it does not bypass audit.
+
+## Audit
+
+Run audit before a write when the user asks about risk, provenance, or whether a
+skill is safe to install:
+
+```bash
+my-skills audit <skill> --json
+my-skills skills --json --with-status
+```
+
+If audit returns `blocked: true`, stop and show the finding. Do not install,
+sync, share, or import that skill. The only bypass is `--skip-audit`, and that
+requires explicit user approval for the exact command.
 
 ## Install Or Sync
 
@@ -99,7 +116,8 @@ Before writing into host directories, show the dry-run plan:
 my-skills install <skill> --host <host> --dry-run --json
 ```
 
-If the plan is acceptable, run the matching command:
+Review both `actions` and `audit`. If audit would block, do not continue. If the
+plan is acceptable, run the matching command:
 
 ```bash
 my-skills install <skill> --host <host>

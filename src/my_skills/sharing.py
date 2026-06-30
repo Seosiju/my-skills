@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import TypedDict
 
 from .audit.analyzers import run_audit
-from .audit.gate import audit_policy_from_manifest
+from .audit.gate import audit_metadata, audit_policy_from_manifest
+from .audit.policy import AuditPolicy
 from .checks import compose_validation
 from .config import Manifest, ManifestError
 from .frontmatter import FrontmatterError, parse_frontmatter
@@ -281,13 +282,9 @@ def _replace_canonical(source: Path, canonical: Path, *, force: bool) -> None:
     shutil.copytree(source, canonical)
 
 
-def _adopt_source_host(
-    state: State,
-    skill: str,
-    host: str,
-    canonical: Path,
-    source: Path,
-) -> None:
+def _adopt_source_host(state: State, skill: str, host: str, canonical: Path, source: Path) -> None:
+    audit = run_audit(canonical, policy=AuditPolicy())
+    metadata = audit_metadata(audit)
     state.put(
         InstallRecord(
             skill=skill,
@@ -298,6 +295,10 @@ def _adopt_source_host(
             source_hash=hash_directory(canonical),
             installed_hash=hash_directory(source),
             installed_at=_utcnow(),
+            source_type="host",
+            source_url=str(source),
+            source_revision=hash_directory(source),
+            **metadata,
         )
     )
 

@@ -22,3 +22,5 @@ class HostConfig:
     reload_hint: str
     frontmatter_policy: str = "standard"
     optional_metadata: tuple[str, ...] = ()
+    description_max_chars: int = 768
+    frontmatter_keep_fields: tuple[str, ...] = ("name", "description")

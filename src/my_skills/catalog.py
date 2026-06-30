@@ -17,6 +17,8 @@ class SkillJsonRow(TypedDict):
     description: str
     path: str
     status: NotRequired[dict[str, str]]
+    audit: NotRequired[dict[str, str]]
+    provenance: NotRequired[dict[str, str]]
 
 
 class CatalogJson(TypedDict):
@@ -31,9 +33,12 @@ class CatalogRow:
     description: str
     path: Path
     status: dict[str, Status] | None = None
+    audit: dict[str, str] | None = None
+    provenance: dict[str, str] | None = None
 
 
 StatusLookup = Callable[[Skill, str], Status]
+GovernanceLookup = Callable[[Skill], tuple[dict[str, str], dict[str, str]]]
 
 
 def selected_status_hosts(manifest: Manifest, host: str | None) -> list[str]:
@@ -49,6 +54,7 @@ def catalog_rows(
     enabled: bool | None = None,
     status_hosts: list[str] | None = None,
     status_lookup: StatusLookup | None = None,
+    governance_lookup: GovernanceLookup | None = None,
 ) -> list[CatalogRow]:
     if host is not None and host not in manifest.targets:
         raise ManifestError(f"unknown host: {host}")
@@ -59,7 +65,15 @@ def catalog_rows(
             continue
         if host is not None and skill.hosts and host not in skill.hosts:
             continue
-        rows.append(_row_for_skill(manifest, skill, status_hosts, status_lookup))
+        rows.append(
+            _row_for_skill(
+                manifest,
+                skill,
+                status_hosts,
+                status_lookup,
+                governance_lookup,
+            )
+        )
     return rows
 
 
@@ -68,12 +82,16 @@ def rows_json(rows: list[CatalogRow]) -> CatalogJson:
 
 
 def rows_table(rows: list[CatalogRow], status_hosts: list[str]) -> str:
+    include_governance = any(row.audit is not None for row in rows)
     headers = ["SKILL", "ENABLED", *(host.upper() for host in status_hosts)]
+    if include_governance:
+        headers.extend(["AUDIT", "TRUST"])
     raw_rows = [
         [
             row.name,
             "yes" if row.enabled else "no",
             *(_status_cell(row, host) for host in status_hosts),
+            *(_governance_cells(row) if include_governance else ()),
         ]
         for row in rows
     ]
@@ -93,11 +111,16 @@ def _row_for_skill(
     skill: Skill,
     status_hosts: list[str] | None,
     status_lookup: StatusLookup | None,
+    governance_lookup: GovernanceLookup | None,
 ) -> CatalogRow:
     source_path = manifest.skills_dir / skill.name
     status = None
     if status_hosts is not None and status_lookup is not None:
         status = {host: status_lookup(skill, host) for host in status_hosts}
+    audit = None
+    provenance = None
+    if governance_lookup is not None:
+        audit, provenance = governance_lookup(skill)
     return CatalogRow(
         name=skill.name,
         enabled=skill.enabled,
@@ -105,6 +128,8 @@ def _row_for_skill(
         description=_description(source_path),
         path=Path(manifest.skills_root) / skill.name,
         status=status,
+        audit=audit,
+        provenance=provenance,
     )
 
 
@@ -126,6 +151,10 @@ def _row_json(row: CatalogRow) -> SkillJsonRow:
     }
     if row.status is not None:
         raw["status"] = {host: status.value for host, status in row.status.items()}
+    if row.audit is not None:
+        raw["audit"] = row.audit
+    if row.provenance is not None:
+        raw["provenance"] = row.provenance
     return raw
 
 
@@ -137,6 +166,12 @@ def _status_cell(row: CatalogRow, host: str) -> str:
         return "-"
     status = row.status.get(host)
     return status.value.lower() if status is not None else "-"
+
+
+def _governance_cells(row: CatalogRow) -> tuple[str, str]:
+    audit = row.audit or {}
+    provenance = row.provenance or {}
+    return (audit.get("status", "-"), provenance.get("trust_tier", "-"))
 
 
 def _format_table_line(items: list[str], widths: list[int]) -> str:

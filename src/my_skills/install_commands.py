@@ -11,9 +11,11 @@ from .audit.gate import audit_metadata, audit_policy_from_manifest, audit_skills
 from .checks import compose_validation
 from .cli_runtime import load_manifest_from_cwd, resolve_hosts, select_requested
 from .config import Manifest, ManifestError, Skill
+from .hosts import get_host
 from .installer import copy_install, link_install, uninstall
 from .planner import Action, PlanItem, Status, plan_install, plan_uninstall, status_of
 from .state import State
+from .validation import validate_skill_for_host
 
 
 class InstallActionJson(TypedDict):
@@ -30,15 +32,29 @@ class InstallPlanJson(TypedDict):
     actions: list[InstallActionJson]
 
 
-def _validate_selected(manifest: Manifest, skills: list[Skill]) -> bool:
+def _validate_selected(manifest: Manifest, skills: list[Skill], hosts: list[str]) -> bool:
     ok = True
     for skill in skills:
-        result = compose_validation(manifest.skills_dir / skill.name)
+        skill_dir = manifest.skills_dir / skill.name
+        result = compose_validation(skill_dir)
         if not result.ok:
             ok = False
             print(f"[BLOCKED] {skill.name}: validation failed")
             for error in result.errors:
                 print(f"  error: {error}")
+        for host in hosts:
+            try:
+                host_config = get_host(host)
+            except KeyError:
+                continue
+            host_result = validate_skill_for_host(skill_dir, host_config)
+            if not host_result.ok:
+                ok = False
+                print(f"[BLOCKED] {skill.name}: {host} validation failed")
+                for error in host_result.errors:
+                    print(f"  error: {error}")
+            for warning in host_result.warnings:
+                print(f"  warn: {warning}")
     return ok
 
 
@@ -141,7 +157,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         print("error: install --json requires --dry-run", file=sys.stderr)
         return 2
 
-    if not _validate_selected(manifest, skills):
+    if not _validate_selected(manifest, skills, hosts):
         print("\nNo files were changed (fix validation errors first).", file=sys.stderr)
         return 1
 
@@ -210,7 +226,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
     if not _confirm_multi_host_write(args, hosts):
         return 2
 
-    if not _validate_selected(manifest, skills):
+    if not _validate_selected(manifest, skills, hosts):
         print("\nNo files were changed (fix validation errors first).", file=sys.stderr)
         return 1
 

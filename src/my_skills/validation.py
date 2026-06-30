@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .frontmatter import FrontmatterError, parse_frontmatter
+from .hosts.base import HostConfig
 
 NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 MAX_NAME_LEN = 64
@@ -106,8 +107,28 @@ def validate_skill(path: Path) -> ValidationResult:
 
     # Absolute host path leakage in the body -> warning (prefer host-neutral).
     if _ABS_PATH_RE.search(body):
-        result.warnings.append(
+        result.errors.append(
             "body contains an absolute host path; prefer host-neutral relative paths"
         )
 
+    return result
+
+
+def validate_skill_for_host(path: Path, host: HostConfig) -> ValidationResult:
+    result = validate_skill(path)
+    if not result.ok:
+        return result
+
+    skill_md = path / "SKILL.md"
+    meta, _body = parse_frontmatter(skill_md.read_text(encoding="utf-8"))
+    description = str(meta.get("description", ""))
+    if len(description) > host.description_max_chars:
+        result.errors.append(
+            f"{host.name} description exceeds {host.description_max_chars} characters"
+        )
+    extra = sorted(set(meta) - set(host.frontmatter_keep_fields) - set(host.optional_metadata))
+    if extra:
+        result.warnings.append(
+            f"{host.name} may ignore unsupported frontmatter fields: {', '.join(extra)}"
+        )
     return result

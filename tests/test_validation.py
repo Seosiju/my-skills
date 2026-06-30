@@ -2,7 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from my_skills.validation import MAX_DESCRIPTION_LEN, validate_name, validate_skill
+from my_skills.hosts.base import HostConfig
+from my_skills.validation import (
+    MAX_DESCRIPTION_LEN,
+    validate_name,
+    validate_skill,
+    validate_skill_for_host,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -63,10 +69,10 @@ def test_missing_reference():
     )
 
 
-def test_abs_path_is_warning_not_error():
+def test_abs_path_is_error_not_warning():
     result = validate_skill(FIXTURES / "abs-path-warning")
-    assert result.ok, result.errors
-    assert any("absolute host path" in w for w in result.warnings)
+    assert not result.ok
+    assert any("absolute host path" in e for e in result.errors)
 
 
 def test_long_description(tmp_path):
@@ -77,6 +83,30 @@ def test_long_description(tmp_path):
         f"---\nname: long-desc\ndescription: {long_desc}\n---\n\n# Body\n"
     )
     assert any("description exceeds" in e for e in validate_skill(d).errors)
+
+
+def test_host_description_limit_is_enforced(tmp_path):
+    d = tmp_path / "host-limited"
+    d.mkdir()
+    description = "x" * 90
+    (d / "SKILL.md").write_text(
+        f"---\nname: host-limited\ndescription: {description}\n---\n\n# Body\n"
+    )
+    host = HostConfig(
+        name="tiny",
+        display_name="Tiny Host",
+        detect_commands=(),
+        default_user_path="~/tiny",
+        default_project_path=".tiny",
+        supports_symlink=True,
+        reload_hint="restart",
+        description_max_chars=80,
+    )
+
+    result = validate_skill_for_host(d, host)
+
+    assert not result.ok
+    assert any("tiny description exceeds 80 characters" in e for e in result.errors)
 
 
 @pytest.mark.parametrize(

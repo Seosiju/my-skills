@@ -632,6 +632,24 @@ A(현재 검증)는 B(장기 렌더링)의 우회로가 아니라 토대다. 둘
 - skill 콘텐츠는 host별로 변환되지 않으며, 설치본은 canonical과 hash가 일치한다.
 - host-중립 authoring 규칙이 validation으로 강제된다(절대 host 경로/비중립 참조 검출).
 
+확인 기록(2026-07-01, 현재 브랜치 `codex/my-skills-open-source-roadmap`):
+
+- `skills/my-skills/SKILL.md`를 audit/share/install decision flow 중심으로 보강해
+  agent가 표준 CLI surface와 JSON output을 우선 사용하도록 정리했다.
+- `my-skills skills --json --with-status`와 table output에 audit status, result hash,
+  source provenance, trust tier를 표시한다.
+- host adapter는 description 길이와 유지할 frontmatter field를 선언하며,
+  `install/sync`는 canonical skill을 host별 제약으로 검증한 뒤 write한다.
+- host-neutral authoring 규칙을 강화해 host 절대경로는 validation error가 되고,
+  host가 지원하지 않는 frontmatter field는 host validation warning으로 표시된다.
+- host share/import adoption은 `source_type=host`, `source_url`, `source_revision`,
+  last audit metadata를 state에 남긴다.
+- RED evidence: `phase3-red-governance.txt`가 governance/host validation API 부재로
+  실패한 뒤 구현했다.
+- `phase3-green-attempt1.txt`, `phase3-skills-governance-smoke.json`,
+  `phase3-pytest.txt`, `phase3-compileall.txt`, `phase3-uv-build.txt`,
+  `phase3-diff-check.txt` 검증을 통과했다.
+
 ### Phase 4: deeper audit
 
 목표: agent skill 특유의 조합 위험을 볼 수 있다.

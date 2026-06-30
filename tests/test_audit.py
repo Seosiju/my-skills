@@ -116,6 +116,28 @@ def test_install_records_last_audit_metadata(tmp_path, monkeypatch, capsys):
     assert record.audit_threshold == "critical"
 
 
+def test_skills_with_status_json_includes_audit_provenance_and_trust(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    repo, _target, _skill = _repo(tmp_path)
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    assert cli.main(["install", "alpha", "--host", "hermes"]) == 0
+    capsys.readouterr()
+
+    assert cli.main(["skills", "--json", "--with-status"]) == 0
+
+    row = json.loads(capsys.readouterr().out)["skills"][0]
+    assert row["audit"]["status"] == "ok"
+    assert row["audit"]["threshold"] == "critical"
+    assert row["audit"]["result_hash"].startswith("sha256:")
+    assert row["provenance"]["source_type"] == "canonical"
+    assert row["provenance"]["trust_tier"] == "local-authored"
+    assert row["provenance"]["last_audit_result_hash"].startswith("sha256:")
+
+
 class _CustomAnalyzer:
     id = "custom-critical"
     scope = AnalyzerScope.SKILL
