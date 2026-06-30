@@ -37,8 +37,10 @@ twg user search "" --email "<config.account.email>" --limit 1
 ```bash
 twg jira workitem query \
   --jql "project = <config.project> AND statusCategory != Done ORDER BY priority DESC, updated DESC" \
-  --first 20 --output json \
-  | jq -r '.data.issues[] | "\(.key)  [\(.status.name)]  \(.summary)"'
+  --first 20 --output json > /tmp/twg_snapshot.json 2>&1
+# stdout.json 경로 추출 후 파싱
+STDOUT_FILE=$(grep 'stdout:' /tmp/twg_snapshot.json | awk '{print $2}' | tr -d '"')
+jq -r '.data.issues[] | "\(.key)  [\(.status.name)]  \(.summary)"' "$STDOUT_FILE"
 ```
 열린 이슈 목록을 사용자에게 간단히 보여준다.
 
@@ -69,8 +71,10 @@ twg jira workitem query --jql "assignee = currentUser() ORDER BY updated DESC" -
 # KAN 열린 이슈
 twg jira workitem query --jql 'project = KAN AND statusCategory != Done ORDER BY priority DESC, updated DESC' --first 50 --output json
 
-# 단일 이슈 (응답이 .data[0] 배열임에 주의)
-twg jira workitem get KAN-25 --output json | jq -r '.data[0] | "\(.key)  \(.summary)  [\(.status.name)]"'
+# 단일 이슈 (응답이 .data[0] 배열임에 주의) — 파일로 받아서 파싱
+twg jira workitem get KAN-25 --output json > /tmp/twg_issue.json 2>&1
+STDOUT_FILE=$(grep 'stdout:' /tmp/twg_issue.json | awk '{print $2}' | tr -d '"')
+jq -r '.data[0] | "\(.key)  \(.summary)  [\(.status.name)]"' "$STDOUT_FILE"
 ```
 
 ## 쓰기 작업 (생성 / 수정 / 삭제 / 전환)
@@ -93,8 +97,11 @@ twg jira workitem get KAN-25 --output json | jq -r '.data[0] | "\(.key)  \(.summ
 
 1. 페이지 크기 = `--first` (`--limit` 아님 → `unknown option` 에러).
 2. 무제한 JQL 거부됨 → 항상 제한 조건 포함 (`project = KAN`, `assignee = currentUser()` 등).
-3. 출력 모드: `--output json`만 → JSON이 stdout 직접 출력 /
-   `--output json --output-summary stats` → YAML envelope + 임시파일(`output_files.stdout`).
+3. 출력 모드: twg는 **AI 에이전트 환경**(`AI_AGENT`/`CLAUDECODE` 환경변수)을 감지하면
+   `--output json`만 써도 YAML envelope + 임시파일로 출력함(envelope에 `agent_output:` 블록 포함).
+   Claude Code 등 에이전트 안에서는 항상 이 모드 → OS·TTY·파이프 무관. (env 제거 시 직접 JSON 확인됨.)
+   대응: 항상 임시파일 경로를 읽어 jq로 파싱. 패턴:
+   `twg ... --output json > /tmp/out.txt 2>&1` 후 `stdout:` 행에서 경로 추출 → `jq ... "$FILE"`.
 4. 정체성 조회는 `user search --email`. `resolve --query "me"`는 실패.
 5. 응답 구조: `workitem query`는 `.data.issues[]`, `workitem get`은 `.data[0]`.
 6. 상태값은 한글. JQL에 `status = "완료"` 또는 언어 독립 `statusCategory`(Done/In Progress/To Do).
