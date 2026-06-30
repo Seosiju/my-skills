@@ -34,13 +34,14 @@ twg user search "" --email "<config.account.email>" --limit 1
 - 실패하면 중단하고 재인증 안내: `twg auth login` (자세한 건 `twg help auth`).
 
 ### 3단계 — KAN 현재 상태 스냅샷
+`query`는 버전 내성 패턴 필수 ("조회 규칙" 2번 — `| jq` 직접 파이프 금지, 엔벨로프 대응):
 ```bash
+out="${TMPDIR:-/tmp}/twg-out.json"
 twg jira workitem query \
   --jql "project = <config.project> AND statusCategory != Done ORDER BY priority DESC, updated DESC" \
-  --first 20 --output json > /tmp/twg_snapshot.json 2>&1
-# stdout.json 경로 추출 후 파싱
-STDOUT_FILE=$(grep 'stdout:' /tmp/twg_snapshot.json | awk '{print $2}' | tr -d '"')
-jq -r '.data.issues[] | "\(.key)  [\(.status.name)]  \(.summary)"' "$STDOUT_FILE"
+  --first 20 --output json > "$out" 2>/dev/null
+jq -e . "$out" >/dev/null 2>&1 || out=$(sed -n 's/^[[:space:]]*stdout:[[:space:]]*"\(.*\)".*/\1/p' "$out" | head -1)
+jq -r '.data.issues[] | "\(.key)  [\(.status.name)]  \(.summary)"' "$out"
 ```
 열린 이슈 목록을 사용자에게 간단히 보여준다.
 
@@ -51,8 +52,6 @@ jq -r '.data.issues[] | "\(.key)  [\(.status.name)]  \(.summary)"' "$STDOUT_FILE
 
 ## 검증된 환경 값 (요약 — 단일 진실원은 config.json)
 
-> 스냅샷 — 정본은 config.json. 값이 다르면 config.json이 맞다.
-
 | 항목 | 값 |
 |---|---|
 | 바이너리 | PATH의 `twg` (보통 `~/.local/bin/twg`). skill 폴더의 `./twg` **아님** |
@@ -61,20 +60,49 @@ jq -r '.data.issues[] | "\(.key)  [\(.status.name)]  \(.summary)"' "$STDOUT_FILE
 | 프로젝트 | `KAN` (단일) |
 | 상태값 | `해야 할 일`, `진행 중`, `완료` |
 | 쓰기 검증 | 검증됨 (`write_verified: "2026-06-29"`) |
+| twg 버전 | **1.0.18+ 권장** (이하 버전은 업데이트 배너가 stdout 오염 → jq 파손). 각 호스트에서 `twg update`로 최신 유지 = 이식성 앵커 |
+
+## 조회 규칙 (read 견고화 — 항상 지킬 것)
+
+1. **절대 `... --output json | jq` 직접 파이프 금지.** twg가 배너·진행표시(spinner)를
+   stdout으로 흘리면 스트림이 오염/절단돼 깨진다. → JSON은 **파일로 받은 뒤** jq.
+2. **`workitem query`는 환경 내성 패턴 필수.** twg는 **에이전트 환경**(`AI_AGENT`/
+   `CLAUDECODE` 등 env 감지)에서 query를 large-output로 보고 stdout에 **YAML 엔벨로프**
+   (실제 JSON은 `output_files.stdout` 임시파일)를 뱉는다. 일부 버전·환경(예: 1.0.1, env 제거)
+   에선 inline JSON. 둘 다 견디는 표준 패턴 (호스트·버전·환경 무관 동일 결과):
+   ```bash
+   out="${TMPDIR:-/tmp}/twg-out.json"
+   twg jira workitem query --jql '<제한 JQL>' --first 50 --output json > "$out" 2>/dev/null
+   # 엔벨로프면 실제 JSON 파일로 교체 (inline JSON이면 그대로 둠)
+   jq -e . "$out" >/dev/null 2>&1 || out=$(sed -n 's/^[[:space:]]*stdout:[[:space:]]*"\(.*\)".*/\1/p' "$out" | head -1)
+   jq -r '.data.issues[] | "\(.key)  [\(.status.name)]  \(.summary)"' "$out"
+   ```
+3. **`workitem get`은 inline JSON** (`--output json` → `.data[0]`). 엔벨로프 처리 불필요.
+4. **JQL은 항상 제한 포함** (`project = KAN`, `assignee = currentUser()` 등). 무제한 거부됨.
+5. **응답 구조**: `query` → `.data.issues[]`, `get` → `.data[0]`.
 
 ## 자주 쓰는 명령
 
 ```bash
+out="${TMPDIR:-/tmp}/twg-out.json"
+
+# query 헬퍼 (버전 내성): jira_list '<제한 JQL>' [page]
+jira_list() {
+  local f="${TMPDIR:-/tmp}/twg-out.json"
+  twg jira workitem query --jql "$1" --first "${2:-50}" --output json > "$f" 2>/dev/null
+  jq -e . "$f" >/dev/null 2>&1 || f=$(sed -n 's/^[[:space:]]*stdout:[[:space:]]*"\(.*\)".*/\1/p' "$f" | head -1)
+  jq -r '.data.issues[] | "\(.key)  [\(.status.name)]  \(.summary)"' "$f"
+}
+
 # 내 이슈
-twg jira workitem query --jql "assignee = currentUser() ORDER BY updated DESC" --first 20 --output json
+jira_list "assignee = currentUser() ORDER BY updated DESC" 20
 
 # KAN 열린 이슈
-twg jira workitem query --jql 'project = KAN AND statusCategory != Done ORDER BY priority DESC, updated DESC' --first 50 --output json
+jira_list 'project = KAN AND statusCategory != Done ORDER BY priority DESC, updated DESC' 50
 
-# 단일 이슈 (응답이 .data[0] 배열임에 주의) — 파일로 받아서 파싱
-twg jira workitem get KAN-25 --output json > /tmp/twg_issue.json 2>&1
-STDOUT_FILE=$(grep 'stdout:' /tmp/twg_issue.json | awk '{print $2}' | tr -d '"')
-jq -r '.data[0] | "\(.key)  \(.summary)  [\(.status.name)]"' "$STDOUT_FILE"
+# 단일 이슈 (inline JSON, .data[0])
+twg jira workitem get KAN-25 --output json > "$out" 2>/dev/null
+jq -r '.data[0] | "\(.key)  \(.summary)  [\(.status.name)]"' "$out"
 ```
 
 ## 쓰기 작업 (생성 / 수정 / 삭제 / 전환)
@@ -95,16 +123,20 @@ jq -r '.data[0] | "\(.key)  \(.summary)  [\(.status.name)]"' "$STDOUT_FILE"
 
 ## 함정 (직접 밟은 것들)
 
-1. 페이지 크기 = `--first` (`--limit` 아님 → `unknown option` 에러).
-2. 무제한 JQL 거부됨 → 항상 제한 조건 포함 (`project = KAN`, `assignee = currentUser()` 등).
-3. 출력 모드: twg는 **AI 에이전트 환경**(`AI_AGENT`/`CLAUDECODE` 환경변수)을 감지하면
-   `--output json`만 써도 YAML envelope + 임시파일로 출력함(envelope에 `agent_output:` 블록 포함).
-   Claude Code 등 에이전트 안에서는 항상 이 모드 → OS·TTY·파이프 무관. (env 제거 시 직접 JSON 확인됨.)
-   대응: 항상 임시파일 경로를 읽어 jq로 파싱. 패턴:
-   `twg ... --output json > /tmp/out.txt 2>&1` 후 `stdout:` 행에서 경로 추출 → `jq ... "$FILE"`.
-4. 정체성 조회는 `user search --email`. `resolve --query "me"`는 실패.
-5. 응답 구조: `workitem query`는 `.data.issues[]`, `workitem get`은 `.data[0]`.
-6. 상태값은 한글. JQL에 `status = "완료"` 또는 언어 독립 `statusCategory`(Done/In Progress/To Do).
+1. **배너 오염 (가장 자주 깨짐)**: 구버전 twg가 업데이트 배너/spinner를 stdout에 흘려
+   `... --output json | jq`가 `jq: Unfinished string at EOF`로 깨진다. 간헐적(배너는
+   주기적으로만 뜸)이라 "됐다 안 됐다" 한다. → **파일로 받은 뒤 jq** ("조회 규칙" 1번)
+   + twg 1.0.18+ 유지.
+2. 페이지 크기 = `--first` (`--limit` 아님 → `unknown option` 에러).
+3. 무제한 JQL 거부됨 → 항상 제한 조건 포함 (`project = KAN`, `assignee = currentUser()` 등).
+4. 출력 모드(**에이전트 환경 의존, 직접 확인함**): twg는 에이전트 환경(`AI_AGENT`/
+   `CLAUDECODE` 등 env 감지)에서 `workitem query --output json`을 **YAML 엔벨로프**
+   (실제 JSON은 `output_files.stdout` 임시파일)로 낸다(엔벨로프에 `agent_output:` 블록 포함).
+   env 제거 시 직접 JSON 확인됨. 단 `workitem get --output json`은 (env 무관) inline JSON.
+   → "조회 규칙" 2번 환경 내성 패턴으로 통일하면 호스트·버전·환경 무관 동일 결과.
+5. 정체성 조회는 `user search --email`. `resolve --query "me"`는 실패.
+6. 응답 구조: `workitem query`는 `.data.issues[]`, `workitem get`은 `.data[0]`.
+7. 상태값은 한글. JQL에 `status = "완료"` 또는 언어 독립 `statusCategory`(Done/In Progress/To Do).
 
 ## 더 깊은 작업
 
