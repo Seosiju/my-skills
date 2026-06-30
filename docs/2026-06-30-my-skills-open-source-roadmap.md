@@ -307,6 +307,7 @@ src/my_skills/
     __init__.py
     models.py          # Finding, Result, Severity, Category
     static.py          # prompt injection, hidden unicode, destructive commands
+    structure.py       # path containment: skill 폴더 밖 ref, `..` 상대경로 탈출
     markdown.py        # hidden comments, external image/query exfil vector
     credentials.py     # credential source and secret-like patterns
     policy.py          # default/strict/permissive, threshold
@@ -320,6 +321,12 @@ src/my_skills/
 
 기존 `validation.py`는 structural validation을 유지한다. audit는 구조 검증이 아니라
 신뢰/위험 판단을 맡는다.
+
+`structure.py`의 path containment는 skill이 자기 디렉터리 밖을 가리키는 위험을 잡는다.
+현재 `validation.py`는 본문의 절대경로(`/Users/...`)만 경고하고 `..` 상대경로 탈출은
+통과시킨다. 정상 skill은 자기 폴더 안만 참조하므로 false positive가 거의 없는 싼 가드다.
+category는 `traversal`, 기본 severity는 `HIGH`로 두되, `.ssh`/`.aws`/credentials 등
+알려진 민감 경로를 지목하면 `CRITICAL`로 올린다.
 
 ### 7.5 1차 PR 범위
 
@@ -489,6 +496,8 @@ reload hint처럼 필요한 차이만 처리한다.
 - `my-skills audit` CLI: write 없이 독립 실행 가능한 report surface
 - `install/sync --dry-run`에서 audit result와 would-block 표시
 - ingest path(`share/import`)와 propagation path(`install/sync`) gate 분리
+- supporting-file ref와 import ingest에 path containment 검사 추가. `..` 상대경로
+  탈출과 skill 디렉터리 밖 참조를 차단한다.
 - CI에서 사용할 수 있는 JSON output
 - policy threshold
 - 최소 provenance field 저장
@@ -502,6 +511,10 @@ reload hint처럼 필요한 차이만 처리한다.
 - JSON output은 CI에서 파싱할 수 있다.
 - `--skip-audit` 또는 `--force`는 명시적이고 출력에 남는다.
 - 기존 validation과 audit 책임이 분리되어 있다.
+- 스킬 본문/지원파일 ref가 `..`로 skill 디렉터리를 벗어나면 audit finding으로 잡힌다.
+- import은 staging 단계에서 containment를 검사하고, 벗어나는 항목이 있으면 canonical
+  write 전에 block된다.
+- 기존 validation의 절대경로 경고와 audit의 `..` 차단이 역할 분리되어 중복되지 않는다.
 - 정식 trust tier는 없더라도 source metadata와 last audit metadata는 저장된다.
 
 ### Phase 3: agent UX and governance
@@ -555,6 +568,7 @@ audit/governance 1차 완료:
 - dry-run에서 audit would-block 여부를 볼 수 있다.
 - install/sync/share/import는 audit gate를 통과해야 쓴다.
 - share/import ingest gate와 install/sync propagation gate가 분리되어 있다.
+- skill 디렉터리 밖을 가리키는 경로 탈출이 finding으로 보고된다.
 - audit 실패 시 partial write가 남지 않는다.
 - 최소 provenance와 last audit metadata가 저장된다.
 - 기존 `security.py` 사용자/API는 migration 기간 동안 깨지지 않는다.
