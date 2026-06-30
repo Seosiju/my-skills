@@ -8,8 +8,8 @@ here is machine-specific — it is the format and the scan policy only.
 
 ```text
 <data-root>/cli-inventory/
-├── inventory.md     # readable summary: catalog table + expected check + counts
-└── inventory.json   # complete record (catalog + every PATH executable + lists)
+├── inventory.md     # readable summary: 3 command groups + expected + counts
+└── inventory.json   # complete record (groups + full raw PATH/package scan)
 ```
 
 Both files are machine-local and are **never committed**.
@@ -21,15 +21,25 @@ Both files are machine-local and are **never committed**.
   "generated": "<UTC ISO-8601 timestamp>",
   "host": "<hostname>",
   "platform": "<platform string>",
-  "catalog": [
+  "service_clis": [
     {
       "name": "<command>",
       "service": "<service it drives>",
-      "status": "available | missing",
-      "path": "<resolved path or null>",
       "version": "<reported version line or null>",
-      "source": "<brew | npm | local | cargo | conda/pip | PATH, or null>"
+      "source": "<brew | npm | local | cargo | conda/pip | PATH>",
+      "path": "<resolved path>"
     }
+  ],
+  "user_commands": [
+    {
+      "name": "<command>",
+      "version": "<reported version line or null>",
+      "source": "<source label>",
+      "path": "<resolved path>"
+    }
+  ],
+  "brew_leaves": [
+    { "name": "<formula>", "version": "<version or null>" }
   ],
   "expected": { "<tool>": "<path or null if missing>" },
   "path_tools": { "<executable name>": "<resolved path>" },
@@ -37,11 +47,13 @@ Both files are machine-local and are **never committed**.
 }
 ```
 
-- `catalog` — the curated agent CLI-service catalog. `name` and `service` are
-  authored in the `CATALOG` list in `scripts/scan_tools.py` (low-churn facts);
-  `status`, `path`, `version`, and `source` are resolved per machine by the
-  scan. A catalog name that is not installed appears with `status: "missing"`
-  and null path/version/source — it is reported, not dropped.
+- `service_clis` — labelled CLIs (from `SERVICE_LABELS`) that resolve on this
+  machine, by command name. A label that is not installed is omitted.
+- `user_commands` — individual executables in the user bin directories
+  (`~/.local/bin`, `~/bin`, `~/.cargo/bin`, the active node bin), excluding the
+  labelled services above and any `EXCLUDE` glob match.
+- `brew_leaves` — top-level (leaf) Homebrew formulae, one entry per formula
+  (not per shipped binary); versions read from `brew list --versions`.
 - `expected` — the small set of commonly needed tools, each resolved to its path
   or `null`. Driven by the `EXPECTED` tuple in `scripts/scan_tools.py`.
 - `path_tools` — every executable found on `PATH`, name → path, first PATH
@@ -51,20 +63,25 @@ Both files are machine-local and are **never committed**.
 
 ## What is scanned
 
-1. **Catalog** — each `(name, service)` in `CATALOG` is resolved against this
-   machine: installed path (via PATH then `which`), version, and source.
-2. **PATH** — every directory on `PATH` is walked for executable files.
-3. **Package managers** — each of `brew`, `npm` (global), `pipx`, `cargo`,
+1. **Service CLIs** — each name in `SERVICE_LABELS` is resolved via `which`;
+   installed ones get version + source + path.
+2. **User commands** — executables in the user bin directories, minus
+   `SERVICE_LABELS` and `EXCLUDE`.
+3. **Homebrew leaves** — `brew leaves` (top-level formulae), versioned from
+   `brew list --versions`.
+4. **PATH** — every directory on `PATH` is walked for executable files (raw).
+5. **Package managers** — each of `brew`, `npm` (global), `pipx`, `cargo`,
    `gem`, and `pip` is queried only if it resolves on `PATH`; missing managers
-   are skipped silently.
+   are skipped silently (raw).
 
 Version detection probes `--version`, then `version`, then `-v`, takes the first
 real version line (stdout preferred), and rejects error/usage messages so an
-unsupported flag is not recorded as a version. Each probe is bounded by a short
-timeout.
+unsupported flag is not recorded as a version. Each probe closes stdin and is
+bounded by a short timeout; Homebrew leaf versions are read from the manager
+output rather than probed.
 
-To extend the scan, edit the `CATALOG` list, the `EXPECTED` set, or the
-`MANAGERS` map at the top of `scripts/scan_tools.py`.
+To shape the output, edit `SERVICE_LABELS` (labels), `EXCLUDE` (noise globs), or
+`EXPECTED` (basics check) at the top of `scripts/scan_tools.py`.
 
 ## Machine-local data boundary
 
