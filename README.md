@@ -174,7 +174,20 @@ my-skills data-path personal-profile          # resolve the path
 my-skills data-path personal-profile --create # and create it
 ```
 
-The data root is machine-local and never committed.
+The data root is machine-local and never committed. Skills that need private
+configuration use the same pattern: keep only `config.example.json` in
+`skills/<name>/`, then create the real `config.json` under that skill's data
+path.
+
+```bash
+config_dir="$(my-skills data-path my-jira --create)"
+cp skills/my-jira/config.example.json "$config_dir/config.json"
+$EDITOR "$config_dir/config.json"
+```
+
+Keep machine-specific overrides in `my-skills.local.toml` or `local/`; both are
+ignored by git. Do not commit host install copies, state files, account IDs,
+tokens, or personal memory.
 
 ## Layout
 

@@ -178,7 +178,18 @@ my-skills data-path personal-profile          # 경로 해석
 my-skills data-path personal-profile --create # 그리고 생성
 ```
 
-데이터 루트는 머신-로컬이며 절대 커밋되지 않습니다.
+데이터 루트는 머신-로컬이며 절대 커밋되지 않습니다. 비공개 설정이 필요한 스킬도
+같은 패턴을 씁니다. `skills/<name>/`에는 `config.example.json`만 두고, 실제
+`config.json`은 해당 스킬의 데이터 경로 아래에 만듭니다.
+
+```bash
+config_dir="$(my-skills data-path my-jira --create)"
+cp skills/my-jira/config.example.json "$config_dir/config.json"
+$EDITOR "$config_dir/config.json"
+```
+
+머신별 override는 `my-skills.local.toml` 또는 `local/`에 둡니다. 둘 다 git에서
+무시됩니다. 호스트 설치본, state 파일, 계정 ID, 토큰, 개인 메모리는 커밋하지 마세요.
 
 ## 구조
 
