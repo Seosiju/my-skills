@@ -61,12 +61,22 @@ flowchart LR
 git clone https://github.com/Seosiju/my-skills.git
 cd my-skills
 
-uv run my-skills doctor     # 환경, 감지된 호스트, 대상 경로 확인
-uv run my-skills skills     # 스킬 목록 + 호스트별 설치 상태
-uv run my-skills install    # 활성 스킬을 에이전트에 설치
+uv run my-skills bootstrap  # my-skills 명령 + 활성 스킬 설치
+my-skills doctor            # 환경, 감지된 호스트, 대상 경로 확인
+my-skills skills            # 스킬 목록 + 호스트별 설치 상태
 ```
 
-이게 전부입니다 — 이제 감지된 모든 에이전트에서 스킬을 사용할 수 있습니다.
+이게 전부입니다 — 이제 활성화된 모든 에이전트에서 스킬을 사용할 수 있고,
+`my-skills` 명령을 어느 디렉터리에서든 실행할 수 있습니다. `bootstrap`은 이
+프로젝트를 editable uv tool로 설치하고, cwd와 무관한 실행을 위해 repo root를
+캐시한 뒤, 첫 설치에 필요한 다중 호스트 쓰기 확인을 명시적으로 포함해 일반
+스킬 installer를 실행합니다.
+
+첫 설치가 무엇을 쓸지 미리 보려면:
+
+```bash
+uv run my-skills bootstrap --dry-run
+```
 
 `skills`는 모든 스킬과 호스트별 설치 위치를 보여줍니다:
 
@@ -90,42 +100,42 @@ my-skills         yes      fresh    fresh    fresh
 
 ```bash
 # 무엇이 있고 어디에 설치됐는지 본다.
-uv run my-skills skills              # 에이전트/UI용은 --json 추가
-uv run my-skills status              # 스킬별·호스트별 설치 상태
+my-skills skills              # 에이전트/UI용은 --json 추가
+my-skills status              # 스킬별·호스트별 설치 상태
 
 # 설치 / 갱신.
-uv run my-skills install --dry-run   # 계획만 미리 보기, 아무것도 안 씀
-uv run my-skills install             # 활성 스킬 -> 활성 호스트
-uv run my-skills install cli-inventory --host claude
-uv run my-skills install cli-inventory --host all --yes  # 명시적인 다중 호스트 쓰기
-uv run my-skills sync                # 정규 편집을 관리되는 설치본으로 전파
-uv run my-skills sync --check        # 드리프트만 감지 (fresh 아니면 비정상 종료코드)
+my-skills install --dry-run   # 계획만 미리 보기, 아무것도 안 씀
+my-skills install             # 활성 스킬 -> 활성 호스트
+my-skills install cli-inventory --host claude
+my-skills install cli-inventory --host all --yes  # 명시적인 다중 호스트 쓰기
+my-skills sync                # 정규 편집을 관리되는 설치본으로 전파
+my-skills sync --check        # 드리프트만 감지 (fresh 아니면 비정상 종료코드)
 
 # 관리되는 설치본 제거 (기록된 대상만).
-uv run my-skills uninstall cli-inventory --host claude
+my-skills uninstall cli-inventory --host claude
 
 # 기본 install/sync 선택을 위해 스킬 켜기/끄기.
-uv run my-skills enable cli-inventory
-uv run my-skills disable cli-inventory
+my-skills enable cli-inventory
+my-skills disable cli-inventory
 ```
 
 ### 이미 작성한 스킬 가져오기
 
 ```bash
 # 외부 스킬 디렉터리를 정규 skills/로 가져온다.
-uv run my-skills import ~/.hermes/skills/cli-inventory
+my-skills import ~/.hermes/skills/cli-inventory
 
 # 또는 호스트의 로컬 스킬을 검토한 뒤 하나를 my-skills로 승격한다.
-uv run my-skills share --from claude --plan --json
-uv run my-skills share --from claude cli-inventory --enable
-uv run my-skills sync cli-inventory
+my-skills share --from claude --plan --json
+my-skills share --from claude cli-inventory --enable
+my-skills sync cli-inventory
 ```
 
 ### 스킬을 실시간으로 개발하기
 
 ```bash
 # 호스트 복사본을 정규에 심볼릭 링크해 sync 없이도 편집이 반영되게 한다.
-uv run my-skills install cli-inventory --host claude --mode link
+my-skills install cli-inventory --host claude --mode link
 ```
 
 링크된 설치본은 항상 `FRESH`로 보고됩니다. `uninstall`은 심볼릭 링크만 제거하며
@@ -164,8 +174,8 @@ uv run my-skills install cli-inventory --host claude --mode link
 루트를 읽고 씁니다:
 
 ```bash
-uv run my-skills data-path personal-profile          # 경로 해석
-uv run my-skills data-path personal-profile --create # 그리고 생성
+my-skills data-path personal-profile          # 경로 해석
+my-skills data-path personal-profile --create # 그리고 생성
 ```
 
 데이터 루트는 머신-로컬이며 절대 커밋되지 않습니다.

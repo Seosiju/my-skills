@@ -11,18 +11,27 @@ or disable the skill.
 
 ## Running the CLI (read this first)
 
-Invoke the installed command directly — **not** `uv run my-skills`, which only
-works inside the cloned repo:
+On a fresh machine, bootstrap once from the cloned repo:
+
+```bash
+uv run my-skills bootstrap
+```
+
+After bootstrap, invoke the installed command directly:
 
 ```bash
 my-skills <command> ...
 ```
 
+Do not use `uv run my-skills` for normal agent workflows; it only works inside
+the cloned repo and bypasses the installed command that users expect in their
+shell.
+
 The CLI needs to know where the project (the `my-skills.toml` manifest and
 `skills/`) lives. It resolves the root in this order: `$MY_SKILLS_ROOT`, then the
 current directory or any parent, then a path cached from a previous successful
-run. So once any command has run once from the clone, later commands work from
-**any** directory.
+run. `bootstrap` writes that cache, so later commands work from **any**
+directory.
 
 If a command fails with `my-skills.toml not found`, the root has never been
 seen on this machine. Fix it once, then retry:
@@ -31,8 +40,9 @@ seen on this machine. Fix it once, then retry:
 export MY_SKILLS_ROOT=/path/to/your/my-skills   # the clone's directory
 ```
 
-If the `my-skills` command itself is not on `PATH`, fall back to running it from
-the clone: `cd "$MY_SKILLS_ROOT" && uv run my-skills <command>`.
+If the `my-skills` command itself is not on `PATH`, run bootstrap from the clone.
+Use `cd "$MY_SKILLS_ROOT" && uv run my-skills <command>` only as a temporary
+fallback while repairing the installation.
 
 ## List
 

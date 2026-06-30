@@ -28,14 +28,21 @@ def _write_root_cache(root: Path) -> None:
         pass
 
 
-def find_repo_root(start: Path | None = None) -> Path:
+def cache_repo_root(root: Path) -> None:
+    resolved = root.expanduser().resolve()
+    if not _is_root(resolved):
+        raise ManifestError(f"{root} does not contain my-skills.toml")
+    _write_root_cache(resolved)
+
+
+def find_repo_root(start: Path | None = None, *, write_cache: bool = True) -> Path:
     """Locate the project root (the directory holding ``my-skills.toml``).
 
     Resolution order, highest precedence first:
 
     1. ``$MY_SKILLS_ROOT`` — an explicit override; an invalid value is an error.
-    2. ``my-skills.toml`` found in *start* (or cwd) or any parent. On success the
-       location is cached so later runs work from any directory.
+    2. ``my-skills.toml`` found in *start* (or cwd) or any parent. By default,
+       the location is cached so later runs work from any directory.
     3. The cached root written by a previous successful run.
 
     This lets the CLI — and the host-installed ``my-skills`` skill that shells out
@@ -53,7 +60,8 @@ def find_repo_root(start: Path | None = None) -> Path:
     start = (start or Path.cwd()).resolve()
     for directory in (start, *start.parents):
         if (directory / "my-skills.toml").is_file():
-            _write_root_cache(directory)
+            if write_cache:
+                _write_root_cache(directory)
             return directory
 
     cache = _root_cache_path()

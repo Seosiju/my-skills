@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 
+from .bootstrap_commands import cmd_bootstrap
 from .cli_runtime import find_repo_root
 from .inspection_commands import cmd_doctor, cmd_skills, cmd_status, cmd_validate
 from .install_commands import cmd_install, cmd_sync, cmd_uninstall
@@ -33,6 +34,43 @@ def build_parser() -> argparse.ArgumentParser:
         "doctor", help="Report environment, hosts, and manifest health"
     )
     p_doctor.set_defaults(func=cmd_doctor)
+
+    p_bootstrap = sub.add_parser(
+        "bootstrap",
+        help="Set up the CLI command and install enabled skills for this machine",
+    )
+    p_bootstrap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show bootstrap actions and the skill install plan; change nothing",
+    )
+    p_bootstrap.add_argument(
+        "--skip-tool-install",
+        action="store_true",
+        help="Skip uv tool install for the my-skills command",
+    )
+    p_bootstrap.add_argument(
+        "--skip-skill-install",
+        action="store_true",
+        help="Skip installing enabled skills into agent hosts",
+    )
+    p_bootstrap.add_argument(
+        "--host",
+        default="all",
+        help="Target host name, or 'all' (default: all enabled targets)",
+    )
+    p_bootstrap.add_argument(
+        "--all",
+        action="store_true",
+        help="Include every registered skill instead of only enabled skills",
+    )
+    p_bootstrap.add_argument(
+        "--mode",
+        choices=("copy", "link"),
+        default="copy",
+        help="Skill install mode",
+    )
+    p_bootstrap.set_defaults(func=cmd_bootstrap)
 
     p_install = sub.add_parser(
         "install", help="Install skills into host directories (copy mode)"
