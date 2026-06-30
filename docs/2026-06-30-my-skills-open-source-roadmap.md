@@ -250,6 +250,9 @@ agent-skill 특유의 위험을 놓칠 수 있다.
 - write path는 audit gate를 통과해야 한다.
 - `--skip-audit`과 `--force`는 명시적이고 로그/출력에 남아야 한다.
 - bundle-level 분석은 나중 단계로 두되 모델에서 자리를 열어 둔다.
+- audit는 평평한 함수 더미가 아니라 plugin analyzer 파이프라인으로 둔다. 검사 추가는
+  analyzer 등록만으로 되고, runner·gate 코드는 수정하지 않는다. (skillshare의 정갈한
+  구조의 핵심이 이 Analyzer protocol + scope 분리다.)
 
 `--force`와 `--skip-audit`는 같은 의미가 아니다.
 
@@ -306,6 +309,7 @@ src/my_skills/
   audit/
     __init__.py
     models.py          # Finding, Result, Severity, Category
+    analyzers.py       # Analyzer protocol(ID/scope/analyze), Scope(file/skill), 등록 registry
     static.py          # prompt injection, hidden unicode, destructive commands
     structure.py       # path containment: skill 폴더 밖 ref, `..` 상대경로 탈출
     markdown.py        # hidden comments, external image/query exfil vector
@@ -327,6 +331,13 @@ src/my_skills/
 통과시킨다. 정상 skill은 자기 폴더 안만 참조하므로 false positive가 거의 없는 싼 가드다.
 category는 `traversal`, 기본 severity는 `HIGH`로 두되, `.ssh`/`.aws`/credentials 등
 알려진 민감 경로를 지목하면 `CRITICAL`로 올린다.
+
+`analyzers.py`는 검사 전략을 plugin으로 묶는 seam이다. 각 analyzer는 `id`, `scope`,
+`analyze(ctx)`만 구현하고, runner가 scope(file/skill)에 따라 호출 시점을 정한다.
+검사 추가는 analyzer를 registry에 등록하는 것으로 끝나며 gate/runner는 손대지 않는다.
+1차는 file/skill scope와 static/structure만 얹고, bundle scope·dataflow·tier·cross-skill은
+Phase 4에서 같은 protocol 위에 추가한다. analyzer가 둘뿐인 1차에 추상화를 두는 것은,
+Phase 4 확장이 확정적이고 나중에 retrofit하는 비용이 더 크기 때문이다.
 
 ### 7.5 1차 PR 범위
 
@@ -493,6 +504,9 @@ reload hint처럼 필요한 차이만 처리한다.
 작업:
 
 - `audit/` 패키지 1차 도입
+- Analyzer protocol + scope(file/skill) + 최소 registry 도입. static/structure 검사를
+  이 protocol 위에 얹는다. (bundle scope·dataflow·tier·cross-skill은 Phase 4)
+- audit는 write 전 staging에서 수행한다. write-then-scan-rollback은 채택하지 않는다.
 - `my-skills audit` CLI: write 없이 독립 실행 가능한 report surface
 - `install/sync --dry-run`에서 audit result와 would-block 표시
 - ingest path(`share/import`)와 propagation path(`install/sync`) gate 분리
@@ -515,6 +529,12 @@ reload hint처럼 필요한 차이만 처리한다.
 - import은 staging 단계에서 containment를 검사하고, 벗어나는 항목이 있으면 canonical
   write 전에 block된다.
 - 기존 validation의 절대경로 경고와 audit의 `..` 차단이 역할 분리되어 중복되지 않는다.
+- 새 검사를 추가할 때 gate/runner 수정 없이 analyzer 등록만으로 동작한다(테스트로 증명).
+- analyzer enable/disable이 코드 분기가 아니라 정책 데이터로 제어된다.
+- audit는 write 전 staging에서 수행되며, 검사 미통과 콘텐츠는 canonical/host 최종 위치에
+  기록되지 않는다.
+- audit 스캔이 에러로 실패하면 write가 fail-closed로 차단되고, `--skip-audit`으로만
+  우회된다.
 - 정식 trust tier는 없더라도 source metadata와 last audit metadata는 저장된다.
 
 ### Phase 3: agent UX and governance
@@ -569,6 +589,8 @@ audit/governance 1차 완료:
 - install/sync/share/import는 audit gate를 통과해야 쓴다.
 - share/import ingest gate와 install/sync propagation gate가 분리되어 있다.
 - skill 디렉터리 밖을 가리키는 경로 탈출이 finding으로 보고된다.
+- audit는 analyzer 단위로 분리돼 있고, 검사 추가가 등록만으로 되며 enable/disable이
+  정책 데이터로 제어된다.
 - audit 실패 시 partial write가 남지 않는다.
 - 최소 provenance와 last audit metadata가 저장된다.
 - 기존 `security.py` 사용자/API는 migration 기간 동안 깨지지 않는다.
@@ -587,6 +609,15 @@ agent UX 완료:
 - `my-jira`는 예시 skill로 유지한다. 실제 config만 canonical repo 밖으로 분리한다.
 - `--force`와 `--skip-audit`는 분리한다.
 - default audit threshold는 `CRITICAL`, strict threshold는 `HIGH`로 시작한다.
+- gate는 write-before로 간다. audit는 staging 단계에서 수행하고, skillshare식
+  write-then-scan-rollback은 채택하지 않는다. 이유: my-skills는 이미 atomic staging이
+  있어, 검사 미통과 콘텐츠가 최종 canonical/host에 일시적으로도 닿지 않게 할 수 있다.
+- scan 에러는 fail-closed. audit 스캔이 에러로 끝나면 ingest·propagation 모두 write를
+  차단한다. 우회는 명시적 `--skip-audit`으로만. 이유: 보안 gate의 안전 기본값은
+  fail-closed. (스캐너 버그로 전체 설치가 막힐 위험은 `--skip-audit`으로 완화.)
+- threshold-only로 간다. block 판정은 severity 최댓값 ≥ threshold 기준만 쓴다.
+  skillshare의 RiskScore(가중합)·RiskLabel 집계와 finding dedupe mode는 1차 비범위다.
+  위험을 한눈에 보여줄 필요가 생기면 Phase 3 UX에서 RiskLabel만 선택적으로 검토한다.
 - trust tier는 Phase 3에서 진행한다.
 - audit override는 역할을 분리한다.
   - 1차는 `my-skills.toml [audit]`만 지원한다. profile, threshold, audit on/off 같은
