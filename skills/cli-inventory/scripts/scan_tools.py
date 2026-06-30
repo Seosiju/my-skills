@@ -42,6 +42,31 @@ from pathlib import Path
 # change; it only drives the "expected tools" highlight, not the full scan.
 EXPECTED = ("git", "python3", "uv", "node", "npm", "gh", "rg", "jq")
 
+# The agent CLI-service catalog: the curated whitelist of CLIs you actually use
+# to drive a service (GitHub, Jira, a cloud, an MCP/agent tool, ...). Each entry
+# is (name, service) — both low-churn facts you maintain by hand. The scan fills
+# the volatile parts automatically per machine (installed?, path, version,
+# source), so a later lookup reads one compact table instead of re-probing each
+# tool. Add or remove a row as your toolkit changes; a name that is not installed
+# is reported as missing rather than silently dropped.
+CATALOG: tuple[tuple[str, str], ...] = (
+    ("gh", "GitHub"),
+    ("twg", "Atlassian (Teamwork Graph)"),
+    ("claude", "Anthropic Claude Code"),
+    ("codex", "OpenAI Codex"),
+    ("gemini", "Google Gemini"),
+    ("gcloud", "Google Cloud"),
+    ("kubectl", "Kubernetes"),
+    ("gws", "Google Workspace"),
+    ("supabase", "Supabase"),
+    ("codegraph", "CodeGraph (local code intel)"),
+    ("my-skills", "my-skills registry (local)"),
+)
+
+# Tried in order to read a tool's version; the first that prints a non-empty
+# line wins. Tools disagree on the flag, so we probe rather than assume.
+VERSION_FLAGS = ("--version", "version", "-v")
+
 # Package managers to query, mapped to the argv that lists installed packages.
 # A manager that is not on PATH is skipped silently.
 MANAGERS: dict[str, list[str]] = {
@@ -85,6 +110,91 @@ def scan_path() -> dict[str, str]:
     return dict(sorted(found.items()))
 
 
+# First word of a line that signals an error/usage message rather than a
+# version, so an unsupported flag does not get recorded as the version.
+_ERROR_PREFIXES = ("error", "usage", "unknown", "invalid", "no ", "command ")
+
+
+def _is_version_line(line: str) -> bool:
+    """True if a line looks like a real version, not an error/usage message."""
+    low = line.lower()
+    if not line or low.startswith(_ERROR_PREFIXES):
+        return False
+    return "unknown flag" not in low and "unrecognized" not in low
+
+
+def detect_version(name: str) -> str | None:
+    """Return a tool's reported version line, or None if it gives nothing.
+
+    Each flag in ``VERSION_FLAGS`` is tried in order; stdout is preferred over
+    stderr, and any line that looks like an error or usage message is rejected
+    so an unsupported flag is not mistaken for a version. Bounded by a short
+    timeout so a tool that blocks does not stall the scan.
+    """
+    for flag in VERSION_FLAGS:
+        try:
+            proc = subprocess.run(
+                [name, flag],
+                capture_output=True,
+                text=True,
+                timeout=6,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        for stream in (proc.stdout, proc.stderr):
+            for raw in stream.splitlines():
+                line = raw.strip()
+                if line:
+                    if _is_version_line(line):
+                        return line
+                    break  # first non-empty line decides this stream
+    return None
+
+
+def classify_source(path: str) -> str:
+    """Coarsely label where a resolved executable comes from, for evidence.
+
+    The path itself is the evidence; this just names the obvious origins so a
+    reader can tell a Homebrew bin from an npm/node bin at a glance.
+    """
+    p = path.lower()
+    if "/homebrew/" in p or p.startswith("/usr/local/cellar"):
+        return "brew"
+    if "/.nvm/" in p or "/node_modules/" in p:
+        return "npm"
+    if "/anaconda" in p or "/miniconda" in p or "/site-packages/" in p:
+        return "conda/pip"
+    if "/.local/bin/" in p:
+        return "local"
+    if "/.cargo/" in p:
+        return "cargo"
+    return "PATH"
+
+
+def resolve_catalog(path_tools: dict[str, str]) -> list[dict]:
+    """Resolve every catalog entry against this machine.
+
+    For each (name, service) the scan records whether it is installed, where it
+    resolves, its version, and a coarse source label. Volatile facts only — the
+    name and service come from ``CATALOG`` and are left as authored.
+    """
+    rows: list[dict] = []
+    for name, service in CATALOG:
+        path = path_tools.get(name) or shutil.which(name)
+        rows.append(
+            {
+                "name": name,
+                "service": service,
+                "status": "available" if path else "missing",
+                "path": path,
+                "version": detect_version(name) if path else None,
+                "source": classify_source(path) if path else None,
+            }
+        )
+    return rows
+
+
 def query_manager(name: str, argv: list[str]) -> list[str] | None:
     """Return a manager's package lines, or None if the manager is unavailable."""
     if shutil.which(argv[0]) is None:
@@ -121,6 +231,7 @@ def build_inventory() -> dict:
         "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "host": socket.gethostname(),
         "platform": platform.platform(),
+        "catalog": resolve_catalog(path_tools),
         "expected": expected,
         "path_tools": path_tools,
         "managers": scan_managers(),
@@ -136,6 +247,24 @@ def render_markdown(inv: dict) -> str:
     lines.append(f"- Executables on PATH: {len(inv['path_tools'])}")
     lines.append("")
 
+    catalog = inv.get("catalog", [])
+    available = sum(1 for r in catalog if r["status"] == "available")
+    lines.append(f"## Agent CLI services ({available}/{len(catalog)} available)")
+    lines.append("")
+    lines.append("| name | service | status | version | source | path |")
+    lines.append("| --- | --- | --- | --- | --- | --- |")
+    for r in catalog:
+        lines.append(
+            f"| {r['name']} | {r['service']} | {r['status']} "
+            f"| {r['version'] or '—'} | {r['source'] or '—'} | {r['path'] or '—'} |"
+        )
+    lines.append("")
+    lines.append(
+        "_Catalog rows are the CLIs you curate in the `CATALOG` list; the scan "
+        "fills status/version/source/path per machine._"
+    )
+    lines.append("")
+
     lines.append("## Expected tools")
     lines.append("")
     for tool, location in inv["expected"].items():
@@ -143,20 +272,18 @@ def render_markdown(inv: dict) -> str:
         lines.append(f"- {tool}: {mark}")
     lines.append("")
 
-    lines.append("## Installed via package managers")
+    lines.append("## Installed packages (counts)")
     lines.append("")
     if not inv["managers"]:
         lines.append("_No supported package manager found on PATH._")
-    for manager, packages in inv["managers"].items():
-        lines.append(f"### {manager} ({len(packages)})")
-        lines.append("")
-        for pkg in packages:
-            lines.append(f"- {pkg}")
-        lines.append("")
-
+    else:
+        for manager, packages in inv["managers"].items():
+            lines.append(f"- {manager}: {len(packages)}")
+    lines.append("")
     lines.append(
-        "_Full PATH executable list is in `inventory.json` "
-        "(`path_tools`); this summary omits it for readability._"
+        "_Full package lists and the complete PATH executable map "
+        "(`path_tools`) are in `inventory.json`; this summary keeps only counts "
+        "so a lookup stays cheap to read._"
     )
     lines.append("")
     return "\n".join(lines)
@@ -172,8 +299,11 @@ def main() -> int:
     )
     (root / "inventory.md").write_text(render_markdown(inv), encoding="utf-8")
 
+    catalog = inv.get("catalog", [])
+    available = sum(1 for r in catalog if r["status"] == "available")
     missing = [t for t, loc in inv["expected"].items() if not loc]
     print(f"Scanned {len(inv['path_tools'])} executables on PATH.")
+    print(f"Agent CLI services: {available}/{len(catalog)} available.")
     print(f"Package managers queried: {', '.join(inv['managers']) or 'none'}.")
     if missing:
         print(f"Expected tools missing: {', '.join(missing)}.")
