@@ -113,9 +113,10 @@ Jira에는 큰 단위만 둔다.
 
 해야 할 일:
 
-- `skills/my-jira/config.json` 같은 실제 계정/사이트 설정을 canonical repo에서 제거한다.
-- 필요한 경우 `config.example.json`만 남기고 실제 config는 data root나 local override로
-  이동한다.
+- `my-jira`는 실제 사용 예시 skill로 유지한다.
+- 단, `skills/my-jira/config.json` 같은 실제 계정/사이트 설정은 canonical repo에서
+  제거한다.
+- `config.example.json`만 남기고 실제 config는 data root나 local override로 이동한다.
 - `my-skills.local.toml`, `local/`, XDG state/data root 사용법을 README에 분명히 적는다.
 - canonical skill 본문에 `/Users/<name>`, `~/.claude`, `~/.agents`, `~/.hermes` 같은
   machine-specific path가 직접 들어가는지 audit한다.
@@ -130,6 +131,13 @@ Jira에는 큰 단위만 둔다.
 ### 6.2 공개 패키징과 설치 경로
 
 초기 배포는 PyPI보다 GitHub-first가 현실적이다.
+
+GitHub-first의 의미:
+
+- 1차 배포 채널을 PyPI가 아니라 GitHub repository와 GitHub Releases로 둔다.
+- 설치 경로는 `git clone`, `uv run`, `uv tool install git+https://...`를 우선 문서화한다.
+- release tag, changelog, CI artifact를 GitHub에 모은다.
+- PyPI publish는 public API와 release cadence가 안정된 뒤 별도 단계로 결정한다.
 
 권장 순서:
 
@@ -213,6 +221,21 @@ agent-skill 특유의 위험을 놓칠 수 있다.
 - `--skip-audit`과 `--force`는 명시적이고 로그/출력에 남아야 한다.
 - bundle-level 분석은 나중 단계로 두되 모델에서 자리를 열어 둔다.
 
+`--force`와 `--skip-audit`는 같은 의미가 아니다.
+
+- `--force`: 이미 있는 파일 덮어쓰기, canonical과 source가 다른 상황, rollback 가능한
+  overwrite 같은 write-conflict 결정을 명시한다.
+- `--skip-audit`: audit 결과를 보지 않고 진행하는 보안 gate 우회를 명시한다.
+
+둘을 합치면 사용자가 "덮어쓰기만 허용"하려고 한 상황에서 보안 gate까지 우회될 수 있다.
+그래서 두 옵션은 분리한다.
+
+기본 audit threshold는 처음엔 `CRITICAL`로 시작한다. `CRITICAL`은 private key, 명백한
+credential exfiltration, 위험한 hidden instruction처럼 거의 확실히 막아야 하는 항목이다.
+`HIGH`는 destructive command, suspicious network send, config poisoning처럼 위험하지만
+false positive가 더 섞일 수 있는 항목이다. 기본값을 `HIGH`로 두면 초기 사용성이 거칠어질
+수 있으므로, 기본은 `CRITICAL`, strict profile은 `HIGH`로 둔다.
+
 ### 7.3 권장 구조
 
 ```text
@@ -243,6 +266,7 @@ src/my_skills/
 - `audit/static.py`
 - `audit/policy.py`
 - `audit/gate.py`
+- builtin rule file
 - 기존 `security.py` 호환 shim
 - `my-skills audit [skill] --json`
 - `install`, `sync`, `share`, `import`의 apply 전 audit gate
@@ -459,24 +483,25 @@ agent UX 완료:
 
 ## 11. 남은 결정
 
+확정된 결정:
+
+- 배포는 GitHub-first로 시작한다. PyPI는 안정화 이후 별도 결정한다.
+- `my-jira`는 예시 skill로 유지한다. 실제 config만 canonical repo 밖으로 분리한다.
+- `--force`와 `--skip-audit`는 분리한다.
+- default audit threshold는 `CRITICAL`, strict threshold는 `HIGH`로 시작한다.
+- trust tier는 Phase 3에서 진행한다.
+
 아직 결정이 필요한 것:
 
-- PyPI를 1차 배포 범위에 넣을지, GitHub-first로 시작할지
-- `my-jira`를 repo에서 제거할지, example-only skill로 바꿀지, local-only로 문서화할지
-- audit rule override 위치를 `.my-skills/audit-rules.yaml`로 할지 `my-skills.toml [audit]`로
+- project/user override 위치를 `.my-skills/audit-rules.yaml`로 할지 `my-skills.toml [audit]`로
   할지
-- `--force`와 `--skip-audit`의 의미를 분리할지 합칠지
-- default audit threshold를 `CRITICAL`로 할지 `HIGH`로 할지
-- trust tier를 Phase 2에 넣을지 Phase 3 이후로 미룰지
 
 권장 기본값:
 
-- 배포는 GitHub-first로 시작한다.
-- `my-jira`는 local-only 또는 example-only로 분리한다.
-- audit override는 처음엔 `my-skills.toml [audit]`만 지원하고, rule file은 나중에 둔다.
-- `--force`는 충돌/overwrite 의사결정, `--skip-audit`는 audit bypass로 분리한다.
-- default threshold는 `CRITICAL`, strict threshold는 `HIGH`로 시작한다.
-- trust tier는 Phase 3 이후로 미룬다.
+- builtin rule file은 1차부터 둔다. 규칙을 코드에 박아두지 않고 데이터로 관리하기 위해서다.
+- 다만 사용자가 직접 override하는 external rule file은 2차로 미룬다. rule schema, merge
+  order, precedence, disable semantics가 정해지지 않은 상태에서 열면 정책 복잡도가 커진다.
+- 1차 override는 `my-skills.toml [audit]`의 profile/threshold 정도로 제한한다.
 
 ## 12. 바로 다음 작업
 
