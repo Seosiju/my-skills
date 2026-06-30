@@ -1,7 +1,7 @@
 # my-skills Setup Plan — 공통 Skill / 로컬 환경 / 다중 Agent·OS 지원
 
 > **작성일:** 2026-06-24  
-> **대상 repo:** `/Users/snu.sim/git/my-skills`  
+> **대상 repo:** `/Users/example/git/my-skills`  
 > **목표:** kowausa가 자주 쓰는 공통 skill set을 하나의 repo에서 관리하고, `personal-profile`·`cli-inventory`처럼 필요한 context를 skill 구성요소로 포함해 macOS/Windows 및 Claude Code/Codex/Hermes에서 불러 쓸 수 있게 만든다.
 
 ---
@@ -411,7 +411,7 @@ machine:
   hostname: snumac
   os: macos
   shell: zsh
-  home: /Users/snu.sim
+  home: /Users/example
 
 installed_tools:
   - name: gh
@@ -422,7 +422,7 @@ installed_tools:
 
   - name: twg
     detected: true
-    path: /Users/snu.sim/.local/bin/twg
+    path: /Users/example/.local/bin/twg
     version: null
     auth_status: authenticated
 ```
@@ -592,7 +592,7 @@ outputs/hermes/
 platform: macos
 shell: zsh
 path_style: posix
-home_example: /Users/snu.sim
+home_example: /Users/example
 package_managers:
   - brew
   - npm

@@ -16,6 +16,7 @@ dist/
 # Tooling / agent scratch (not part of the project)
 .omc/
 .omx/
+.omo/
 .codegraph
 .context/
 
