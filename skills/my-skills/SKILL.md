@@ -44,6 +44,21 @@ If the `my-skills` command itself is not on `PATH`, run bootstrap from the clone
 Use `cd "$MY_SKILLS_ROOT" && uv run my-skills <command>` only as a temporary
 fallback while repairing the installation.
 
+## Create A Private Registry
+
+Use the public `Seosiju/my-skills` repo for the CLI and public-safe starter
+skills. If the user needs personal, company, or machine-specific canonical
+skills, create a separate private registry:
+
+```bash
+my-skills init-registry ~/git/my-agent-skills
+```
+
+Then add private skills under `skills/<name>/SKILL.md`, register them in
+`my-skills.toml`, and preview writes with `my-skills install --dry-run`.
+Secrets and real account config belong under `my-skills data-path <skill>`, not
+in either public or private git.
+
 ## List
 
 ```bash

@@ -45,6 +45,42 @@ def test_no_command_prints_help(capsys):
     assert "usage" in capsys.readouterr().out.lower()
 
 
+def test_init_registry_scaffolds_private_registry(tmp_path, capsys):
+    target = tmp_path / "my-agent-skills"
+
+    rc = cli.main(["init-registry", str(target)])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Created private skill registry" in out
+    assert (target / "my-skills.toml").is_file()
+    assert (target / "skills").is_dir()
+    assert (target / "README.md").is_file()
+    assert (target / ".gitignore").read_text(encoding="utf-8") == (
+        "my-skills.local.toml\nlocal/\n"
+    )
+    manifest = (target / "my-skills.toml").read_text(encoding="utf-8")
+    assert 'skills_root = "skills"' in manifest
+    assert "[targets.claude]" in manifest
+    assert "[targets.codex]" in manifest
+    assert "[targets.hermes]" in manifest
+    readme = (target / "README.md").read_text(encoding="utf-8")
+    assert "Private Agent Skill Registry" in readme
+    assert "uv tool install git+https://github.com/Seosiju/my-skills.git" in readme
+
+
+def test_init_registry_refuses_existing_manifest(tmp_path, capsys):
+    target = tmp_path / "existing"
+    target.mkdir()
+    (target / "my-skills.toml").write_text("keep me\n", encoding="utf-8")
+
+    rc = cli.main(["init-registry", str(target)])
+
+    assert rc == 1
+    assert "already exists" in capsys.readouterr().err
+    assert (target / "my-skills.toml").read_text(encoding="utf-8") == "keep me\n"
+
+
 def _make_skills_repo(tmp_path: Path) -> Path:
     manifest = """schema_version = 1
 skills_root = "skills"

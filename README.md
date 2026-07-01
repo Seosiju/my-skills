@@ -111,6 +111,73 @@ personal-profile  yes      fresh    stale    missing
 my-skills         yes      fresh    fresh    fresh
 ```
 
+## Public CLI, Private Registry
+
+This repository has two jobs:
+
+```text
+github.com/Seosiju/my-skills
+  public CLI package
+  public-safe starter skills
+  docs, tests, release automation
+
+your private registry
+  my-skills.toml
+  skills/<name>/SKILL.md
+  private workflows and personal/company skills
+
+machine-local data path
+  real config.json files
+  accounts, tokens, memory, local state
+```
+
+Use the public repo to install the tool. Use a private registry when your
+canonical skills contain personal, company, or machine-specific context. Keep
+secrets out of both repos; put them under `my-skills data-path <skill>`.
+
+Create a private registry scaffold:
+
+```bash
+uv tool install git+https://github.com/Seosiju/my-skills.git
+my-skills init-registry ~/git/my-agent-skills
+cd ~/git/my-agent-skills
+git init
+```
+
+The scaffold looks like this:
+
+```text
+my-agent-skills/
+├── my-skills.toml        # hosts + defaults; add [skills.<name>] entries here
+├── skills/               # canonical private skills
+├── .gitignore            # ignores local overrides
+└── README.md             # private registry operating notes
+```
+
+Add your first private skill:
+
+```bash
+mkdir -p skills/my-private-skill
+$EDITOR skills/my-private-skill/SKILL.md
+```
+
+Then register it in `my-skills.toml`:
+
+```toml
+[skills.my-private-skill]
+enabled = true
+hosts = ["claude", "codex", "hermes"]
+```
+
+Preview before writing to agent hosts:
+
+```bash
+my-skills validate
+my-skills audit --all --json
+my-skills install --dry-run
+my-skills install
+```
+
 ## Included skills
 
 | Skill | What it does |

@@ -112,6 +112,73 @@ personal-profile  yes      fresh    stale    missing
 my-skills         yes      fresh    fresh    fresh
 ```
 
+## 공개 CLI, 비공개 registry
+
+이 repo는 두 역할을 합니다:
+
+```text
+github.com/Seosiju/my-skills
+  공개 CLI 패키지
+  공개 가능한 starter skills
+  docs, tests, release automation
+
+각자의 private registry
+  my-skills.toml
+  skills/<name>/SKILL.md
+  개인/회사 맥락이 들어간 비공개 스킬
+
+머신-로컬 data path
+  실제 config.json 파일
+  계정, 토큰, 메모리, local state
+```
+
+공개 repo는 도구 설치에 사용합니다. canonical skill에 개인·회사·머신별 맥락이
+들어간다면 별도 private registry를 사용하세요. secret은 public repo와 private
+repo 모두에 넣지 말고 `my-skills data-path <skill>` 아래에 둡니다.
+
+private registry scaffold를 만듭니다:
+
+```bash
+uv tool install git+https://github.com/Seosiju/my-skills.git
+my-skills init-registry ~/git/my-agent-skills
+cd ~/git/my-agent-skills
+git init
+```
+
+scaffold 구조:
+
+```text
+my-agent-skills/
+├── my-skills.toml        # 호스트 + 기본값; [skills.<name>] 항목을 여기에 추가
+├── skills/               # 비공개 canonical skills
+├── .gitignore            # local override 무시
+└── README.md             # private registry 운영 메모
+```
+
+첫 private skill을 추가합니다:
+
+```bash
+mkdir -p skills/my-private-skill
+$EDITOR skills/my-private-skill/SKILL.md
+```
+
+그리고 `my-skills.toml`에 등록합니다:
+
+```toml
+[skills.my-private-skill]
+enabled = true
+hosts = ["claude", "codex", "hermes"]
+```
+
+agent host에 쓰기 전에는 항상 미리 봅니다:
+
+```bash
+my-skills validate
+my-skills audit --all --json
+my-skills install --dry-run
+my-skills install
+```
+
 ## 포함된 스킬
 
 | 스킬 | 하는 일 |

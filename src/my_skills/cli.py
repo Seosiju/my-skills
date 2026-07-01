@@ -6,6 +6,7 @@ from .audit_commands import cmd_audit
 from .bootstrap_commands import cmd_bootstrap
 from .cli_runtime import find_repo_root
 from .inspection_commands import cmd_doctor, cmd_skills, cmd_status, cmd_validate
+from .init_registry_commands import cmd_init_registry
 from .install_commands import cmd_install, cmd_sync, cmd_uninstall
 from .registry_commands import (
     cmd_data_path,
@@ -80,6 +81,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skill install mode",
     )
     p_bootstrap.set_defaults(func=cmd_bootstrap)
+
+    p_init = sub.add_parser(
+        "init-registry",
+        help="Create a private canonical skill registry scaffold",
+    )
+    p_init.add_argument("path", help="Directory to create or initialize")
+    p_init.set_defaults(func=cmd_init_registry)
 
     p_install = sub.add_parser(
         "install", help="Install skills into host directories (copy mode)"
