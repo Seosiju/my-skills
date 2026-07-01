@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Final
@@ -94,6 +95,8 @@ def cmd_init_registry(args: argparse.Namespace) -> int:
     (target / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
     (target / "README.md").write_text(_registry_readme(target), encoding="utf-8")
     cache_repo_root(target)
+    if not args.no_git:
+        _init_git(target)
     print(f"Created private skill registry at {target}")
     print(
         "Next: cd there, add skills/<name>/SKILL.md, "
@@ -121,6 +124,47 @@ def _prompt_registry_target() -> Path:
             f"{target} already contains a my-skills registry. "
             "Enter a different path or use the existing registry."
         )
+
+
+def _init_git(target: Path) -> None:
+    if (target / ".git").exists():
+        print("git repository already exists; skipped git init")
+        return
+
+    git = shutil.which("git")
+    if git is None:
+        print("git command not found; skipped git init")
+        return
+
+    init = subprocess.run(
+        [git, "init"],
+        cwd=target,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if init.returncode != 0:
+        print("git init failed; skipped initial commit")
+        return
+
+    subprocess.run(
+        [git, "add", "-A"],
+        cwd=target,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    commit = subprocess.run(
+        [git, "commit", "-m", "chore: initialize my-skills registry"],
+        cwd=target,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if commit.returncode == 0:
+        print("Created initial registry commit")
+    else:
+        print("Initial git commit skipped; configure git user to commit")
 
 
 def _seed_default_skills(target_skills: Path) -> None:

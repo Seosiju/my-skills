@@ -9,6 +9,7 @@ import pytest
 
 from my_skills import __version__
 from my_skills import cli
+import my_skills.init_registry_commands as init_registry_commands
 from my_skills.defaults import DEFAULT_SEED_SKILLS
 
 
@@ -145,3 +146,38 @@ def test_init_registry_prompt_reasks_for_existing_registry(
     assert "already contains a my-skills registry" in out
     assert (alternate / "my-skills.toml").is_file()
     assert not (tmp_path / "alternate (1)").exists()
+
+
+def test_init_registry_initializes_git_repo_by_default(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = tmp_path / "my-agent-skills"
+
+    assert cli.main(["init-registry", str(target), "--no-defaults"]) == 0
+
+    capsys.readouterr()
+    assert (target / ".git").is_dir()
+
+
+def test_init_registry_no_git_skips_git_init(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = tmp_path / "my-agent-skills"
+
+    assert cli.main(["init-registry", str(target), "--no-defaults", "--no-git"]) == 0
+
+    capsys.readouterr()
+    assert not (target / ".git").exists()
+
+
+def test_init_registry_missing_git_is_graceful(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = tmp_path / "my-agent-skills"
+    monkeypatch.setattr(init_registry_commands.shutil, "which", lambda _name: None)
+
+    assert cli.main(["init-registry", str(target), "--no-defaults"]) == 0
+
+    out = capsys.readouterr().out
+    assert "git command not found; skipped git init" in out
+    assert not (target / ".git").exists()

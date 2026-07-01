@@ -102,6 +102,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
         help="Create an empty registry without seeded default skills",
     )
+    p_init.add_argument(
+        "--no-git",
+        action="store_true",
+        help="Skip git init for the new registry",
+    )
     p_init.set_defaults(func=cmd_init_registry)
 
     p_install = sub.add_parser(
