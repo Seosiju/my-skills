@@ -56,49 +56,23 @@ flowchart LR
 
 Requirements: **Python 3.11+** and [uv](https://docs.astral.sh/uv/).
 
-Clone the canonical registry, then install the released CLI from GitHub:
+Install the CLI from GitHub, then create your private registry:
 
 ```bash
-git clone https://github.com/Seosiju/my-skills.git
-cd my-skills
-
 uv tool install git+https://github.com/Seosiju/my-skills.git
 
-my-skills bootstrap --dry-run  # preview first-run setup and skill writes
-my-skills doctor               # check environment, detected hosts, target paths
-my-skills skills --json        # machine-readable skill catalog + host status
+my-skills init-registry        # prompts for a location; default: ~/my-agent-skills
+my-skills install --dry-run    # preview seeded default skill installs
+my-skills install              # deploy enabled skills into your agents
 ```
 
-`my-skills` uses the current clone, `MY_SKILLS_ROOT`, or the cached repo root as
-the canonical source for `my-skills.toml` and `skills/`. If you want to run
-directly from source instead of installing the tool first:
+`init-registry` seeds the public-safe default skills, records the registry as
+the active root, and initializes git unless you pass `--no-git`. After that,
+commands work from any directory:
 
 ```bash
-uv run my-skills bootstrap --dry-run
-uv run my-skills doctor
-uv run my-skills skills --json
-uv run my-skills install my-skills --host hermes --dry-run
-```
-
-When you are ready to write host installs, run the installed CLI:
-
-```bash
-my-skills bootstrap
-```
-
-From a source checkout, use:
-
-```bash
-uv run my-skills bootstrap
-```
-
-`bootstrap` installs the `my-skills` command, caches the repo root for
-cwd-independent runs, and runs the normal skill installer with explicit first-run
-multi-host confirmation. Preview those writes first with:
-
-```bash
-my-skills bootstrap --dry-run
-uv run my-skills bootstrap --dry-run  # source checkout
+my-skills doctor
+my-skills skills --json
 ```
 
 `skills` shows every skill and where it's installed across your hosts:
@@ -135,24 +109,27 @@ Use the public repo to install the tool. Use a private registry when your
 canonical skills contain personal, company, or machine-specific context. Keep
 secrets out of both repos; put them under `my-skills data-path <skill>`.
 
-Create a private registry scaffold:
+Create a private registry. With no path, the default is `~/my-agent-skills`;
+`init-registry` seeds the default public-safe skills and runs `git init`:
 
 ```bash
 uv tool install git+https://github.com/Seosiju/my-skills.git
-my-skills init-registry ~/git/my-agent-skills
-cd ~/git/my-agent-skills
-git init
+my-skills init-registry
 ```
 
 The scaffold looks like this:
 
 ```text
 my-agent-skills/
-├── my-skills.toml        # hosts + defaults; add [skills.<name>] entries here
-├── skills/               # canonical private skills
+├── my-skills.toml        # hosts, defaults, seeded [skills.<name>] entries
+├── skills/               # canonical skills, including seeded defaults
 ├── .gitignore            # ignores local overrides
 └── README.md             # private registry operating notes
 ```
+
+Pass `--no-defaults` for a blank registry, or `--no-git` if you want a plain
+folder with no git repository. `bootstrap` is now a contributor path for editable
+source checkouts, not the normal first-run setup.
 
 Add your first private skill:
 

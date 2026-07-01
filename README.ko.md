@@ -57,49 +57,23 @@ flowchart LR
 
 요구 사항: **Python 3.11+** 와 [uv](https://docs.astral.sh/uv/).
 
-canonical registry를 clone한 뒤 GitHub에서 릴리스된 CLI를 설치합니다:
+GitHub에서 CLI를 설치한 뒤 private registry를 만듭니다:
 
 ```bash
-git clone https://github.com/Seosiju/my-skills.git
-cd my-skills
-
 uv tool install git+https://github.com/Seosiju/my-skills.git
 
-my-skills bootstrap --dry-run  # 첫 설정과 스킬 쓰기 작업 미리 보기
-my-skills doctor               # 환경, 감지된 호스트, 대상 경로 확인
-my-skills skills --json        # 머신 판독용 스킬 카탈로그 + 호스트 상태
+my-skills init-registry        # 위치를 묻고, 기본값은 ~/my-agent-skills
+my-skills install --dry-run    # seed된 기본 스킬 설치 계획 미리 보기
+my-skills install              # 활성 스킬을 에이전트에 배포
 ```
 
-`my-skills`는 현재 clone, `MY_SKILLS_ROOT`, 또는 캐시된 repo root를
-`my-skills.toml`과 `skills/`의 canonical source로 사용합니다. tool을 먼저 설치하지
-않고 소스에서 직접 실행하려면:
+`init-registry`는 public-safe 기본 스킬을 seed하고, 이 registry를 active root로
+기록하며, `--no-git`을 주지 않으면 git도 초기화합니다. 이후 명령은 어느 디렉터리에서나
+동작합니다:
 
 ```bash
-uv run my-skills bootstrap --dry-run
-uv run my-skills doctor
-uv run my-skills skills --json
-uv run my-skills install my-skills --host hermes --dry-run
-```
-
-호스트에 실제 설치본을 쓰려면 설치된 CLI에서 다음을 실행합니다:
-
-```bash
-my-skills bootstrap
-```
-
-소스 체크아웃에서는 다음을 사용합니다:
-
-```bash
-uv run my-skills bootstrap
-```
-
-`bootstrap`은 `my-skills` 명령을 설치하고, cwd와 무관한 실행을 위해 repo root를
-캐시한 뒤, 첫 설치에 필요한 다중 호스트 쓰기 확인을 명시적으로 포함해 일반
-스킬 installer를 실행합니다. 먼저 다음 명령으로 쓰기 작업을 미리 보세요:
-
-```bash
-my-skills bootstrap --dry-run
-uv run my-skills bootstrap --dry-run  # 소스 체크아웃
+my-skills doctor
+my-skills skills --json
 ```
 
 `skills`는 모든 스킬과 호스트별 설치 위치를 보여줍니다:
@@ -136,24 +110,27 @@ github.com/Seosiju/my-skills
 들어간다면 별도 private registry를 사용하세요. secret은 public repo와 private
 repo 모두에 넣지 말고 `my-skills data-path <skill>` 아래에 둡니다.
 
-private registry scaffold를 만듭니다:
+private registry를 만듭니다. 경로를 생략하면 기본 위치는 `~/my-agent-skills`이며,
+`init-registry`는 기본 public-safe 스킬을 seed하고 `git init`을 실행합니다:
 
 ```bash
 uv tool install git+https://github.com/Seosiju/my-skills.git
-my-skills init-registry ~/git/my-agent-skills
-cd ~/git/my-agent-skills
-git init
+my-skills init-registry
 ```
 
 scaffold 구조:
 
 ```text
 my-agent-skills/
-├── my-skills.toml        # 호스트 + 기본값; [skills.<name>] 항목을 여기에 추가
-├── skills/               # 비공개 canonical skills
+├── my-skills.toml        # 호스트, 기본값, seed된 [skills.<name>] 항목
+├── skills/               # seed된 기본 스킬을 포함한 canonical skills
 ├── .gitignore            # local override 무시
 └── README.md             # private registry 운영 메모
 ```
+
+빈 registry가 필요하면 `--no-defaults`를, git 없는 plain folder를 원하면 `--no-git`을
+사용하세요. `bootstrap`은 이제 일반 첫 설정이 아니라 source checkout에서 기여/개발할 때
+쓰는 경로입니다.
 
 첫 private skill을 추가합니다:
 
