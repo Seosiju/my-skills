@@ -1,13 +1,14 @@
 # Personal profile schema
 
-This describes the layout of the profile data stored at the shared data root
+This describes the layout of the profile data stored at the profile root. The
+profile root is the exact path printed by `my-skills data-path personal-profile`
 (see the skill body for how to resolve it). Nothing here is personal data — it
 is the format only.
 
 ## Layout
 
 ```text
-<data-root>/personal-profile/
+<profile-root>/
 ├── profile.md          # stable core: identity + preferences
 └── facts/              # one durable fact per file
     └── <slug>.md
