@@ -9,6 +9,7 @@ from typing import Final
 from .defaults import DEFAULT_SEED_SKILLS, SeedUnavailable, seed_skills_dir
 
 README_TITLE: Final = "Private Agent Skill Registry"
+SEED_HOSTS: Final = ("claude", "codex", "hermes")
 
 MANIFEST: Final = (
     'schema_version = 1\n'
@@ -84,7 +85,9 @@ def cmd_init_registry(args: argparse.Namespace) -> int:
         except SeedUnavailable as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
-    (target / "my-skills.toml").write_text(MANIFEST, encoding="utf-8")
+    (target / "my-skills.toml").write_text(
+        _manifest(with_defaults=args.with_defaults), encoding="utf-8"
+    )
     (target / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
     (target / "README.md").write_text(_registry_readme(target), encoding="utf-8")
     print(f"Created private skill registry at {target}")
@@ -99,6 +102,31 @@ def _seed_default_skills(target_skills: Path) -> None:
     source_skills = seed_skills_dir()
     for name, _enabled in DEFAULT_SEED_SKILLS:
         shutil.copytree(source_skills / name, target_skills / name)
+
+
+def _manifest(*, with_defaults: bool) -> str:
+    if not with_defaults:
+        return MANIFEST
+    return MANIFEST + _seed_skill_manifest()
+
+
+def _seed_skill_manifest() -> str:
+    lines: list[str] = []
+    hosts = ", ".join(f'"{host}"' for host in SEED_HOSTS)
+    for name, enabled in DEFAULT_SEED_SKILLS:
+        lines.extend(
+            (
+                "",
+                f"[skills.{name}]",
+                f"enabled = {_toml_bool(enabled)}",
+                f"hosts = [{hosts}]",
+            )
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _toml_bool(value: bool) -> str:
+    return "true" if value else "false"
 
 
 def _existing_scaffold_files(target: Path) -> tuple[str, ...]:
