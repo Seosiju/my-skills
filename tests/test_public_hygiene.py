@@ -13,6 +13,7 @@ CLI_INVENTORY_SCRATCH = {
     "skills/cli-inventory/n",
     "skills/cli-inventory/patcheck.tmp",
 }
+ROADMAP_PATH = REPO_ROOT / "docs/2026-06-30-my-skills-open-source-roadmap.md"
 
 
 def _tracked_files() -> list[str]:
@@ -70,3 +71,10 @@ def test_cli_inventory_scratch_files_are_not_tracked() -> None:
     tracked = set(_tracked_files())
 
     assert tracked.isdisjoint(CLI_INVENTORY_SCRATCH)
+
+
+def test_roadmap_links_seed_design() -> None:
+    roadmap = ROADMAP_PATH.read_text(encoding="utf-8")
+
+    assert "docs/2026-07-01-default-skills-seed-design.md" in roadmap
+    assert "docs/2026-07-01-seed-implementation-spec.md" in roadmap

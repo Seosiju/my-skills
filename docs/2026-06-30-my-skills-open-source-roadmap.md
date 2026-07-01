@@ -650,6 +650,13 @@ A(현재 검증)는 B(장기 렌더링)의 우회로가 아니라 토대다. 둘
   `phase3-pytest.txt`, `phase3-compileall.txt`, `phase3-uv-build.txt`,
   `phase3-diff-check.txt` 검증을 통과했다.
 
+Phase 3 보완 설계(2026-07-01):
+
+- `docs/2026-07-01-default-skills-seed-design.md` — 기본 스킬 seed + private registry
+  설계.
+- `docs/2026-07-01-seed-implementation-spec.md` — seed 구현 스펙과 executor 태스크
+  분해.
+
 ### Phase 4: deeper audit
 
 목표: agent skill 특유의 조합 위험을 볼 수 있다.
