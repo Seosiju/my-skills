@@ -69,6 +69,37 @@ def test_init_registry_scaffolds_private_registry(tmp_path, capsys):
     assert "uv tool install git+https://github.com/Seosiju/my-skills.git" in readme
 
 
+def test_init_registry_accepts_github_starter_readme(tmp_path, capsys):
+    target = tmp_path / "my-agent-skills"
+    target.mkdir()
+    (target / "README.md").write_text("# my-agent-skills\n", encoding="utf-8")
+
+    rc = cli.main(["init-registry", str(target)])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Created private skill registry" in out
+    assert (target / "my-skills.toml").is_file()
+    assert (target / "skills").is_dir()
+    readme = (target / "README.md").read_text(encoding="utf-8")
+    assert readme.startswith("# my-agent-skills\n")
+    assert "Private Agent Skill Registry" in readme
+    assert "my-skills install --dry-run" in readme
+
+
+def test_init_registry_refuses_existing_substantial_readme(tmp_path, capsys):
+    target = tmp_path / "existing"
+    target.mkdir()
+    original_readme = "# Existing Project\n\nDo not replace this documentation.\n"
+    (target / "README.md").write_text(original_readme, encoding="utf-8")
+
+    rc = cli.main(["init-registry", str(target)])
+
+    assert rc == 1
+    assert "README.md" in capsys.readouterr().err
+    assert (target / "README.md").read_text(encoding="utf-8") == original_readme
+
+
 def test_init_registry_refuses_existing_manifest(tmp_path, capsys):
     target = tmp_path / "existing"
     target.mkdir()

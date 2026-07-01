@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from typing import Final
 
+README_TITLE: Final = "Private Agent Skill Registry"
+
 MANIFEST: Final = (
     'schema_version = 1\n'
     'skills_root = "skills"\n'
@@ -32,9 +34,7 @@ MANIFEST: Final = (
 
 GITIGNORE: Final = "my-skills.local.toml\nlocal/\n"
 
-README: Final = (
-    "# Private Agent Skill Registry\n"
-    "\n"
+README_BODY: Final = (
     "This repository is your canonical source for private Agent Skills.\n"
     "\n"
     "Install the public `my-skills` CLI:\n"
@@ -76,7 +76,7 @@ def cmd_init_registry(args: argparse.Namespace) -> int:
     (target / "skills").mkdir()
     (target / "my-skills.toml").write_text(MANIFEST, encoding="utf-8")
     (target / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
-    (target / "README.md").write_text(README, encoding="utf-8")
+    (target / "README.md").write_text(_registry_readme(target), encoding="utf-8")
     print(f"Created private skill registry at {target}")
     print(
         "Next: cd there, add skills/<name>/SKILL.md, "
@@ -86,5 +86,40 @@ def cmd_init_registry(args: argparse.Namespace) -> int:
 
 
 def _existing_scaffold_files(target: Path) -> tuple[str, ...]:
-    paths = ("my-skills.toml", "skills", ".gitignore", "README.md")
-    return tuple(name for name in paths if (target / name).exists())
+    paths = ("my-skills.toml", "skills", ".gitignore")
+    overlaps = [name for name in paths if (target / name).exists()]
+    readme = target / "README.md"
+    if readme.exists() and _starter_readme_title(readme) is None:
+        overlaps.append("README.md")
+    return tuple(overlaps)
+
+
+def _registry_readme(target: Path) -> str:
+    readme = target / "README.md"
+    title = README_TITLE
+    if readme.exists():
+        starter_title = _starter_readme_title(readme)
+        if starter_title is not None:
+            title = starter_title
+    if title == README_TITLE:
+        return f"# {title}\n\n{README_BODY}"
+    return f"# {title}\n\n{README_TITLE}.\n\n{README_BODY}"
+
+
+def _starter_readme_title(readme: Path) -> str | None:
+    try:
+        text = readme.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    meaningful_lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not meaningful_lines:
+        return README_TITLE
+    if len(meaningful_lines) != 1:
+        return None
+    [heading] = meaningful_lines
+    if not heading.startswith("# "):
+        return None
+    title = heading[2:].strip()
+    if not title:
+        return README_TITLE
+    return title
