@@ -12,6 +12,7 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
+src/my_skills/_defaults/
 
 # Tooling / agent scratch (not part of the project)
 .omc/
