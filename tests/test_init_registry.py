@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from my_skills import __version__
 from my_skills import cli
 from my_skills.defaults import DEFAULT_SEED_SKILLS
 
@@ -36,6 +37,8 @@ def test_init_registry_registers_seed_skills_in_manifest(
     for name, enabled in DEFAULT_SEED_SKILLS:
         assert manifest["skills"][name]["enabled"] is enabled
         assert manifest["skills"][name]["hosts"] == SEED_HOSTS
+        assert manifest["skills"][name]["source_type"] == "builtin-seed"
+        assert manifest["skills"][name]["source_revision"] == __version__
 
 
 def test_init_registry_install_dry_run_has_seed_actions(

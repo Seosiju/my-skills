@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Final
 
+from . import __version__
 from .cli_runtime import cache_repo_root
 from .defaults import DEFAULT_SEED_SKILLS, SeedUnavailable, seed_skills_dir
 
@@ -122,6 +123,8 @@ def _seed_skill_manifest() -> str:
                 f"[skills.{name}]",
                 f"enabled = {_toml_bool(enabled)}",
                 f"hosts = [{hosts}]",
+                'source_type = "builtin-seed"',
+                f'source_revision = "{__version__}"',
             )
         )
     return "\n".join(lines) + "\n"

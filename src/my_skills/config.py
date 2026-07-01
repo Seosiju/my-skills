@@ -64,6 +64,8 @@ class Skill:
     name: str
     enabled: bool
     hosts: list[str] = field(default_factory=list)
+    source_type: str = ""
+    source_revision: str = ""
 
 
 @dataclass
@@ -149,6 +151,8 @@ def _resolve_skills(data: dict, local: dict) -> dict[str, Skill]:
             name=name,
             enabled=bool(merged.get("enabled", True)),
             hosts=list(merged.get("hosts", [])),
+            source_type=str(merged.get("source_type", "")),
+            source_revision=str(merged.get("source_revision", "")),
         )
     return result
 

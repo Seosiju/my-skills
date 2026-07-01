@@ -21,6 +21,8 @@ path = "~/.claude/skills"
 [skills.alpha]
 enabled = true
 hosts = ["claude"]
+source_type = "builtin-seed"
+source_revision = "0.1.0"
 
 [skills.beta]
 enabled = false
@@ -47,6 +49,15 @@ def test_load_manifest_reads_targets_and_skills(tmp_path):
     assert set(m.targets) >= {"claude", "codex", "hermes"}
     assert m.targets["claude"].path.is_absolute()
     assert set(m.skills) == {"alpha", "beta"}
+
+
+def test_load_manifest_reads_skill_provenance(tmp_path):
+    m = load_manifest(_write_manifest(tmp_path))
+
+    assert m.skills["alpha"].source_type == "builtin-seed"
+    assert m.skills["alpha"].source_revision == "0.1.0"
+    assert m.skills["beta"].source_type == ""
+    assert m.skills["beta"].source_revision == ""
 
 
 def test_missing_manifest_raises(tmp_path):
