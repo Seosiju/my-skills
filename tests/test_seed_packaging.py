@@ -7,6 +7,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SKILL_NAMES = ("cli-inventory", "personal-profile", "my-skills", "my-jira")
+SEED_PACKAGE_ROOT = "my_skills/_defaults/skills/"
 
 
 def test_wheel_contains_default_seed_skills(tmp_path: Path) -> None:
@@ -26,3 +27,16 @@ def test_wheel_contains_default_seed_skills(tmp_path: Path) -> None:
 
     for skill_name in DEFAULT_SKILL_NAMES:
         assert f"my_skills/_defaults/skills/{skill_name}/SKILL.md" in packaged
+
+    seeded_paths = [
+        name.removeprefix(SEED_PACKAGE_ROOT)
+        for name in packaged
+        if name.startswith(SEED_PACKAGE_ROOT)
+    ]
+    assert seeded_paths
+    assert not [
+        path
+        for path in seeded_paths
+        if any(part.startswith(".") for part in Path(path).parts)
+        or "__pycache__" in Path(path).parts
+    ]

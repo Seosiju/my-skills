@@ -53,6 +53,16 @@ def test_seeded_registry_cold_cli_flow_installs_claude_host(tmp_path: Path) -> N
     assert set(manifest["skills"]) == DEFAULT_ENABLED_SKILLS | DEFAULT_DISABLED_SKILLS
     for skill in DEFAULT_ENABLED_SKILLS | DEFAULT_DISABLED_SKILLS:
         assert (registry / "skills" / skill / "SKILL.md").is_file()
+    seeded_paths = [
+        path.relative_to(registry / "skills")
+        for path in (registry / "skills").rglob("*")
+    ]
+    assert not [
+        path
+        for path in seeded_paths
+        if any(part.startswith(".") for part in path.parts)
+        or "__pycache__" in path.parts
+    ]
 
     skills = json.loads(_run_cli(["skills", "--json"], env=env, cwd=work).stdout)
     assert {row["name"] for row in skills["skills"]} == DEFAULT_ENABLED_SKILLS | DEFAULT_DISABLED_SKILLS

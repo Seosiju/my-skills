@@ -19,7 +19,14 @@ build-backend = "hatchling.build"
 packages = ["src/my_skills"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"skills" = "my_skills/_defaults/skills"
+"skills/cli-inventory/SKILL.md" = "my_skills/_defaults/skills/cli-inventory/SKILL.md"
+"skills/cli-inventory/references/inventory-schema.md" = "my_skills/_defaults/skills/cli-inventory/references/inventory-schema.md"
+"skills/cli-inventory/scripts/scan_tools.py" = "my_skills/_defaults/skills/cli-inventory/scripts/scan_tools.py"
+"skills/personal-profile/SKILL.md" = "my_skills/_defaults/skills/personal-profile/SKILL.md"
+"skills/personal-profile/references/schema.md" = "my_skills/_defaults/skills/personal-profile/references/schema.md"
+"skills/my-skills/SKILL.md" = "my_skills/_defaults/skills/my-skills/SKILL.md"
+"skills/my-jira/SKILL.md" = "my_skills/_defaults/skills/my-jira/SKILL.md"
+"skills/my-jira/config.example.json" = "my_skills/_defaults/skills/my-jira/config.example.json"
 
 [dependency-groups]
 dev = [

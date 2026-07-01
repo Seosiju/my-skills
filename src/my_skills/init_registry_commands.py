@@ -170,7 +170,19 @@ def _init_git(target: Path) -> None:
 def _seed_default_skills(target_skills: Path) -> None:
     source_skills = seed_skills_dir()
     for name, _enabled in DEFAULT_SEED_SKILLS:
-        shutil.copytree(source_skills / name, target_skills / name)
+        shutil.copytree(
+            source_skills / name,
+            target_skills / name,
+            ignore=_ignore_seed_copy_names,
+        )
+
+
+def _ignore_seed_copy_names(_directory: str, names: list[str]) -> set[str]:
+    return {
+        name
+        for name in names
+        if name.startswith(".") or name == "__pycache__"
+    }
 
 
 def _manifest(*, with_defaults: bool) -> str:
