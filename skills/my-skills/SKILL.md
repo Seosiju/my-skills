@@ -1,6 +1,6 @@
 ---
 name: my-skills
-description: Manage the shared my-skills registry from an agent conversation. Use when listing available skills, sharing a host-local skill into my-skills, enabling or disabling a shared skill, or installing/syncing shared skills into Claude Code, Codex, or Hermes.
+description: Manage your my-skills registry from an agent conversation. Use when setting up or creating a registry, listing available skills, sharing a host-local skill into the registry, enabling or disabling a skill, or installing/syncing skills into Claude Code, Codex, or Hermes.
 ---
 
 # My Skills Registry
@@ -9,55 +9,55 @@ Use the `my-skills` CLI as the source of truth. Do not edit host skill
 directories directly when a CLI command can plan, share, install, sync, enable,
 or disable the skill.
 
-## Running the CLI (read this first)
+**Mental model.** Your registry is a folder (default `~/my-agent-skills`) holding
+`my-skills.toml` (the manifest) and `skills/<name>/SKILL.md` (the canonical
+originals). Claude Code, Codex, and Hermes host directories are **build
+outputs**: `install` and `sync` copy the canonical skill into them. Editing a host
+copy directly causes **drift**, which the CLI detects and refuses to silently
+overwrite. git is optional - the registry works as a plain folder; version
+control and remotes are the user's choice.
 
-On a fresh machine, bootstrap once from the cloned repo:
+## First-time setup (the front door)
 
-```bash
-uv run my-skills bootstrap
-```
-
-After bootstrap, invoke the installed command directly:
-
-```bash
-my-skills <command> ...
-```
-
-Do not use `uv run my-skills` for normal agent workflows; it only works inside
-the cloned repo and bypasses the installed command that users expect in their
-shell.
-
-The CLI needs to know where the project (the `my-skills.toml` manifest and
-`skills/`) lives. It resolves the root in this order: `$MY_SKILLS_ROOT`, then the
-current directory or any parent, then a path cached from a previous successful
-run. `bootstrap` writes that cache, so later commands work from **any**
-directory.
-
-If a command fails with `my-skills.toml not found`, the root has never been
-seen on this machine. Fix it once, then retry:
+If the user has no registry yet, set one up. Install the CLI once:
 
 ```bash
-export MY_SKILLS_ROOT=/path/to/your/my-skills   # the clone's directory
+uv tool install git+https://github.com/Seosiju/my-skills.git
 ```
 
-If the `my-skills` command itself is not on `PATH`, run bootstrap from the clone.
-Use `cd "$MY_SKILLS_ROOT" && uv run my-skills <command>` only as a temporary
-fallback while repairing the installation.
-
-## Create A Private Registry
-
-Use the public `Seosiju/my-skills` repo for the CLI and public-safe starter
-skills. If the user needs personal, company, or machine-specific canonical
-skills, create a separate private registry:
+Then create the registry. `init-registry` prompts for a location (default
+`~/my-agent-skills`), seeds the public-safe default skills, and runs `git init`:
 
 ```bash
-my-skills init-registry ~/git/my-agent-skills
+my-skills init-registry
 ```
 
-Then add private skills under `skills/<name>/SKILL.md`, register them in
-`my-skills.toml`, and preview writes with `my-skills install --dry-run`.
+- Pass a path to skip the prompt: `my-skills init-registry ~/my-agent-skills`.
+- `--no-defaults` creates an empty registry (no seeded skills).
+- `--no-git` skips git (local-only use; the whole system works without git).
+
+`init-registry` records this registry as the active root, so later commands work
+from any directory. Deploy the enabled skills into your agents:
+
+```bash
+my-skills install --dry-run   # preview the plan, write nothing
+my-skills install
+```
+
 Secrets and real account config belong under `my-skills data-path <skill>`, not
-in either public or private git.
+in git (public or private).
+
+## When there is no registry yet
+
+If a command fails with `my-skills.toml not found`, no registry has been created
+on this machine. Do not point at a clone - create a registry:
+
+```bash
+my-skills init-registry
+```
+
+As a temporary override, `export MY_SKILLS_ROOT=~/my-agent-skills` if one already
+exists elsewhere (for example on another machine you cloned).
 
 ## List
 
@@ -160,9 +160,12 @@ my-skills validate <skill>
 
 ## Other Commands
 
-This skill covers the common flows. For the full command surface — including
-`status`, `validate`, `import`, `data-path`, `uninstall`, and `doctor` — run:
+This skill covers the common flows. For the full command surface - including
+`status`, `validate`, `import`, `data-path`, `uninstall`, and `doctor` - run:
 
 ```bash
 my-skills --help
 ```
+
+`bootstrap` is for **contributors/maintainers** working from a cloned repo (it
+does an editable install); regular users never need it.
