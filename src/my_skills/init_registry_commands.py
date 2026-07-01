@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 from pathlib import Path
 from typing import Final
+
+from .defaults import DEFAULT_SEED_SKILLS, SeedUnavailable, seed_skills_dir
 
 README_TITLE: Final = "Private Agent Skill Registry"
 
@@ -73,7 +76,14 @@ def cmd_init_registry(args: argparse.Namespace) -> int:
         return 1
 
     target.mkdir(parents=True, exist_ok=True)
-    (target / "skills").mkdir()
+    skills = target / "skills"
+    skills.mkdir()
+    if args.with_defaults:
+        try:
+            _seed_default_skills(skills)
+        except SeedUnavailable as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
     (target / "my-skills.toml").write_text(MANIFEST, encoding="utf-8")
     (target / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
     (target / "README.md").write_text(_registry_readme(target), encoding="utf-8")
@@ -83,6 +93,12 @@ def cmd_init_registry(args: argparse.Namespace) -> int:
         "then run `my-skills install --dry-run`."
     )
     return 0
+
+
+def _seed_default_skills(target_skills: Path) -> None:
+    source_skills = seed_skills_dir()
+    for name, _enabled in DEFAULT_SEED_SKILLS:
+        shutil.copytree(source_skills / name, target_skills / name)
 
 
 def _existing_scaffold_files(target: Path) -> tuple[str, ...]:

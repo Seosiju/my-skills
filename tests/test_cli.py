@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from my_skills import cli
+from my_skills.defaults import DEFAULT_SEED_SKILLS
 
 
 def _make_repo(tmp_path: Path, skill_name: str = "good-skill", body: str | None = None) -> Path:
@@ -75,6 +76,29 @@ def test_init_registry_scaffolds_private_registry(tmp_path, capsys):
     readme = (target / "README.md").read_text(encoding="utf-8")
     assert "Private Agent Skill Registry" in readme
     assert "uv tool install git+https://github.com/Seosiju/my-skills.git" in readme
+
+
+def test_init_registry_seeds_default_skills(tmp_path, capsys):
+    target = tmp_path / "my-agent-skills"
+
+    rc = cli.main(["init-registry", str(target)])
+
+    assert rc == 0
+    capsys.readouterr()
+    for name, _enabled in DEFAULT_SEED_SKILLS:
+        assert (target / "skills" / name / "SKILL.md").is_file()
+    assert (target / "skills" / "my-jira" / "config.example.json").is_file()
+    assert not (target / "skills" / "my-jira" / "config.json").exists()
+
+
+def test_init_registry_no_defaults_keeps_empty_skills_dir(tmp_path, capsys):
+    target = tmp_path / "my-agent-skills"
+
+    rc = cli.main(["init-registry", str(target), "--no-defaults"])
+
+    assert rc == 0
+    capsys.readouterr()
+    assert list((target / "skills").iterdir()) == []
 
 
 def test_init_registry_accepts_github_starter_readme(tmp_path, capsys):

@@ -88,6 +88,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Create a private canonical skill registry scaffold",
     )
     p_init.add_argument("path", help="Directory to create or initialize")
+    default_seed = p_init.add_mutually_exclusive_group()
+    default_seed.add_argument(
+        "--with-defaults",
+        dest="with_defaults",
+        action="store_true",
+        default=True,
+        help="Seed public-safe default skills into the new registry (default)",
+    )
+    default_seed.add_argument(
+        "--no-defaults",
+        dest="with_defaults",
+        action="store_false",
+        help="Create an empty registry without seeded default skills",
+    )
     p_init.set_defaults(func=cmd_init_registry)
 
     p_install = sub.add_parser(
