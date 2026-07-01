@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -157,6 +158,27 @@ def test_init_registry_initializes_git_repo_by_default(
 
     capsys.readouterr()
     assert (target / ".git").is_dir()
+
+
+def test_init_registry_initial_commit_does_not_track_preexisting_local_state(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = tmp_path / "my-agent-skills"
+    (target / ".omc" / "state").mkdir(parents=True)
+    (target / ".omc" / "state" / "private.txt").write_text("secret\n", encoding="utf-8")
+
+    assert cli.main(["init-registry", str(target), "--no-defaults"]) == 0
+
+    capsys.readouterr()
+    tracked = subprocess.run(
+        ["git", "ls-files"],
+        cwd=target,
+        text=True,
+        capture_output=True,
+        check=True,
+    ).stdout.splitlines()
+    assert ".omc/state/private.txt" not in tracked
+    assert {".gitignore", "README.md", "my-skills.toml"} <= set(tracked)
 
 
 def test_init_registry_no_git_skips_git_init(

@@ -40,7 +40,17 @@ MANIFEST: Final = (
     'path = "~/.hermes/skills"\n'
 )
 
-GITIGNORE: Final = "my-skills.local.toml\nlocal/\n"
+GITIGNORE: Final = (
+    "my-skills.local.toml\n"
+    "local/\n"
+    ".omc/\n"
+    ".omo/\n"
+    ".omx/\n"
+    ".DS_Store\n"
+    "__pycache__/\n"
+    "*.pyc\n"
+)
+INITIAL_COMMIT_PATHS: Final = (".gitignore", "README.md", "my-skills.toml")
 
 README_BODY: Final = (
     "This repository is your canonical source for private Agent Skills.\n"
@@ -147,8 +157,12 @@ def _init_git(target: Path) -> None:
         print("git init failed; skipped initial commit")
         return
 
+    staged_paths = [*INITIAL_COMMIT_PATHS]
+    if any(path.is_file() for path in (target / "skills").rglob("*")):
+        staged_paths.append("skills")
+
     subprocess.run(
-        [git, "add", "-A"],
+        [git, "add", "--", *staged_paths],
         cwd=target,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

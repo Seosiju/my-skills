@@ -65,9 +65,10 @@ def test_init_registry_scaffolds_private_registry(tmp_path, capsys):
     assert (target / "my-skills.toml").is_file()
     assert (target / "skills").is_dir()
     assert (target / "README.md").is_file()
-    assert (target / ".gitignore").read_text(encoding="utf-8") == (
-        "my-skills.local.toml\nlocal/\n"
-    )
+    gitignore = (target / ".gitignore").read_text(encoding="utf-8")
+    assert "my-skills.local.toml\n" in gitignore
+    assert "local/\n" in gitignore
+    assert ".omc/\n" in gitignore
     manifest = (target / "my-skills.toml").read_text(encoding="utf-8")
     assert 'skills_root = "skills"' in manifest
     assert "[targets.claude]" in manifest
