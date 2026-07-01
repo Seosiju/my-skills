@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import tomllib
 from pathlib import Path
 
@@ -96,3 +97,51 @@ def test_init_registry_caches_root_for_later_commands(
     assert {row["name"] for row in payload["skills"]} == {
         name for name, _enabled in DEFAULT_SEED_SKILLS
     }
+
+
+def test_init_registry_without_path_uses_default_location_when_not_tty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+
+    assert cli.main(["init-registry", "--no-defaults"]) == 0
+
+    out = capsys.readouterr().out
+    assert f"Created private skill registry at {home / 'my-agent-skills'}" in out
+    assert (home / "my-agent-skills" / "my-skills.toml").is_file()
+
+
+def test_init_registry_prompt_accepts_empty_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
+
+    assert cli.main(["init-registry", "--no-defaults"]) == 0
+
+    capsys.readouterr()
+    assert (home / "my-agent-skills" / "my-skills.toml").is_file()
+
+
+def test_init_registry_prompt_reasks_for_existing_registry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    existing = tmp_path / "existing"
+    alternate = tmp_path / "alternate"
+    existing.mkdir()
+    (existing / "my-skills.toml").write_text("schema_version = 1\n", encoding="utf-8")
+    answers = iter((str(existing), str(alternate)))
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+
+    assert cli.main(["init-registry", "--no-defaults"]) == 0
+
+    out = capsys.readouterr().out
+    assert "already contains a my-skills registry" in out
+    assert (alternate / "my-skills.toml").is_file()
+    assert not (tmp_path / "alternate (1)").exists()

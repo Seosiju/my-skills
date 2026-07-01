@@ -87,7 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
         "init-registry",
         help="Create a private canonical skill registry scaffold",
     )
-    p_init.add_argument("path", help="Directory to create or initialize")
+    p_init.add_argument("path", nargs="?", help="Directory to create or initialize")
     default_seed = p_init.add_mutually_exclusive_group()
     default_seed.add_argument(
         "--with-defaults",

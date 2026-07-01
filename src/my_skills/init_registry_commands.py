@@ -11,6 +11,7 @@ from .cli_runtime import cache_repo_root
 from .defaults import DEFAULT_SEED_SKILLS, SeedUnavailable, seed_skills_dir
 
 README_TITLE: Final = "Private Agent Skill Registry"
+DEFAULT_REGISTRY: Final = "~/my-agent-skills"
 SEED_HOSTS: Final = ("claude", "codex", "hermes")
 
 MANIFEST: Final = (
@@ -69,7 +70,7 @@ README_BODY: Final = (
 
 
 def cmd_init_registry(args: argparse.Namespace) -> int:
-    target = Path(args.path).expanduser()
+    target = _registry_target(args)
     overlaps = _existing_scaffold_files(target)
     if overlaps:
         print(
@@ -99,6 +100,27 @@ def cmd_init_registry(args: argparse.Namespace) -> int:
         "then run `my-skills install --dry-run`."
     )
     return 0
+
+
+def _registry_target(args: argparse.Namespace) -> Path:
+    path = getattr(args, "path", None)
+    if path:
+        return Path(path).expanduser()
+    if not sys.stdin.isatty():
+        return Path(DEFAULT_REGISTRY).expanduser()
+    return _prompt_registry_target()
+
+
+def _prompt_registry_target() -> Path:
+    while True:
+        raw = input(f"Registry location [{DEFAULT_REGISTRY}]: ").strip()
+        target = Path(raw or DEFAULT_REGISTRY).expanduser()
+        if not (target / "my-skills.toml").exists():
+            return target
+        print(
+            f"{target} already contains a my-skills registry. "
+            "Enter a different path or use the existing registry."
+        )
 
 
 def _seed_default_skills(target_skills: Path) -> None:
