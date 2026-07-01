@@ -205,24 +205,11 @@ ls ~/.claude/skills         # 실제로 떨어졌는가
 
 ## 7. 실행 순서
 
-1. seed 트리 패키징: repo `skills/` → wheel 포함(force-include), `pyproject.toml`
-   갱신, `.gitignore`에 `src/my_skills/_defaults/` 추가.
-2. `defaults.py`: seed 목록 + skill별 enabled 기본값 상수, `seed_skills_dir()`
-   resolver(wheel → repo `skills/` fallback → 명확한 에러).
-3. `init-registry --with-defaults`(기본 ON) / `--no-defaults` 구현. 생성 직후
-   `cache_repo_root`로 새 registry를 active root로 캐시(현재는 bootstrap만 캐시).
-4. 생성 매니페스트에 seed 스킬을 §3.2 enabled 기본값대로 등록.
-5. registry 위치 입력 UX(경로 선택화 + TTY 프롬프트 + isatty 분기 + 기존 registry
-   되물음, §3.6).
-6. git init 자동화(+ best-effort 첫 커밋, `--no-git`, 가드, §3.7).
-7. provenance 필드 저장(1차 필수): seed 스킬에 `source_type=builtin-seed`,
-   `source_revision`(CLI 버전).
-8. `skills/my-skills/SKILL.md` 본문을 seed 온보딩 흐름으로 갱신
-   (draft: `docs/2026-07-01-my-skills-skill-draft.md`를 그대로 적용).
-9. README/README.ko 온보딩 단일 경로로 정리 + bootstrap을 기여자 전용으로 재분류.
-   `cli.py`의 bootstrap 서브파서 help에 `(contributor/dev only)` 표기.
-10. 콜드 E2E 테스트 추가.
-11. roadmap 문서에 이 설계를 참조로 추가.
+상세 태스크(T1~T13 — 파일·수용기준·의존성·T9 본문 포함)는
+`docs/2026-07-01-seed-implementation-spec.md`가 authoritative다. 여기 목록을
+중복해서 두면 이중 관리로 드리프트나므로 두지 않는다.
+
+착수 순서 요약: T10·T13(독립) → T1 → T2 → T3 → T4/T5/T6 → T7 → T8 → T9/T11/T12.
 
 ## 8. 결정 기록
 
