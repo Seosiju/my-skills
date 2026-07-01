@@ -68,3 +68,28 @@ def test_init_registry_no_defaults_has_no_skill_manifest_entries(
 
     manifest = tomllib.loads((target / "my-skills.toml").read_text(encoding="utf-8"))
     assert "skills" not in manifest
+
+
+def test_init_registry_caches_root_for_later_commands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    home = tmp_path / "home"
+    xdg = tmp_path / "xdg"
+    elsewhere = tmp_path / "elsewhere"
+    home.mkdir()
+    elsewhere.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+
+    target = tmp_path / "my-agent-skills"
+    assert cli.main(["init-registry", str(target)]) == 0
+    capsys.readouterr()
+    monkeypatch.chdir(elsewhere)
+
+    rc = cli.main(["skills", "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert {row["name"] for row in payload["skills"]} == {
+        name for name, _enabled in DEFAULT_SEED_SKILLS
+    }

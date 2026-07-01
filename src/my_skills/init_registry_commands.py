@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Final
 
+from .cli_runtime import cache_repo_root
 from .defaults import DEFAULT_SEED_SKILLS, SeedUnavailable, seed_skills_dir
 
 README_TITLE: Final = "Private Agent Skill Registry"
@@ -90,6 +91,7 @@ def cmd_init_registry(args: argparse.Namespace) -> int:
     )
     (target / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
     (target / "README.md").write_text(_registry_readme(target), encoding="utf-8")
+    cache_repo_root(target)
     print(f"Created private skill registry at {target}")
     print(
         "Next: cd there, add skills/<name>/SKILL.md, "
