@@ -47,7 +47,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_bootstrap = sub.add_parser(
         "bootstrap",
-        help="Set up the CLI command and install enabled skills for this machine",
+        help="Set up the CLI command and install enabled skills for this machine (contributor/dev only)",
+        description="Set up the CLI command and install enabled skills for this machine (contributor/dev only)",
     )
     p_bootstrap.add_argument(
         "--dry-run",

@@ -45,6 +45,14 @@ def test_no_command_prints_help(capsys):
     assert "usage" in capsys.readouterr().out.lower()
 
 
+def test_bootstrap_help_marks_contributor_only(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        _ = cli.main(["bootstrap", "-h"])
+
+    assert excinfo.value.code == 0
+    assert "(contributor/dev only)" in capsys.readouterr().out
+
+
 def test_init_registry_scaffolds_private_registry(tmp_path, capsys):
     target = tmp_path / "my-agent-skills"
 
