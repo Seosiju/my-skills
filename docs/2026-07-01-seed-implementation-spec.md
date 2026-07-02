@@ -111,7 +111,7 @@ PR3(위치 프롬프트·git init) → PR4(문서·스킬·help·E2E). PR2와 PR
 ### T8. git init 자동화
 - 파일: `init_registry_commands.py`, `cli.py`(`--no-git`), 테스트
 - 변경:
-  - 생성 후 `git init` 실행(+ best-effort 첫 커밋 `git add -A && git commit`).
+  - 생성 후 `git init` 실행(+ best-effort 첫 커밋은 생성한 scaffold/seed 파일만 stage).
   - `--no-git`이면 건너뜀.
   - 가드: `shutil.which("git")` 없으면 크래시 없이 "git 없어 건너뜀" 알림;
     이미 `.git` 있으면 건너뜀; 커밋 실패(identity 미설정 등)는 무시(`git init`은 보장).
