@@ -79,6 +79,30 @@ def test_seed_default_install_requires_confirmation_for_custom_targets(
     assert "writes to multiple hosts" in captured.err
 
 
+@pytest.mark.parametrize(
+    "argv",
+    (
+        ["install", "--mode", "link"],
+        ["install", "--skip-audit"],
+    ),
+)
+def test_seed_default_install_requires_confirmation_for_non_default_options(
+    argv: list[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    target = _init_registry(tmp_path, monkeypatch)
+    monkeypatch.chdir(target)
+    capsys.readouterr()
+
+    rc = cli.main(argv)
+
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert "writes to multiple hosts" in captured.err
+
+
 def test_init_registry_no_defaults_has_no_skill_manifest_entries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

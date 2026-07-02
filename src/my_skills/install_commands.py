@@ -10,12 +10,13 @@ from .audit.formatting import format_gate, gate_json
 from .audit.gate import audit_metadata, audit_policy_from_manifest, audit_skills
 from .checks import compose_validation
 from .cli_runtime import load_manifest_from_cwd, resolve_hosts, select_requested
-from .config import BUILTIN_TARGET_PATHS, Manifest, ManifestError, Skill, expand_path
+from .config import Manifest, ManifestError, Skill
 from .hosts import get_host
 from .installer import copy_install, link_install, uninstall
 from .planner import Action, PlanItem, Status, plan_install, plan_uninstall, status_of
 from .state import State
 from .validation import validate_skill_for_host
+from .write_confirmation import confirm_multi_host_write, is_builtin_seed_default_install
 
 
 class InstallActionJson(TypedDict):
@@ -59,48 +60,6 @@ def _validate_selected(manifest: Manifest, skills: list[Skill], hosts: list[str]
 
 
 _BLOCK_ACTIONS = (Action.BLOCK_CONFLICT, Action.BLOCK_DRIFT, Action.CONFLICT)
-
-
-def _confirm_multi_host_write(
-    args: argparse.Namespace,
-    hosts: list[str],
-    *,
-    allow_without_yes: bool = False,
-) -> bool:
-    confirmed = bool(getattr(args, "yes", False))
-    if len(hosts) <= 1 or confirmed or allow_without_yes:
-        return True
-    host_list = ", ".join(hosts)
-    message = (
-        f"error: this command writes to multiple hosts ({host_list}). "
-        "Re-run with --yes after reviewing a dry-run plan."
-    )
-    print(
-        message,
-        file=sys.stderr,
-    )
-    return False
-
-
-def _is_builtin_seed_default_install(
-    args: argparse.Namespace,
-    manifest: Manifest,
-    skills: list[Skill],
-    hosts: list[str],
-) -> bool:
-    if (
-        getattr(args, "skill", None)
-        or getattr(args, "host", None)
-        or getattr(args, "all", False)
-    ):
-        return False
-    if not skills or any(skill.source_type != "builtin-seed" for skill in skills):
-        return False
-    return all(
-        host in BUILTIN_TARGET_PATHS
-        and manifest.targets[host].path == expand_path(BUILTIN_TARGET_PATHS[host])
-        for host in hosts
-    )
 
 
 def _apply_plan(plan: list[PlanItem], state: State) -> tuple[int, bool]:
@@ -207,10 +166,10 @@ def cmd_install(args: argparse.Namespace) -> int:
             )
         return 0
 
-    if not _confirm_multi_host_write(
+    if not confirm_multi_host_write(
         args,
         hosts,
-        allow_without_yes=_is_builtin_seed_default_install(
+        allow_without_yes=is_builtin_seed_default_install(
             args,
             manifest,
             skills,
@@ -258,7 +217,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
                     drift = True
         return 1 if drift else 0
 
-    if not _confirm_multi_host_write(args, hosts):
+    if not confirm_multi_host_write(args, hosts):
         return 2
 
     if not _validate_selected(manifest, skills, hosts):
@@ -299,7 +258,7 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
 
     state = State.load()
     plan = plan_uninstall(manifest, args.skill, hosts, state)
-    if not _confirm_multi_host_write(args, hosts):
+    if not confirm_multi_host_write(args, hosts):
         return 2
 
     removed = 0
