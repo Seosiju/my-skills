@@ -10,7 +10,7 @@ from .audit.formatting import format_gate, gate_json
 from .audit.gate import audit_metadata, audit_policy_from_manifest, audit_skills
 from .checks import compose_validation
 from .cli_runtime import load_manifest_from_cwd, resolve_hosts, select_requested
-from .config import Manifest, ManifestError, Skill
+from .config import BUILTIN_TARGET_PATHS, Manifest, ManifestError, Skill, expand_path
 from .hosts import get_host
 from .installer import copy_install, link_install, uninstall
 from .planner import Action, PlanItem, Status, plan_install, plan_uninstall, status_of
@@ -61,9 +61,14 @@ def _validate_selected(manifest: Manifest, skills: list[Skill], hosts: list[str]
 _BLOCK_ACTIONS = (Action.BLOCK_CONFLICT, Action.BLOCK_DRIFT, Action.CONFLICT)
 
 
-def _confirm_multi_host_write(args: argparse.Namespace, hosts: list[str]) -> bool:
+def _confirm_multi_host_write(
+    args: argparse.Namespace,
+    hosts: list[str],
+    *,
+    allow_without_yes: bool = False,
+) -> bool:
     confirmed = bool(getattr(args, "yes", False))
-    if len(hosts) <= 1 or confirmed:
+    if len(hosts) <= 1 or confirmed or allow_without_yes:
         return True
     host_list = ", ".join(hosts)
     message = (
@@ -75,6 +80,27 @@ def _confirm_multi_host_write(args: argparse.Namespace, hosts: list[str]) -> boo
         file=sys.stderr,
     )
     return False
+
+
+def _is_builtin_seed_default_install(
+    args: argparse.Namespace,
+    manifest: Manifest,
+    skills: list[Skill],
+    hosts: list[str],
+) -> bool:
+    if (
+        getattr(args, "skill", None)
+        or getattr(args, "host", None)
+        or getattr(args, "all", False)
+    ):
+        return False
+    if not skills or any(skill.source_type != "builtin-seed" for skill in skills):
+        return False
+    return all(
+        host in BUILTIN_TARGET_PATHS
+        and manifest.targets[host].path == expand_path(BUILTIN_TARGET_PATHS[host])
+        for host in hosts
+    )
 
 
 def _apply_plan(plan: list[PlanItem], state: State) -> tuple[int, bool]:
@@ -181,7 +207,16 @@ def cmd_install(args: argparse.Namespace) -> int:
             )
         return 0
 
-    if not _confirm_multi_host_write(args, hosts):
+    if not _confirm_multi_host_write(
+        args,
+        hosts,
+        allow_without_yes=_is_builtin_seed_default_install(
+            args,
+            manifest,
+            skills,
+            hosts,
+        ),
+    ):
         return 2
 
     if gate.skipped:

@@ -74,11 +74,18 @@ def test_seeded_registry_cold_cli_flow_installs_claude_host(tmp_path: Path) -> N
     assert DEFAULT_ENABLED_SKILLS <= planned_skills
     assert "my-jira" not in planned_skills
 
-    _run_cli(["install", "--host", "claude", "--yes"], env=env, cwd=work)
+    _run_cli(["install"], env=env, cwd=work)
 
-    assert (home / ".claude" / "skills" / "my-skills" / "SKILL.md").is_file()
-    assert (home / ".claude" / "skills" / "cli-inventory" / "SKILL.md").is_file()
-    assert not (home / ".claude" / "skills" / "my-jira").exists()
+    host_roots = [
+        home / ".claude" / "skills",
+        home / ".agents" / "skills",
+        home / ".hermes" / "skills",
+    ]
+    for host_root in host_roots:
+        assert (host_root / "my-skills" / "SKILL.md").is_file()
+        assert (host_root / "cli-inventory" / "SKILL.md").is_file()
+        assert (host_root / "personal-profile" / "SKILL.md").is_file()
+        assert not (host_root / "my-jira").exists()
 
 
 def test_no_defaults_cold_cli_flow_creates_empty_registry(tmp_path: Path) -> None:
