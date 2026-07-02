@@ -6,6 +6,21 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _t9_spec_body() -> str:
+    spec = (REPO_ROOT / "docs/2026-07-01-seed-implementation-spec.md").read_text(
+        encoding="utf-8"
+    )
+    start = spec.index("````markdown") + len("````markdown")
+    end = spec.index("````", start)
+    return spec[start:end].strip() + "\n"
+
+
+def test_my_skills_skill_matches_seed_registry_spec_body() -> None:
+    text = (REPO_ROOT / "skills/my-skills/SKILL.md").read_text(encoding="utf-8")
+
+    assert text == _t9_spec_body()
+
+
 def test_my_skills_skill_documents_seed_registry_front_door() -> None:
     text = (REPO_ROOT / "skills/my-skills/SKILL.md").read_text(encoding="utf-8")
 

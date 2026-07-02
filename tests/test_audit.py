@@ -166,6 +166,19 @@ def test_command_dataflow_reports_credential_network_bundle_risk(tmp_path):
     assert result.blocked
 
 
+def test_generic_host_default_paths_are_not_audit_privacy_findings(tmp_path):
+    _repo_path, _target, skill = _repo(
+        tmp_path,
+        "Host directories: ~/.claude/skills, ~/.agents/skills, ~/.hermes/skills.\n",
+    )
+
+    result = run_audit(skill)
+
+    assert not [
+        finding for finding in result.findings if finding.rule_id == "abs-user-path"
+    ]
+
+
 def test_strict_profile_blocks_high_command_tier_without_flow(
     tmp_path,
     monkeypatch,

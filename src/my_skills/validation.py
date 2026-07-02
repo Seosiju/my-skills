@@ -20,9 +20,7 @@ MAX_DESCRIPTION_LEN = 1024
 
 # Markdown inline link: ](target)
 _LINK_RE = re.compile(r"\]\(([^)]+)\)")
-_ABS_PATH_RE = re.compile(
-    r"/Users/[^/\s]+|/home/[^/\s]+|~/\.(?:claude|codex|gemini|hermes|agents)\b"
-)
+_ABS_PATH_RE = re.compile(r"/Users/[^/\s]+|/home/[^/\s]+")
 
 
 @dataclass

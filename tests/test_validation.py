@@ -75,6 +75,27 @@ def test_abs_path_is_error_not_warning():
     assert any("absolute host path" in e for e in result.errors)
 
 
+def test_generic_host_default_paths_are_allowed(tmp_path: Path) -> None:
+    skill = tmp_path / "host-paths"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\n"
+        "name: host-paths\n"
+        "description: Documents default host paths.\n"
+        "---\n"
+        "\n"
+        "# Host Paths\n"
+        "\n"
+        "Host directories (`~/.claude/skills`, `~/.agents/skills`, "
+        "`~/.hermes/skills`) are build outputs.\n",
+        encoding="utf-8",
+    )
+
+    result = validate_skill(skill)
+
+    assert result.ok, result.errors
+
+
 def test_long_description(tmp_path):
     d = tmp_path / "long-desc"
     d.mkdir()

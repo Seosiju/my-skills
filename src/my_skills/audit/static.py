@@ -27,9 +27,7 @@ _SECRET_ASSIGN_RE = re.compile(
     r"(?i)\b(?:api[_-]?key|secret|access[_-]?token|auth[_-]?token|password|passwd)\b"
     r"\s*[:=]\s*['\"]?[A-Za-z0-9_\-/+]{8,}"
 )
-_ABS_USER_PATH_RE = re.compile(
-    r"/Users/[^/\s]+|/home/[^/\s]+|~/\.(?:claude|codex|gemini|hermes|agents)\b"
-)
+_ABS_USER_PATH_RE = re.compile(r"/Users/[^/\s]+|/home/[^/\s]+")
 _PROMPT_INJECTION_RE = re.compile(
     r"(?i)\b(ignore|override|forget)\s+(all\s+)?(previous|prior|system)\s+instructions\b"
 )

@@ -30,6 +30,15 @@ def test_abs_user_path_is_warning_severity():
     assert abs_findings and abs_findings[0].severity == "warning"
 
 
+def test_generic_host_default_paths_are_not_user_path_leaks():
+    findings = scan_text(
+        "p.md",
+        "Host directories: ~/.claude/skills, ~/.agents/skills, ~/.hermes/skills.",
+    )
+
+    assert not [f for f in findings if f.rule == "abs-user-path"]
+
+
 def test_nul_byte_detected(tmp_path):
     d = tmp_path / "nul-skill"
     d.mkdir()

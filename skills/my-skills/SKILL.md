@@ -11,11 +11,11 @@ or disable the skill.
 
 **Mental model.** Your registry is a folder (default `~/my-agent-skills`) holding
 `my-skills.toml` (the manifest) and `skills/<name>/SKILL.md` (the canonical
-originals). Claude Code, Codex, and Hermes host directories are **build
-outputs**: `install` and `sync` copy the canonical skill into them. Editing a host
-copy directly causes **drift**, which the CLI detects and refuses to silently
-overwrite. git is optional - the registry works as a plain folder; version
-control and remotes are the user's choice.
+originals). Host directories (`~/.claude/skills`, `~/.agents/skills`,
+`~/.hermes/skills`) are **build outputs**: `install` and `sync` copy the canonical
+skill into them. Editing a host copy directly causes **drift**, which the CLI
+detects and refuses to silently overwrite. git is optional — the registry works
+as a plain folder; version control and remotes are the user's choice.
 
 ## First-time setup (the front door)
 
@@ -50,13 +50,13 @@ in git (public or private).
 ## When there is no registry yet
 
 If a command fails with `my-skills.toml not found`, no registry has been created
-on this machine. Do not point at a clone - create a registry:
+on this machine. Do not point at a clone — create a registry:
 
 ```bash
 my-skills init-registry
 ```
 
-As a temporary override, `export MY_SKILLS_ROOT=~/my-agent-skills` if one already
+As a temporary override, `export MY_SKILLS_ROOT=/path/to/registry` if one already
 exists elsewhere (for example on another machine you cloned).
 
 ## List
@@ -160,8 +160,8 @@ my-skills validate <skill>
 
 ## Other Commands
 
-This skill covers the common flows. For the full command surface - including
-`status`, `validate`, `import`, `data-path`, `uninstall`, and `doctor` - run:
+This skill covers the common flows. For the full command surface — including
+`status`, `validate`, `import`, `data-path`, `uninstall`, and `doctor` — run:
 
 ```bash
 my-skills --help
