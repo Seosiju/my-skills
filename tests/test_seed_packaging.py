@@ -6,7 +6,16 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SKILL_NAMES = ("cli-inventory", "personal-profile", "my-skills", "my-jira")
+EXPECTED_SEED_FILES = (
+    "cli-inventory/SKILL.md",
+    "cli-inventory/references/inventory-schema.md",
+    "cli-inventory/scripts/scan_tools.py",
+    "personal-profile/SKILL.md",
+    "personal-profile/references/schema.md",
+    "my-skills/SKILL.md",
+    "my-jira/SKILL.md",
+    "my-jira/config.example.json",
+)
 SEED_PACKAGE_ROOT = "my_skills/_defaults/skills/"
 
 
@@ -25,8 +34,8 @@ def test_wheel_contains_default_seed_skills(tmp_path: Path) -> None:
     with zipfile.ZipFile(wheel) as archive:
         packaged = set(archive.namelist())
 
-    for skill_name in DEFAULT_SKILL_NAMES:
-        assert f"my_skills/_defaults/skills/{skill_name}/SKILL.md" in packaged
+    for seed_file in EXPECTED_SEED_FILES:
+        assert f"{SEED_PACKAGE_ROOT}{seed_file}" in packaged
 
     seeded_paths = [
         name.removeprefix(SEED_PACKAGE_ROOT)
