@@ -128,7 +128,8 @@ def cmd_skills(args: argparse.Namespace) -> int:
     status_hosts = selected_status_hosts(manifest, host)
     governance_lookup = None
     if args.with_status:
-        governance_lookup = lambda skill: _governance_for_skill(manifest, skill.name, state)
+        def governance_lookup(skill):
+            return _governance_for_skill(manifest, skill.name, state)
 
     try:
         rows = catalog_rows(
