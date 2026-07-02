@@ -7,12 +7,24 @@ from typing import Final, TypeAlias
 
 
 DefaultSeedSkill: TypeAlias = tuple[str, bool]
+DefaultSeedFile: TypeAlias = str
 
 DEFAULT_SEED_SKILLS: Final[tuple[DefaultSeedSkill, ...]] = (
     ("cli-inventory", True),
     ("personal-profile", True),
     ("my-skills", True),
     ("my-jira", False),
+)
+
+DEFAULT_SEED_FILES: Final[tuple[DefaultSeedFile, ...]] = (
+    "cli-inventory/SKILL.md",
+    "cli-inventory/references/inventory-schema.md",
+    "cli-inventory/scripts/scan_tools.py",
+    "personal-profile/SKILL.md",
+    "personal-profile/references/schema.md",
+    "my-skills/SKILL.md",
+    "my-jira/SKILL.md",
+    "my-jira/config.example.json",
 )
 
 

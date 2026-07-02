@@ -181,6 +181,59 @@ def test_init_registry_initial_commit_does_not_track_preexisting_local_state(
     assert {".gitignore", "README.md", "my-skills.toml"} <= set(tracked)
 
 
+def test_init_registry_seed_copy_does_not_copy_private_source_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = tmp_path / "source-skills"
+    for name, _enabled in DEFAULT_SEED_SKILLS:
+        skill = source / name
+        skill.mkdir(parents=True)
+        skill.joinpath("SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: Test seed.\n---\n\n# {name}\n",
+            encoding="utf-8",
+        )
+    (source / "cli-inventory" / "references").mkdir()
+    (source / "cli-inventory" / "references" / "inventory-schema.md").write_text(
+        "# Schema\n",
+        encoding="utf-8",
+    )
+    (source / "cli-inventory" / "scripts").mkdir()
+    (source / "cli-inventory" / "scripts" / "scan_tools.py").write_text(
+        "print('scan')\n",
+        encoding="utf-8",
+    )
+    (source / "personal-profile" / "references").mkdir()
+    (source / "personal-profile" / "references" / "schema.md").write_text(
+        "# Schema\n",
+        encoding="utf-8",
+    )
+    (source / "my-jira" / "config.example.json").write_text(
+        "{}\n",
+        encoding="utf-8",
+    )
+    (source / "my-jira" / "config.json").write_text(
+        '{"token": "private"}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(init_registry_commands, "seed_skills_dir", lambda: source)
+    target = tmp_path / "my-agent-skills"
+
+    assert cli.main(["init-registry", str(target)]) == 0
+
+    capsys.readouterr()
+    assert not (target / "skills" / "my-jira" / "config.json").exists()
+    tracked = subprocess.run(
+        ["git", "ls-files"],
+        cwd=target,
+        text=True,
+        capture_output=True,
+        check=True,
+    ).stdout.splitlines()
+    assert "skills/my-jira/config.json" not in tracked
+
+
 def test_init_registry_no_git_skips_git_init(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
