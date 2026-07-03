@@ -185,6 +185,11 @@ hosts = []
     return tmp_path
 
 
+def _add_invalid_registered_skill(repo: Path) -> None:
+    with (repo / "my-skills.toml").open("a", encoding="utf-8") as fh:
+        fh.write('\n[skills.broken]\nenabled = true\nhosts = ["claude"]\n')
+
+
 def test_skills_table_shows_per_host_status_columns_without_summary(
     tmp_path, monkeypatch, capsys
 ):
@@ -209,6 +214,27 @@ def test_skills_table_shows_per_host_status_columns_without_summary(
     assert "gamma" in out
     # beta targets only codex, so its claude cell is "-" (not targeted)
     assert "-" in out
+
+
+def test_skills_table_includes_invalid_rows_without_failing(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    repo = _make_skills_repo(tmp_path)
+    _add_invalid_registered_skill(repo)
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+    rc = cli.main(["skills"])
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert captured.err == ""
+    assert "alpha" in captured.out
+    assert "beta" in captured.out
+    assert "gamma" in captured.out
+    assert "broken (invalid)" in captured.out
 
 
 def test_skills_json_filters_by_host_and_enabled_state(tmp_path, monkeypatch, capsys):
@@ -239,6 +265,27 @@ def test_skills_json_filters_by_host_and_enabled_state(tmp_path, monkeypatch, ca
             },
         ]
     }
+
+
+def test_skills_json_includes_invalid_row_error(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    repo = _make_skills_repo(tmp_path)
+    _add_invalid_registered_skill(repo)
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+    rc = cli.main(["skills", "--json", "--host", "claude", "--enabled"])
+
+    payload = json.loads(capsys.readouterr().out)
+    broken = next(row for row in payload["skills"] if row["name"] == "broken")
+    assert rc == 0
+    assert broken["status"] == {"claude": "MISSING"}
+    assert broken["description"].startswith("invalid: ")
+    assert "SKILL.md" in broken["error"]
+    assert [row["name"] for row in payload["skills"]] == ["alpha", "broken", "gamma"]
 
 
 def test_skills_with_status_uses_selected_host_only(

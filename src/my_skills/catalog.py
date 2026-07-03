@@ -19,6 +19,7 @@ class SkillJsonRow(TypedDict):
     status: NotRequired[dict[str, str]]
     audit: NotRequired[dict[str, str]]
     provenance: NotRequired[dict[str, str]]
+    error: NotRequired[str]
 
 
 class CatalogJson(TypedDict):
@@ -35,6 +36,7 @@ class CatalogRow:
     status: dict[str, Status] | None = None
     audit: dict[str, str] | None = None
     provenance: dict[str, str] | None = None
+    error: str | None = None
 
 
 StatusLookup = Callable[[Skill, str], Status]
@@ -88,7 +90,7 @@ def rows_table(rows: list[CatalogRow], status_hosts: list[str]) -> str:
         headers.extend(["AUDIT", "TRUST"])
     raw_rows = [
         [
-            row.name,
+            _skill_cell(row),
             "yes" if row.enabled else "no",
             *(_status_cell(row, host) for host in status_hosts),
             *(_governance_cells(row) if include_governance else ()),
@@ -121,15 +123,22 @@ def _row_for_skill(
     provenance = None
     if governance_lookup is not None:
         audit, provenance = governance_lookup(skill)
+    error = None
+    try:
+        description = _description(source_path)
+    except ManifestError as exc:
+        error = str(exc)
+        description = f"invalid: {error}"
     return CatalogRow(
         name=skill.name,
         enabled=skill.enabled,
         hosts=tuple(skill.hosts),
-        description=_description(source_path),
+        description=description,
         path=Path(manifest.skills_root) / skill.name,
         status=status,
         audit=audit,
         provenance=provenance,
+        error=error,
     )
 
 
@@ -155,7 +164,13 @@ def _row_json(row: CatalogRow) -> SkillJsonRow:
         raw["audit"] = row.audit
     if row.provenance is not None:
         raw["provenance"] = row.provenance
+    if row.error is not None:
+        raw["error"] = row.error
     return raw
+
+
+def _skill_cell(row: CatalogRow) -> str:
+    return f"{row.name} (invalid)" if row.error else row.name
 
 
 def _status_cell(row: CatalogRow, host: str) -> str:
