@@ -48,7 +48,7 @@ jobs:
           trap 'rm -rf "$tmp"' EXIT
           mkdir -p "$tmp/tools" "$tmp/bin" "$tmp/home" "$tmp/state" "$tmp/data" "$tmp/config"
           UV_TOOL_DIR="$tmp/tools" UV_TOOL_BIN_DIR="$tmp/bin" \
-            uv tool install --force "git+file://$GITHUB_WORKSPACE"
+            uv tool install --force "git+file://$GITHUB_WORKSPACE@$GITHUB_SHA"
           PATH="$tmp/bin:$PATH" \
           HOME="$tmp/home" \
           XDG_STATE_HOME="$tmp/state" \
