@@ -14,6 +14,44 @@ are the release source of truth while PyPI publishing remains undecided.
 - GitHub-first install documentation using `uv tool install
   git+https://github.com/Seosiju/my-skills.git`.
 
+### Changed
+
+- **Breaking:** `validate` — and the always-on validation that runs before
+  `install`, `sync`, `import`, and `share` — now applies the full audit
+  analyzer set with a fixed internal policy. Skills that previously passed
+  may now be reported:
+  - Absolute user/home paths in any file are now **errors** (previously
+    warnings, and previously only checked in `SKILL.md`).
+  - Audit-only rules (prompt injection, dangerous command patterns,
+    credential/network dataflow) now surface as `validate` **errors**.
+  - MEDIUM-severity rules (e.g. network senders) now surface as warnings.
+- `share --plan` no longer lists the same finding twice; validation- and
+  audit-derived entries are de-duplicated by file and message.
+- Runtime and system artifacts (`__pycache__`, `.git`, `.omc`, `.DS_Store`)
+  are now ignored consistently by content hashing, validation scanning,
+  audit, and install copies. A stray `.pyc` file in a skill directory no
+  longer breaks `validate`, `audit --all`, or `install`.
+
+### Fixed
+
+- `install`/`sync` no longer lose install state when a plan item fails
+  mid-run: each successful item is recorded immediately and failures are
+  reported per item with a non-zero exit.
+- `skills`/`status` no longer abort when one skill has broken metadata; the
+  broken row is marked `invalid` and the command still exits 0 (the JSON
+  output keeps its contract for agent consumers).
+- A state file written by a newer my-skills version, or with malformed
+  records, is now rejected with a clear message instead of a raw traceback.
+- `share` now honors the manifest audit policy when evaluating candidates
+  (previously it always used the default policy).
+- Package description no longer claims Gemini CLI support; supported hosts
+  are Claude Code, Codex, and Hermes.
+
+### Removed
+
+- Internal `security.py` module; its rules now live in the audit analyzers
+  (user-visible effects are listed under "Changed").
+
 ## [0.1.0] - 2026-06-30
 
 ### Added
