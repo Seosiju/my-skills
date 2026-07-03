@@ -4,9 +4,9 @@ import argparse
 import json
 import sys
 from dataclasses import replace
-from typing import Any, NotRequired, TypedDict
+from typing import NotRequired, TypedDict
 
-from .audit.formatting import format_gate, gate_json
+from .audit.formatting import AuditGateJson, format_gate, gate_json
 from .audit.gate import audit_metadata, audit_policy_from_manifest, audit_skills
 from .checks import compose_validation
 from .cli_runtime import load_manifest_from_cwd, resolve_hosts, select_requested
@@ -31,7 +31,7 @@ class InstallActionJson(TypedDict):
 
 class InstallPlanJson(TypedDict):
     actions: list[InstallActionJson]
-    audit: NotRequired[dict[str, Any]]
+    audit: NotRequired[AuditGateJson]
 
 
 def _validate_selected(manifest: Manifest, skills: list[Skill], hosts: list[str]) -> bool:

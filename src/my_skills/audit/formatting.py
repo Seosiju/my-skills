@@ -1,11 +1,38 @@
 from __future__ import annotations
 
+from typing import NotRequired, TypedDict
+
 from .gate import AuditGateResult
 from .models import AuditFinding, AuditResult
 
 
-def finding_json(finding: AuditFinding) -> dict:
-    payload = {
+class AuditFindingJson(TypedDict):
+    rule_id: str
+    category: str
+    severity: str
+    file: str
+    message: str
+    line: NotRequired[int]
+
+
+class AuditResultJson(TypedDict):
+    skill: str
+    path: str
+    profile: str
+    threshold: str
+    blocked: bool
+    result_hash: str
+    findings: list[AuditFindingJson]
+
+
+class AuditGateJson(TypedDict):
+    skipped: bool
+    blocked: bool
+    skills: list[AuditResultJson]
+
+
+def finding_json(finding: AuditFinding) -> AuditFindingJson:
+    payload: AuditFindingJson = {
         "rule_id": finding.rule_id,
         "category": finding.category,
         "severity": finding.severity.label,
@@ -17,7 +44,7 @@ def finding_json(finding: AuditFinding) -> dict:
     return payload
 
 
-def result_json(result: AuditResult) -> dict:
+def result_json(result: AuditResult) -> AuditResultJson:
     return {
         "skill": result.skill,
         "path": str(result.root),
@@ -29,7 +56,7 @@ def result_json(result: AuditResult) -> dict:
     }
 
 
-def gate_json(gate: AuditGateResult) -> dict:
+def gate_json(gate: AuditGateResult) -> AuditGateJson:
     return {
         "skipped": gate.skipped,
         "blocked": gate.blocked,
