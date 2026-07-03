@@ -8,6 +8,15 @@
 
 ### 개정 이력
 
+- **v3 (2026-07-03)** — 외부 리뷰(Codex) 피드백 반영.
+  - **P0 신설**: 스캐너 ignore 정책 불일치로 `__pycache__/*.pyc`(NUL byte)가
+    `validate`/`audit --all`/`install --dry-run`을 현재 깨뜨리고 있음을 재현
+    확인. 선행 핫픽스 **PR0(H1–H3)** 을 모든 태스크 앞에 배치 — T0 특성화
+    테스트는 validate가 복구된 뒤에만 뜰 수 있다.
+  - P5 재정리: pyproject Gemini 건은 완료 기록으로 강등(§7 정책 선언은 유지),
+    README 시드 표·validation 주석 중심으로 재서술.
+  - DoD 8번 추가: repo 자체 `skills/` 트리가 validate/audit/install --dry-run을
+    통과(H2 스모크 테스트로 고정).
 - **v2 (2026-07-03)** — 지침 자체 점검 결과 반영.
   - T1/T3의 "기존 동작 동일" 전제 폐기: audit 게이트는 정책 의존적
     (`--skip-audit`, `permissive`)이라 v1 T3(A안)대로 compose에서 보안 스캔을
@@ -25,17 +34,21 @@
 2026-07-03 기준 전체 코드베이스 분석(codegraph 기반) 결과를 바탕으로,
 오픈소스 배포 품질을 끌어올리기 위한 수정 계획을 정의한다.
 
-현재 상태는 양호하다: 계획(planner)/실행(installer)/상태(state) 분리가 명확하고,
-원자적 쓰기·드리프트 6분류·audit 게이트가 동작하며, 테스트 214건이 전부 통과한다
-(소스 4,045줄 / 테스트 3,082줄). 그러나 다음 구조적 결함이 남아 있다.
+현재 상태는 대체로 양호하다: 계획(planner)/실행(installer)/상태(state) 분리가
+명확하고, 원자적 쓰기·드리프트 6분류·audit 게이트가 동작하며, 테스트 214건이
+전부 통과한다(소스 4,045줄 / 테스트 3,082줄). 그러나 다음 결함이 남아 있다.
 
+0. **[현행 장애] 스캐너 ignore 정책 불일치** — `__pycache__/*.pyc`의 NUL byte가
+   `validate`/`audit --all`/`install --dry-run`을 지금 깨뜨린다. 해시는
+   `__pycache__`를 무시하지만 스캐너는 전체를 훑기 때문(2026-07-03 재현 확인).
 1. **보안 스캔이 두 벌** — `security.py`(구형)와 `audit/`(신형)가 같은 규칙을
    중복 보유하고, 설치 경로에서 둘 다 실행된다. 규칙 드리프트 위험.
 2. **설치 부분 실패 시 상태 유실** — 플랜 실행 도중 예외가 나면 이미 디스크에
    쓰인 설치가 state.json에 기록되지 않아 다음 실행에서 `UNMANAGED`로 오판된다.
 3. **state.json 전방 호환성 없음** — 미래 스키마의 필드가 있으면 `TypeError`로 즉사.
 4. **카탈로그 단일 실패 전파** — 스킬 하나가 깨지면 `skills` 목록 전체가 실패.
-5. **문서/메타데이터 불일치** — pyproject의 "Gemini CLI" 언급, README 스킬 표 누락 등.
+5. **문서/메타데이터 불일치** — README 시드 스킬 표 누락, validation 주석-동작
+   불일치. (pyproject의 "Gemini CLI" 오기는 2026-07-03 수정 완료, 커밋 `e54c32e`)
 
 이 문서는 각 문제의 근거 위치, 수정 설계, 테스트 기준, PR 분해를 정의한다.
 기존 install/sync 사용자 가시 동작(출력 포맷, 종료 코드, 차단 규칙)은 원칙적으로
@@ -65,6 +78,7 @@
 
 | # | 문제 | 근거 위치 | 심각도 |
 |---|------|-----------|--------|
+| P0 | 스캐너 ignore 정책 불일치 — `__pycache__` NUL byte가 validate/audit/install 차단 (현행 장애) | `src/my_skills/hashing.py:19`(무시함) ↔ `src/my_skills/security.py:86`, `src/my_skills/audit/analyzers.py:97`, `src/my_skills/audit/dataflow.py:38`(안 함), `src/my_skills/installer.py:38`(copytree도 안 함) | 최고 |
 | P1 | 보안 스캔 이원화 (규칙 중복 + 이중 스캔) | `src/my_skills/security.py` ↔ `src/my_skills/audit/static.py`, `src/my_skills/checks.py` | 높음 |
 | P2 | 설치 부분 실패 시 state 유실 + raw traceback | `src/my_skills/install_commands.py:69` `_apply_plan_with_audit`, `:188` | 높음 |
 | P3 | state.json 전방 호환성 없음 | `src/my_skills/state.py:55-65` `State.load` | 중간 |
@@ -73,6 +87,27 @@
 | P6 | 소소한 위생 문제 (보일러플레이트, 중복 IO, 정책 불일치) | `*_commands.py`, `src/my_skills/audit/dataflow.py:38`, `src/my_skills/sharing.py:286` | 낮음 |
 
 ### 2.3 문제별 상세
+
+**P0 — 스캐너 ignore 정책 불일치 (현행 장애).**
+`skills/cli-inventory/scripts/__pycache__/scan_tools.cpython-313.pyc`가 존재하는
+머신에서 `validate`가 cli-inventory를 FAIL 처리하고(`file contains a NUL byte`)
+`install --dry-run`이 BLOCKED된다 — 2026-07-03 이 저장소에서 재현 확인.
+원인은 ignore 정책이 세 곳에서 어긋나기 때문이다.
+
+- `hashing.py:19`는 `__pycache__`/`.git`/`.omc`/`.DS_Store`를 **무시**한다
+  (드리프트 오탐 방지 — 파일 주석에 목적 명시).
+- `security.scan_skill`(`security.py:86`), audit `_file_contexts`
+  (`audit/analyzers.py:97`), `dataflow._text_files`(`audit/dataflow.py:38`)는
+  `rglob("*")` 전체를 훑는다 → `.pyc`의 NUL byte가 error/CRITICAL로 잡힌다.
+- `installer.copy_install`(`installer.py:38`)의 `shutil.copytree`도 ignore가
+  없어 아티팩트가 호스트로 설치된다(해시는 무시하므로 상태는 FRESH로 표시).
+
+`.gitignore:8`이 `__pycache__/`를 덮으므로 git status는 clean — **git에 보이지
+않는 아티팩트가 런타임 명령을 깨뜨린다**. Python 스크립트를 동봉한 스킬
+(cli-inventory)의 특성상 import 한 번이면 재발하므로, `.pyc` 삭제는 수정이
+아니고 ignore 정책 단일화(PR0)가 수정이다. 부수 발견: `pytest 214 passed`
+상태에서 실제 CLI가 깨져 있었다 — 테스트가 픽스처 스킬만 쓰고 repo의 실제
+`skills/` 트리를 검증하지 않기 때문이다(H2에서 보강).
 
 **P1 — 보안 스캔 이원화.**
 `security.py`와 `audit/static.py`가 `_BIDI_CHARS`, `_PRIVATE_KEY_RE`,
@@ -103,12 +138,10 @@ raw traceback으로 노출된다.
 
 **P5 — 문서/메타데이터 불일치.**
 
-- `pyproject.toml` description이 "Gemini CLI and Hermes"를 언급하나 gemini는
-  **애초에 지원 대상이 아니다**. 지원 호스트는 claude/codex/hermes 셋뿐이고
-  (`src/my_skills/hosts/`), gemini 호스트는 계획에도 없다. description의 오기다.
-  (참고: `skills/cli-inventory/scripts/scan_tools.py`의 `"gemini"` 라벨은
-  cli-inventory 스킬이 머신에 설치된 gemini CLI를 탐지하는 것으로, my-skills의
-  호스트 지원과 무관하다 — 건드리지 않는다.)
+- ~~pyproject description의 "Gemini CLI" 오기~~ — **2026-07-03 수정 완료**
+  (커밋 `e54c32e`). gemini는 애초에 지원 대상이 아니라는 정책 선언은 §7에
+  유지한다. `skills/cli-inventory/scripts/scan_tools.py`의 `"gemini"` 라벨은
+  머신에 설치된 gemini CLI를 탐지하는 별개 용도이므로 건드리지 않는다.
 - `README.md`/`README.ko.md` "Included skills" 표는 3개(cli-inventory,
   personal-profile, my-skills)만 나열하나 실제 시드는 `my-jira`(disabled) 포함
   4개다 (`src/my_skills/defaults.py:12` `DEFAULT_SEED_SKILLS`).
@@ -154,10 +187,73 @@ raw traceback으로 노출된다.
 각 태스크는 독립적으로 집을 수 있는 단위이며 자체 테스트(RED → GREEN)를 포함한다.
 의존성 순서를 지킨다.
 
+### PR0 — 선행 핫픽스: 스캐너 ignore 정책 단일화 (P0)
+
+**모든 태스크에 선행한다.** validate가 깨진 상태에서는 T0 특성화 테스트를 뜰 수
+없고(깨진 출력이 golden으로 고정된다), §5의 PR 게이트(`install --dry-run`)도
+실행할 수 없다.
+
+**H1. 공유 ignore 정책 모듈 + 스캐너 3곳 적용**
+
+- 신규 파일 `src/my_skills/ignore.py`:
+  - `hashing.py:19-27`의 `_IGNORED_DIRS`, `_IGNORED_FILES`, `_is_ignored`를
+    이 모듈로 이동하고 공개 이름 `IGNORED_DIRS`, `IGNORED_FILES`,
+    `is_ignored(rel: Path) -> bool`로 노출한다. **값 변경 금지**
+    (`{".omc", ".git", "__pycache__"}` / `{".DS_Store"}` 그대로).
+  - `hashing.py`는 이 모듈을 import해 쓴다. **해시 결과가 바뀌면 안 된다** —
+    `tests/test_hashing.py`가 수정 없이 그대로 통과해야 한다.
+- 적용 지점 3곳 — 각 파일 walk에서 `is_ignored(file.relative_to(root))`인
+  파일을 건너뛴다:
+  1. `src/my_skills/security.py` `scan_skill`의 `rglob` 루프(:86).
+     (이 파일은 PR1 T2에서 삭제되지만 PR0이 선행하므로 지금 패치한다.)
+  2. `src/my_skills/audit/analyzers.py` `_file_contexts`(:95).
+  3. `src/my_skills/audit/dataflow.py` `_text_files`(:38).
+- 테스트(RED → GREEN, `tests/test_security.py`·`tests/test_audit.py`에 추가):
+  1. 픽스처 스킬에 `__pycache__/x.cpython-313.pyc`(내용에 `b"\x00"` 포함)를
+     생성 → RED: `scan_skill`/`run_audit`이 nul-byte finding을 냄을 확인,
+     GREEN: finding 0건.
+  2. `.DS_Store`, `.omc/state.json`도 무시되는 케이스 각 1개.
+  3. 역방향 고정: `scripts/` 아래 **일반 파일**의 NUL byte는 여전히 검출되어야
+     한다(무시 범위 과확장 방지).
+
+**H2. repo 자체 스킬 스모크 테스트**
+
+- 신규 `tests/test_repo_skills_smoke.py`:
+  - repo 루트 `skills/` 아래 각 스킬 디렉터리에 대해
+    `compose_validation(skill_dir).ok is True`를 단언.
+  - 같은 디렉터리에 `run_audit(skill_dir, policy=AuditPolicy())`를 돌려
+    `result.blocked is False`를 단언.
+- 이 테스트는 "git에 보이지 않는 아티팩트가 검증을 깨뜨리는" 문제 클래스의
+  영구 회귀 방지 장치다. 이후 T1의 의도적 강화로 시드 스킬이 걸리면
+  (예: abs-user-path 승격) 테스트를 완화하지 말고 **스킬 쪽을 고친다**.
+
+**H3. copytree ignore (선택)**
+
+- `installer.copy_install`(:38)의 `shutil.copytree(source, staged)`에
+  `ignore=shutil.ignore_patterns(*IGNORED_DIRS, *IGNORED_FILES)` 상당을 적용해
+  아티팩트가 호스트로 설치되지 않게 한다. 설치본 해시는 `hash_directory`가
+  이미 이들을 무시하므로 해시/드리프트 판정은 변하지 않는다 — 안전한 이유.
+- 이득이 작은 동작 변경이므로 **선택**. 하려면 H1과 같은 PR에서, 설치 결과
+  디렉터리에 `__pycache__`가 없음을 단언하는 테스트와 함께.
+
+**PR0 완료 게이트** — 구현자는 아래 4개를 모두 실행하고 출력을 PR 본문에 남긴다:
+
+```bash
+uv run pytest -q                      # 전건 통과
+uv run my-skills validate             # 종료 코드 0, [FAIL] 없음
+uv run my-skills audit --all          # 종료 코드 0
+uv run my-skills install --dry-run    # "validation failed"/BLOCKED 문구 없음
+```
+
+(마지막 명령의 개별 액션 상태는 머신의 설치 이력에 따라 다를 수 있다 —
+게이트 조건은 validation/audit 차단이 없다는 것이지 전 항목 NOOP이 아니다.)
+
 ### PR1 — 스캔 통합 (P1)
 
 **T0. 특성화(golden) 테스트 — 리팩터링 전 필수 선행**
 
+- **선행 조건: PR0(H1·H2) 머지 완료.** `uv run my-skills validate`가 종료 코드
+  0을 내는 상태에서만 golden을 캡처한다.
 - 규칙별 픽스처 스킬(secret, bidi, abs-path, prompt-injection, 정상) ×
   명령(`validate`, `install --dry-run`, `import`, `share --plan`)의
   stdout·stderr·종료 코드를 그대로 고정하는 테스트를 T1 **착수 전에** 커밋한다.
@@ -333,6 +429,7 @@ raw traceback으로 노출된다.
 ## 5. PR 분해와 실행 순서
 
 ```text
+PR0 (H1→H2, H3*)   선행 핫픽스        — ignore 정책 단일화 + 스모크 (*선택)
 PR1 (T0→T1→T2→T3)  스캔 통합         — 특성화 테스트 선행, security.py 소멸,
                                         규칙 단일화 + 상시 방어선 고정
 PR2 (T4, T5)       설치 견고성        — state 유실/전방 호환
@@ -340,12 +437,20 @@ PR3 (T6)           카탈로그 부분 성공
 PR4 (T7, T8*, T9*) 문서 정합 + 위생   (*선택)
 ```
 
+- **PR0은 모든 PR에 선행한다.** validate가 복구되기 전에는 T0 golden 캡처와
+  PR 게이트 실행이 불가능하다.
 - PR1과 PR2는 서로 다른 파일을 만지므로 병행 가능하나, PR1이 `checks.py`와
   `install_commands.py`의 검증 흐름을 바꾸므로 **PR1 → PR2 순서를 권장**한다.
 - PR3, PR4는 독립적. 언제든 끼워 넣을 수 있다.
 - 각 PR의 게이트: `uv run pytest` 전건 통과 + `uv run my-skills doctor` +
   `uv run my-skills install --dry-run` 출력 육안 확인(사용자 가시 동작 동결
   검증). 릴리스 전 `docs/release-checklist.md` 절차 준수.
+- **구현자 노트**: ① 태스크 범위 밖의 리팩터링을 끼워 넣지 않는다.
+  ② 각 태스크 완료 시 이 문서의 해당 항목에 **(완료, 커밋 해시)** 를 표기한다
+  (T7의 표기가 예시). ③ 문서에 없는 A/B 선택 지점을 만나면 임의로 정하지 말고
+  이 문서에 결정 요청을 남기고 멈춘다. ④ 파일:라인 참조는 작성 시점 기준이므로
+  선행 PR 이후 어긋날 수 있다 — 심볼 이름(`scan_skill`, `_file_contexts` 등)을
+  기준으로 찾는다.
 
 ## 6. 완료 기준 (Definition of Done)
 
@@ -365,6 +470,9 @@ PR4 (T7, T8*, T9*) 문서 정합 + 위생   (*선택)
    종료 코드 규약과 차단 규칙(DRIFTED/CONFLICT/UNMANAGED 차단)이 변하지
    않는다. (v1의 "214건" 고정 개수 조건은 test_security 이관으로 개수가
    변하므로 커버리지 동등성 조건으로 대체.)
+8. repo 자체 `skills/` 트리가 `validate`/`audit --all`/`install --dry-run`을
+   통과하고(`__pycache__` 등 아티팩트 존재 시에도), ignore 정책은
+   `src/my_skills/ignore.py` 한 곳에만 정의된다. H2 스모크 테스트로 고정.
 
 ## 7. 범위 밖 (이번에 하지 않는 것)
 
