@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from my_skills.defaults import DEFAULT_SEED_SKILLS
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -12,6 +14,15 @@ def _section(text: str, heading: str) -> str:
     if next_heading == -1:
         return text[start:]
     return text[start:next_heading]
+
+
+def _table_skill_names(section: str) -> list[str]:
+    names: list[str] = []
+    for line in section.splitlines():
+        if not line.startswith("| `"):
+            continue
+        names.append(line.split("`", 2)[1])
+    return names
 
 
 def test_readmes_use_init_registry_as_first_run_front_door() -> None:
@@ -27,3 +38,13 @@ def test_readmes_use_init_registry_as_first_run_front_door() -> None:
         assert "my-skills install --dry-run" in section
         assert "my-skills bootstrap" not in section
         assert "git clone https://github.com/Seosiju/my-skills.git" not in section
+
+
+def test_readme_included_skills_match_default_seed_skills() -> None:
+    english = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    korean = (REPO_ROOT / "README.ko.md").read_text(encoding="utf-8")
+
+    expected = [name for name, _enabled in DEFAULT_SEED_SKILLS]
+
+    assert _table_skill_names(_section(english, "## Included skills")) == expected
+    assert _table_skill_names(_section(korean, "## 포함된 스킬")) == expected

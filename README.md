@@ -162,6 +162,7 @@ my-skills install
 | `cli-inventory` | Discover the CLI tools installed on this machine (PATH + Homebrew/npm/pipx/cargo/gem/pip) and record them to a machine-local inventory you can read back quickly. |
 | `personal-profile` | Remembers durable user facts (identity, preferences) and applies them across agents. |
 | `my-skills` | Agent-facing skill that guides catalog, share, install, and sync workflows through the CLI. |
+| `my-jira` | Disabled-by-default Jira/Atlassian bootstrap skill with a machine-local config template. |
 
 ## Everyday commands
 
