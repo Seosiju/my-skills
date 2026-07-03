@@ -31,6 +31,23 @@ def test_fresh_install(tmp_path):
     assert record.installed_at.endswith("Z")
 
 
+def test_copy_install_does_not_install_ignored_artifacts(tmp_path):
+    src = _src(tmp_path)
+    dest = tmp_path / "hosts" / "claude" / "alpha"
+    (src / "__pycache__").mkdir()
+    (src / "__pycache__" / "x.pyc").write_bytes(b"cache\x00data")
+    (src / ".omc").mkdir()
+    (src / ".omc" / "state.json").write_text('{"state":"ok"}')
+    (src / ".DS_Store").write_text("finder state")
+
+    copy_install(_item(src, dest))
+
+    assert (dest / "SKILL.md").exists()
+    assert not (dest / "__pycache__").exists()
+    assert not (dest / ".omc").exists()
+    assert not (dest / ".DS_Store").exists()
+
+
 def test_update_in_place(tmp_path):
     src = _src(tmp_path)
     dest = tmp_path / "hosts" / "claude" / "alpha"

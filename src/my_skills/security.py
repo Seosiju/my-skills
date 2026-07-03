@@ -10,6 +10,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from .ignore import is_ignored
+
 # Bidirectional / hidden Unicode control characters (Trojan Source class):
 # LRE RLE PDF LRO RLO, LRI RLI FSI PDI, LRM RLM. Written as code points so the
 # source file itself stays free of the very characters it detects.
@@ -86,7 +88,10 @@ def scan_skill(path: Path) -> list[Finding]:
     for file in sorted(path.rglob("*")):
         if not file.is_file():
             continue
-        rel = str(file.relative_to(path))
+        relative = file.relative_to(path)
+        if is_ignored(relative):
+            continue
+        rel = str(relative)
         try:
             raw = file.read_bytes()
         except OSError:

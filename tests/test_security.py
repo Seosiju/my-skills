@@ -46,3 +46,39 @@ def test_nul_byte_detected(tmp_path):
         b"---\nname: nul-skill\ndescription: x\n---\nbody\x00here\n"
     )
     assert any(f.rule == "nul-byte" for f in scan_skill(d))
+
+
+def test_scan_skill_ignores_runtime_artifacts_with_nul_bytes(tmp_path):
+    # Given: a clean skill plus runtime/system artifacts that can contain binary data.
+    d = tmp_path / "runtime-artifacts"
+    d.mkdir()
+    (d / "SKILL.md").write_text(
+        "---\nname: runtime-artifacts\ndescription: Valid skill.\n---\n\n# Body\n"
+    )
+    (d / "__pycache__").mkdir()
+    (d / "__pycache__" / "x.pyc").write_bytes(b"cache\x00data")
+    (d / ".omc").mkdir()
+    (d / ".omc" / "state.json").write_bytes(b'{"state":"ok"}\x00')
+    (d / ".DS_Store").write_bytes(b"finder\x00state")
+
+    # When: the security scanner walks the skill directory.
+    findings = scan_skill(d)
+
+    # Then: ignored runtime/system artifacts do not produce findings.
+    assert findings == []
+
+
+def test_scan_skill_still_detects_nul_bytes_in_regular_files(tmp_path):
+    # Given: a normal skill script containing a NUL byte.
+    d = tmp_path / "regular-nul"
+    (d / "scripts").mkdir(parents=True)
+    (d / "SKILL.md").write_text(
+        "---\nname: regular-nul\ndescription: Valid skill.\n---\n\n# Body\n"
+    )
+    (d / "scripts" / "nul.py").write_bytes(b"print('hi')\x00\n")
+
+    # When: the security scanner walks the skill directory.
+    findings = scan_skill(d)
+
+    # Then: regular content is still scanned.
+    assert [(f.file, f.rule) for f in findings] == [("scripts/nul.py", "nul-byte")]

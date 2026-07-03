@@ -4,6 +4,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Protocol
 
+from ..ignore import is_ignored
 from .models import AuditContext, AuditFinding, AuditResult, Severity
 from .policy import AuditPolicy
 
@@ -97,7 +98,10 @@ def _file_contexts(root: Path) -> tuple[AuditContext, ...]:
     for file in sorted(root.rglob("*")):
         if not file.is_file():
             continue
-        rel = str(file.relative_to(root))
+        relative = file.relative_to(root)
+        if is_ignored(relative):
+            continue
+        rel = str(relative)
         try:
             raw = file.read_bytes()
         except OSError as exc:

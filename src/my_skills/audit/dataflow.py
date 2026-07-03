@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..ignore import is_ignored
 from .analyzers import AnalyzerScope, TEXT_SUFFIXES
 from .commands import contains_credential_reader, contains_network_sender
 from .models import AuditContext, AuditFinding, Severity
@@ -38,11 +39,14 @@ class DataflowAnalyzer:
 def _text_files(root: Path) -> tuple[tuple[str, str], ...]:
     files: list[tuple[str, str]] = []
     for file in sorted(root.rglob("*")):
-        if not file.is_file() or file.suffix.lower() not in TEXT_SUFFIXES:
+        if not file.is_file():
+            continue
+        relative = file.relative_to(root)
+        if is_ignored(relative) or file.suffix.lower() not in TEXT_SUFFIXES:
             continue
         try:
             text = file.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             continue
-        files.append((str(file.relative_to(root)), text))
+        files.append((str(relative), text))
     return tuple(files)

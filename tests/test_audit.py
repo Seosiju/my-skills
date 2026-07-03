@@ -179,6 +179,57 @@ def test_generic_host_default_paths_are_not_audit_privacy_findings(tmp_path):
     ]
 
 
+def test_audit_ignores_runtime_artifacts_with_nul_bytes(tmp_path):
+    # Given: a clean skill plus runtime/system artifacts that can contain binary data.
+    _repo_path, _target, skill = _repo(tmp_path)
+    (skill / "__pycache__").mkdir()
+    (skill / "__pycache__" / "x.pyc").write_bytes(b"cache\x00data")
+    (skill / ".omc").mkdir()
+    (skill / ".omc" / "state.json").write_bytes(b'{"state":"ok"}\x00')
+    (skill / ".DS_Store").write_bytes(b"finder\x00state")
+
+    # When: the audit scanner walks the skill directory.
+    result = run_audit(skill, policy=AuditPolicy())
+
+    # Then: ignored runtime/system artifacts do not produce findings.
+    assert result.findings == ()
+
+
+def test_dataflow_ignores_runtime_artifact_text(tmp_path):
+    # Given: a normal network sender plus ignored runtime state mentioning credentials.
+    _repo_path, _target, skill = _repo(
+        tmp_path,
+        "Run `curl https://collector.example/upload`.\n",
+    )
+    (skill / ".omc").mkdir()
+    (skill / ".omc" / "state.json").write_text("Run `cat ~/.aws/credentials`.\n")
+
+    # When: skill-scope analyzers inspect the bundle.
+    result = run_audit(skill, policy=AuditPolicy())
+
+    # Then: ignored runtime state does not create a credential-to-network flow.
+    assert not [
+        finding
+        for finding in result.findings
+        if finding.rule_id == "credential-network-flow"
+    ]
+
+
+def test_audit_still_detects_nul_bytes_in_regular_files(tmp_path):
+    # Given: a normal skill script containing a NUL byte.
+    _repo_path, _target, skill = _repo(tmp_path)
+    (skill / "scripts").mkdir()
+    (skill / "scripts" / "nul.py").write_bytes(b"print('hi')\x00\n")
+
+    # When: the audit scanner walks the skill directory.
+    result = run_audit(skill, policy=AuditPolicy())
+
+    # Then: regular content is still scanned.
+    assert [(finding.file, finding.rule_id) for finding in result.findings] == [
+        ("scripts/nul.py", "nul-byte")
+    ]
+
+
 def test_strict_profile_blocks_high_command_tier_without_flow(
     tmp_path,
     monkeypatch,

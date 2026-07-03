@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .hashing import hash_directory
+from .ignore import IGNORED_DIRS, IGNORED_FILES
 from .planner import PlanItem
 from .state import InstallRecord
 
@@ -35,7 +36,11 @@ def copy_install(item: PlanItem, mode: str = "copy") -> InstallRecord:
     staged = staging / dest.name
     backup: Path | None = None
     try:
-        shutil.copytree(source, staged)
+        shutil.copytree(
+            source,
+            staged,
+            ignore=shutil.ignore_patterns(*IGNORED_DIRS, *IGNORED_FILES),
+        )
 
         if dest.exists():
             backup = dest.parent / f".{dest.name}.backup-{os.getpid()}"
