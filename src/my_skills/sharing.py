@@ -142,7 +142,13 @@ def apply_share_from_host(
     if not (source / "SKILL.md").is_file():
         raise ManifestError(f"{source} is not an Agent Skill (no SKILL.md)")
 
-    candidate = _candidate_for_source(manifest, source, skip_audit=skip_audit)
+    audit_policy = audit_policy_from_manifest(manifest)
+    candidate = _candidate_for_source(
+        manifest,
+        source,
+        audit_policy=audit_policy,
+        skip_audit=skip_audit,
+    )
     errors = [risk.message for risk in candidate.risks if risk.severity in ("critical", "error")]
     if errors:
         raise ShareBlockedError(
@@ -166,7 +172,14 @@ def apply_share_from_host(
 
     hosts = tuple(name for name, target in manifest.targets.items() if target.enabled)
     register_skill(manifest_path, candidate.name, enabled=enabled, hosts=hosts)
-    _adopt_source_host(state, candidate.name, from_host, candidate.canonical, source)
+    _adopt_source_host(
+        state,
+        candidate.name,
+        from_host,
+        candidate.canonical,
+        source,
+        audit_policy=audit_policy,
+    )
     state.save()
     return ShareApplyResult(
         name=candidate.name,
@@ -188,10 +201,21 @@ def _host_skill_dirs(source_root: Path) -> list[Path]:
     ]
 
 
-def _candidate_for_source(manifest: Manifest, source: Path, *, skip_audit: bool = False) -> ShareCandidate:
+def _candidate_for_source(
+    manifest: Manifest,
+    source: Path,
+    *,
+    audit_policy: AuditPolicy | None = None,
+    skip_audit: bool = False,
+) -> ShareCandidate:
     name, description = _metadata(source)
     canonical = manifest.skills_dir / name
-    risks = _risks(manifest, source, skip_audit=skip_audit)
+    risks = _risks(
+        manifest,
+        source,
+        audit_policy=audit_policy,
+        skip_audit=skip_audit,
+    )
     canonical_status = _canonical_status(canonical, source)
     choices, recommended = _choices(risks, canonical_status)
     return ShareCandidate(
@@ -215,12 +239,19 @@ def _metadata(source: Path) -> tuple[str, str]:
     return str(meta.get("name") or source.name), str(meta.get("description") or "")
 
 
-def _risks(manifest: Manifest, source: Path, *, skip_audit: bool) -> tuple[Risk, ...]:
+def _risks(
+    manifest: Manifest,
+    source: Path,
+    *,
+    audit_policy: AuditPolicy | None = None,
+    skip_audit: bool,
+) -> tuple[Risk, ...]:
     result = compose_validation(source)
     risks = [Risk("error", message) for message in result.errors]
     risks.extend(Risk("warning", message) for message in result.warnings)
     if not skip_audit:
-        audit = run_audit(source, policy=audit_policy_from_manifest(manifest))
+        policy = audit_policy or audit_policy_from_manifest(manifest)
+        audit = run_audit(source, policy=policy)
         for finding in audit.findings:
             risks.append(
                 Risk(finding.severity.label, f"{finding.rule_id}: {finding.file}: {finding.message}")
@@ -282,8 +313,16 @@ def _replace_canonical(source: Path, canonical: Path, *, force: bool) -> None:
     shutil.copytree(source, canonical)
 
 
-def _adopt_source_host(state: State, skill: str, host: str, canonical: Path, source: Path) -> None:
-    audit = run_audit(canonical, policy=AuditPolicy())
+def _adopt_source_host(
+    state: State,
+    skill: str,
+    host: str,
+    canonical: Path,
+    source: Path,
+    *,
+    audit_policy: AuditPolicy,
+) -> None:
+    audit = run_audit(canonical, policy=audit_policy)
     metadata = audit_metadata(audit)
     state.put(
         InstallRecord(

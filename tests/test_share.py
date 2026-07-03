@@ -3,6 +3,7 @@ from pathlib import Path
 
 from my_skills import cli
 from my_skills.config import load_manifest
+from my_skills.state import State
 
 
 def _skill(path: Path, name: str, description: str, body: str = "") -> Path:
@@ -161,3 +162,21 @@ def test_share_apply_disable_registers_disabled_skill(tmp_path, monkeypatch, cap
     manifest = load_manifest(repo)
     assert manifest.skills["brand"].enabled is False
     assert (repo / "skills" / "brand" / "SKILL.md").exists()
+
+
+def test_share_apply_records_manifest_audit_policy(tmp_path, monkeypatch, capsys):
+    repo, claude, _codex, _hermes = _repo_with_targets(tmp_path)
+    (repo / "my-skills.toml").write_text(
+        (repo / "my-skills.toml").read_text(encoding="utf-8")
+        + "\n[audit]\nprofile = \"permissive\"\n"
+    )
+    _skill(claude, "brand", "A host-only skill.")
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+    assert cli.main(["share", "--from", "claude", "brand", "--enable"]) == 0
+
+    record = State.load().get("brand", "claude")
+    assert record is not None
+    assert record.audit_profile == "permissive"
+    assert record.audit_threshold == "none"
