@@ -1,7 +1,7 @@
 [project]
 name = "my-skills"
 version = "0.1.0"
-description = "Personal cross-agent Agent Skill registry: manage, validate, install and sync skills across Claude Code, Codex, Gemini CLI and Hermes."
+description = "Personal cross-agent Agent Skill registry: manage, validate, install and sync skills across Claude Code, Codex and Hermes."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
