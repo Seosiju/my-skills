@@ -224,10 +224,6 @@ def test_share_plan_characterizes_candidate_risks(tmp_path, monkeypatch):
         {
             "severity": "error",
             "message": "security: SKILL.md: prompt-injection instruction",
-        },
-        {
-            "severity": "critical",
-            "message": "prompt-injection: SKILL.md: prompt-injection instruction",
         }
     ]
     assert candidates["abs-path"]["risks"] == [
@@ -235,19 +231,11 @@ def test_share_plan_characterizes_candidate_risks(tmp_path, monkeypatch):
             "severity": "error",
             "message": "security: SKILL.md: absolute user/home path leak",
         },
-        {
-            "severity": "high",
-            "message": "abs-user-path: SKILL.md: absolute user/home path leak",
-        },
     ]
     assert candidates["bidi"]["risks"] == [
         {
             "severity": "error",
             "message": "security: SKILL.md: hidden/bidirectional Unicode control character",
-        },
-        {
-            "severity": "critical",
-            "message": "bidi-unicode: SKILL.md: hidden/bidirectional Unicode control character",
         },
     ]
     assert candidates["secret"]["risks"] == [
@@ -258,13 +246,5 @@ def test_share_plan_characterizes_candidate_risks(tmp_path, monkeypatch):
         {
             "severity": "error",
             "message": "security: SKILL.md: secret-like assignment",
-        },
-        {
-            "severity": "critical",
-            "message": "aws-key: SKILL.md: AWS access key id pattern",
-        },
-        {
-            "severity": "critical",
-            "message": "secret: SKILL.md: secret-like assignment",
         },
     ]

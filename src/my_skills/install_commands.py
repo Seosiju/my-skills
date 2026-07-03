@@ -4,34 +4,19 @@ import argparse
 import json
 import sys
 from dataclasses import replace
-from typing import NotRequired, TypedDict
 
-from .audit.formatting import AuditGateJson, format_gate, gate_json
+from .audit.formatting import format_gate, gate_json
 from .audit.gate import audit_metadata, audit_policy_from_manifest, audit_skills
 from .checks import compose_validation
 from .cli_runtime import load_manifest_from_cwd, resolve_hosts, select_requested
 from .config import Manifest, ManifestError, Skill
 from .hosts import get_host
+from .install_formatting import install_plan_json
 from .installer import copy_install, link_install, uninstall
 from .planner import Action, PlanItem, Status, plan_install, plan_uninstall, status_of
 from .state import State, StateError
 from .validation import validate_skill_for_host
 from .write_confirmation import confirm_multi_host_write, is_builtin_seed_default_install
-
-
-class InstallActionJson(TypedDict):
-    skill: str
-    host: str
-    action: str
-    reason: str
-    mode: str
-    source: str
-    destination: str
-
-
-class InstallPlanJson(TypedDict):
-    actions: list[InstallActionJson]
-    audit: NotRequired[AuditGateJson]
 
 
 def _validate_selected(manifest: Manifest, skills: list[Skill], hosts: list[str]) -> bool:
@@ -106,23 +91,6 @@ def _apply_plan_with_audit(
     return changed, blocked
 
 
-def _install_plan_json(plan: list[PlanItem]) -> InstallPlanJson:
-    return {
-        "actions": [
-            {
-                "skill": item.skill,
-                "host": item.host,
-                "action": item.action.value,
-                "reason": item.reason,
-                "mode": item.mode,
-                "source": str(item.source),
-                "destination": str(item.destination),
-            }
-            for item in plan
-        ]
-    }
-
-
 def _audit_selected(manifest: Manifest, skills: list[Skill], *, skip: bool):
     paths = tuple(manifest.skills_dir / skill.name for skill in skills)
     return audit_skills(paths, policy=audit_policy_from_manifest(manifest), skip=skip)
@@ -163,7 +131,7 @@ def cmd_install(args: argparse.Namespace) -> int:
 
     if args.dry_run:
         if args.json:
-            payload = _install_plan_json(plan)
+            payload = install_plan_json(plan)
             payload["audit"] = gate_json(gate)
             print(json.dumps(payload, indent=2))
             return 0
