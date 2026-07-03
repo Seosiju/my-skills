@@ -112,12 +112,12 @@ def test_validate_characterizes_current_static_rule_surface(tmp_path, monkeypatc
         rc=1,
         out=(
             "[FAIL] abs-path\n"
-            "  error: body contains an absolute host path; prefer host-neutral relative paths\n"
-            "  warn:  security: SKILL.md: absolute user/home path leak\n"
+            "  error: security: SKILL.md: absolute user/home path leak\n"
             "[FAIL] bidi\n"
             "  error: security: SKILL.md: hidden/bidirectional Unicode control character\n"
             "[OK] clean\n"
-            "[OK] prompt-injection\n"
+            "[FAIL] prompt-injection\n"
+            "  error: security: SKILL.md: prompt-injection instruction\n"
             "[FAIL] secret\n"
             "  error: security: SKILL.md: AWS access key id pattern\n"
             "  error: security: SKILL.md: secret-like assignment\n"
@@ -147,17 +147,12 @@ def test_install_dry_run_characterizes_validation_and_audit_boundaries(
         err="",
     )
     assert _capture(["install", "prompt-injection", "--dry-run"], tmp_path) == Observation(
-        rc=0,
+        rc=1,
         out=(
-            "AUDIT WOULD BLOCK\n"
-            "  prompt-injection: blocked (threshold=critical)\n"
-            "    critical: prompt-injection: SKILL.md: prompt-injection instruction\n"
-            "Dry run \u2014 planned actions (nothing written):\n"
-            "  CREATE           prompt-injection -> claude  (destination missing)\n"
-            "  SKIP_UNSUPPORTED prompt-injection -> codex  (codex not in skill.hosts)\n"
-            "  SKIP_UNSUPPORTED prompt-injection -> hermes  (hermes not in skill.hosts)\n"
+            "[BLOCKED] prompt-injection: validation failed\n"
+            "  error: security: SKILL.md: prompt-injection instruction\n"
         ),
-        err="",
+        err="\nNo files were changed (fix validation errors first).\n",
     )
     assert _capture(["install", "secret", "--dry-run"], tmp_path) == Observation(
         rc=1,
@@ -183,23 +178,21 @@ def test_import_characterizes_prompt_injection_skip_audit_boundary(
     assert _capture(["import", str(external / "prompt-injection")], tmp_path) == Observation(
         rc=1,
         out=(
-            "AUDIT BLOCKED\n"
-            "  prompt-injection: blocked (threshold=critical)\n"
-            "    critical: prompt-injection: SKILL.md: prompt-injection instruction\n"
+            "[BLOCKED] prompt-injection: validation failed\n"
+            "  error: security: SKILL.md: prompt-injection instruction\n"
         ),
-        err="\nNothing was imported (audit blocked).\n",
+        err="\nNothing was imported (fix the source first).\n",
     )
     assert _capture(
         ["import", str(external / "prompt-injection"), "--skip-audit"],
         tmp_path,
     ) == Observation(
-        rc=0,
+        rc=1,
         out=(
-            "WARN: audit skipped by explicit --skip-audit\n"
-            "imported: prompt-injection -> <TMP>/repo/skills/prompt-injection\n"
-            "Next: add [skills.prompt-injection] to my-skills.toml, then `my-skills sync`.\n"
+            "[BLOCKED] prompt-injection: validation failed\n"
+            "  error: security: SKILL.md: prompt-injection instruction\n"
         ),
-        err="",
+        err="\nNothing was imported (fix the source first).\n",
     )
     assert _capture(["import", str(external / "secret"), "--skip-audit"], tmp_path) == Observation(
         rc=1,
@@ -229,6 +222,10 @@ def test_share_plan_characterizes_candidate_risks(tmp_path, monkeypatch):
     assert candidates["clean"]["choices"] == ["share-enable", "share-disable", "skip"]
     assert candidates["prompt-injection"]["risks"] == [
         {
+            "severity": "error",
+            "message": "security: SKILL.md: prompt-injection instruction",
+        },
+        {
             "severity": "critical",
             "message": "prompt-injection: SKILL.md: prompt-injection instruction",
         }
@@ -236,10 +233,6 @@ def test_share_plan_characterizes_candidate_risks(tmp_path, monkeypatch):
     assert candidates["abs-path"]["risks"] == [
         {
             "severity": "error",
-            "message": "body contains an absolute host path; prefer host-neutral relative paths",
-        },
-        {
-            "severity": "warning",
             "message": "security: SKILL.md: absolute user/home path leak",
         },
         {

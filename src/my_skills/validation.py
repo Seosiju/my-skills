@@ -1,9 +1,4 @@
-"""Agent Skills standard validation (plan sections 5.1, 9.3).
-
-Structural validation only. The security scan lives in :mod:`my_skills.security`
-and is composed with this at the CLI layer so each concern is tested in
-isolation.
-"""
+"""Agent Skills standard validation (plan sections 5.1, 9.3)."""
 
 from __future__ import annotations
 
@@ -20,7 +15,6 @@ MAX_DESCRIPTION_LEN = 1024
 
 # Markdown inline link: ](target)
 _LINK_RE = re.compile(r"\]\(([^)]+)\)")
-_ABS_PATH_RE = re.compile(r"/Users/[^/\s]+|/home/[^/\s]+")
 
 
 @dataclass
@@ -102,12 +96,6 @@ def validate_skill(path: Path) -> ValidationResult:
             continue
         if not (path / clean).exists():
             result.errors.append(f"referenced supporting file not found: {ref}")
-
-    # Absolute host path leakage in the body -> warning (prefer host-neutral).
-    if _ABS_PATH_RE.search(body):
-        result.errors.append(
-            "body contains an absolute host path; prefer host-neutral relative paths"
-        )
 
     return result
 
