@@ -4,9 +4,26 @@ version = "0.1.0"
 description = "Personal cross-agent Agent Skill registry: manage, validate, install and sync skills across Claude Code, Codex, Gemini CLI and Hermes."
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "js.sim", email = "idealinnov39@outlook.com" }]
+keywords = ["agent-skills", "claude-code", "codex", "cli", "registry"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Build Tools",
+]
 dependencies = [
     "pyyaml>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Seosiju/my-skills"
+Repository = "https://github.com/Seosiju/my-skills"
+Issues = "https://github.com/Seosiju/my-skills/issues"
 
 [project.scripts]
 my-skills = "my_skills.cli:main"
