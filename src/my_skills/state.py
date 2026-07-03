@@ -9,10 +9,14 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import MISSING, asdict, dataclass, fields
 from pathlib import Path
 
 SCHEMA_VERSION = 1
+
+
+class StateError(ValueError):
+    pass
 
 
 def default_state_path() -> Path:
@@ -45,6 +49,14 @@ class InstallRecord:
         return (self.skill, self.host)
 
 
+_RECORD_FIELDS = {field.name for field in fields(InstallRecord)}
+_REQUIRED_RECORD_FIELDS = {
+    field.name
+    for field in fields(InstallRecord)
+    if field.default is MISSING and field.default_factory is MISSING
+}
+
+
 class State:
     """In-memory view of the install state, keyed by ``(skill, host)``."""
 
@@ -58,9 +70,28 @@ class State:
         if not resolved.is_file():
             return cls(resolved, {})
         data = json.loads(resolved.read_text(encoding="utf-8"))
+        schema_version = int(data.get("schema_version", 1))
+        if schema_version > SCHEMA_VERSION:
+            raise StateError(
+                f"state file {resolved} was written by a newer my-skills; "
+                f"upgrade the CLI, or move {resolved} aside and re-run install"
+            )
         installs: dict[tuple[str, str], InstallRecord] = {}
-        for raw in data.get("installs", []):
-            record = InstallRecord(**raw)
+        for index, raw in enumerate(data.get("installs", [])):
+            if not isinstance(raw, dict):
+                raise StateError(
+                    f"state file {resolved} contains a malformed install record "
+                    f"at index {index}; upgrade the CLI, or move {resolved} aside "
+                    "and re-run install"
+                )
+            missing = sorted(_REQUIRED_RECORD_FIELDS - raw.keys())
+            if missing:
+                raise StateError(
+                    f"state file {resolved} install record at index {index} is "
+                    f"missing required field(s): {', '.join(missing)}; upgrade "
+                    f"the CLI, or move {resolved} aside and re-run install"
+                )
+            record = InstallRecord(**{k: v for k, v in raw.items() if k in _RECORD_FIELDS})
             installs[record.key] = record
         return cls(resolved, installs)
 

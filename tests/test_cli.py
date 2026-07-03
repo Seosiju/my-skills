@@ -266,6 +266,44 @@ def test_skills_rejects_unknown_host(tmp_path, monkeypatch, capsys):
     assert "unknown host: ghost" in err
 
 
+def test_status_reports_newer_state_schema_as_usage_error(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    monkeypatch.chdir(_make_skills_repo(tmp_path))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    state_path = tmp_path / "state" / "my-skills" / "state.json"
+    state_path.parent.mkdir(parents=True)
+    state_path.write_text('{"schema_version": 2, "installs": []}\n', encoding="utf-8")
+
+    rc = cli.main(["status"])
+
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "newer my-skills" in err
+    assert str(state_path) in err
+
+
+def test_skills_reports_newer_state_schema_as_usage_error(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    monkeypatch.chdir(_make_skills_repo(tmp_path))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    state_path = tmp_path / "state" / "my-skills" / "state.json"
+    state_path.parent.mkdir(parents=True)
+    state_path.write_text('{"schema_version": 2, "installs": []}\n', encoding="utf-8")
+
+    rc = cli.main(["skills"])
+
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "newer my-skills" in err
+    assert str(state_path) in err
+
+
 def test_skills_enabled_and_disabled_are_mutually_exclusive():
     with pytest.raises(SystemExit) as excinfo:
         cli.main(["skills", "--enabled", "--disabled"])

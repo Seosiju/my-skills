@@ -22,7 +22,7 @@ from .sharing import (
     share_plan_json,
     share_plan_table,
 )
-from .state import State
+from .state import State, StateError
 
 
 def cmd_share(args: argparse.Namespace) -> int:
@@ -53,6 +53,7 @@ def cmd_share(args: argparse.Namespace) -> int:
         return 2
 
     try:
+        state = State.load()
         result = apply_share_from_host(
             manifest,
             root / "my-skills.toml",
@@ -60,12 +61,15 @@ def cmd_share(args: argparse.Namespace) -> int:
             args.skill,
             enabled=args.enable,
             force=args.force,
-            state=State.load(),
+            state=state,
             skip_audit=args.skip_audit,
         )
     except ShareBlockedError as exc:
         print(f"[BLOCKED] {exc}")
         return 1
+    except StateError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     except (ManifestError, ManifestEditError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

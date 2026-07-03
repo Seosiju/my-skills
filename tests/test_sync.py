@@ -1,8 +1,6 @@
 import os
 from pathlib import Path
 
-import pytest
-
 import my_skills.installer as installer
 from my_skills import cli
 
@@ -169,13 +167,13 @@ def test_sync_update_failure_preserves_install(tmp_path, monkeypatch, capsys):
 
     def flaky(a, b):
         calls["n"] += 1
-        if calls["n"] == 2:  # staged -> dest swap
+        if calls["n"] == 2:
             raise OSError("boom")
         return real_replace(a, b)
 
     monkeypatch.setattr(installer.os, "replace", flaky)
-    with pytest.raises(OSError):
-        cli.main(["sync"])
+    assert cli.main(["sync"]) == 1
+    assert "FAILED: alpha -> claude (boom)" in capsys.readouterr().out
 
-    assert inst.read_text() == original  # prior install preserved
+    assert inst.read_text() == original
     assert "edited canonical" not in inst.read_text()

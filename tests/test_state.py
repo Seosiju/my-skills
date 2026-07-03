@@ -1,4 +1,6 @@
-from my_skills.state import InstallRecord, State, default_state_path
+import pytest
+
+from my_skills.state import InstallRecord, State, StateError, default_state_path
 
 
 def _rec(skill="s", host="claude"):
@@ -23,7 +25,58 @@ def test_save_reload_roundtrip(tmp_path):
 
     again = State.load(path)
     assert set(again.installs) == {("alpha", "claude"), ("beta", "codex")}
-    assert again.get("alpha", "claude").mode == "copy"
+    alpha = again.get("alpha", "claude")
+    assert alpha is not None
+    assert alpha.mode == "copy"
+
+
+def test_load_ignores_unknown_record_fields(tmp_path):
+    path = tmp_path / "state.json"
+    state = State(path)
+    state.put(_rec("alpha"))
+    state.save()
+    text = path.read_text(encoding="utf-8")
+    path.write_text(
+        text.replace('"installed_at":', '"future_field": "ignored",\n      "installed_at":'),
+        encoding="utf-8",
+    )
+
+    again = State.load(path)
+
+    alpha = again.get("alpha", "claude")
+    assert alpha is not None
+    assert alpha.installed_at == "2026-06-26T00:00:00Z"
+
+
+def test_load_rejects_newer_schema_with_recovery_message(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text('{"schema_version": 2, "installs": []}\n', encoding="utf-8")
+
+    with pytest.raises(StateError) as excinfo:
+        State.load(path)
+
+    message = str(excinfo.value)
+    assert str(path) in message
+    assert "newer my-skills" in message
+    assert "upgrade the CLI" in message
+    assert "move" in message
+    assert "re-run install" in message
+
+
+def test_load_rejects_records_missing_required_fields(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text(
+        '{"schema_version": 1, "installs": [{"skill": "alpha"}]}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(StateError) as excinfo:
+        State.load(path)
+
+    message = str(excinfo.value)
+    assert str(path) in message
+    assert "missing required field" in message
+    assert "host" in message
 
 
 def test_save_atomic_overwrite_leaves_no_tmp(tmp_path):

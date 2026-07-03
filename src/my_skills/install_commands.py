@@ -4,7 +4,7 @@ import argparse
 import json
 import sys
 from dataclasses import replace
-from typing import TypedDict
+from typing import Any, NotRequired, TypedDict
 
 from .audit.formatting import format_gate, gate_json
 from .audit.gate import audit_metadata, audit_policy_from_manifest, audit_skills
@@ -14,7 +14,7 @@ from .config import Manifest, ManifestError, Skill
 from .hosts import get_host
 from .installer import copy_install, link_install, uninstall
 from .planner import Action, PlanItem, Status, plan_install, plan_uninstall, status_of
-from .state import State
+from .state import State, StateError
 from .validation import validate_skill_for_host
 from .write_confirmation import confirm_multi_host_write, is_builtin_seed_default_install
 
@@ -31,6 +31,7 @@ class InstallActionJson(TypedDict):
 
 class InstallPlanJson(TypedDict):
     actions: list[InstallActionJson]
+    audit: NotRequired[dict[str, Any]]
 
 
 def _validate_selected(manifest: Manifest, skills: list[Skill], hosts: list[str]) -> bool:
@@ -75,14 +76,20 @@ def _apply_plan_with_audit(
     blocked = False
     for item in plan:
         if item.action in (Action.CREATE, Action.UPDATE):
-            if item.mode == "link":
-                record = link_install(item)
-            else:
-                record = copy_install(item, mode=item.mode)
+            try:
+                if item.mode == "link":
+                    record = link_install(item)
+                else:
+                    record = copy_install(item, mode=item.mode)
+            except OSError as exc:
+                blocked = True
+                print(f"  FAILED: {item.skill} -> {item.host} ({exc})")
+                continue
             metadata = audit_by_skill.get(item.skill)
             if metadata:
                 record = replace(record, **metadata)
             state.put(record)
+            state.save()
             changed += 1
             verb = "created" if item.action is Action.CREATE else "updated"
             suffix = " (link)" if item.mode == "link" else ""
@@ -147,7 +154,11 @@ def cmd_install(args: argparse.Namespace) -> int:
         return 1
 
     gate = _audit_selected(manifest, skills, skip=args.skip_audit)
-    state = State.load()
+    try:
+        state = State.load()
+    except StateError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     plan = plan_install(manifest, skills, hosts, state, requested_mode=args.mode)
 
     if args.dry_run:
@@ -204,7 +215,11 @@ def cmd_sync(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    state = State.load()
+    try:
+        state = State.load()
+    except StateError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
     if args.check:
         drift = False
@@ -256,17 +271,28 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    state = State.load()
+    try:
+        state = State.load()
+    except StateError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     plan = plan_uninstall(manifest, args.skill, hosts, state)
     if not confirm_multi_host_write(args, hosts):
         return 2
 
     removed = 0
     warned = False
+    failed = False
     for item in plan:
         if item.action is Action.REMOVE:
-            uninstall(item.destination)
+            try:
+                uninstall(item.destination)
+            except OSError as exc:
+                failed = True
+                print(f"  FAILED: {item.skill} -> {item.host} ({exc})")
+                continue
             state.remove(item.skill, item.host)
+            state.save()
             removed += 1
             print(f"  removed: {item.skill} -> {item.host}")
         elif item.action is Action.BLOCK_DRIFT:
@@ -277,4 +303,4 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
             print(f"  skipped: {item.skill} -> {item.host} (not managed by my-skills)")
     if removed:
         state.save()
-    return 1 if warned else 0
+    return 1 if warned or failed else 0

@@ -7,6 +7,7 @@ import platform
 import shutil
 import sys
 from pathlib import Path
+from typing import Callable
 
 from .audit.analyzers import run_audit
 from .audit.gate import audit_policy_from_manifest
@@ -14,10 +15,10 @@ from . import config as config_mod
 from .catalog import catalog_rows, rows_json, rows_table, selected_status_hosts
 from .checks import compose_validation
 from .cli_runtime import load_manifest_from_cwd
-from .config import Manifest, ManifestError
+from .config import Manifest, ManifestError, Skill
 from .hosts import all_hosts
 from .planner import status_of
-from .state import State
+from .state import State, StateError
 
 
 def _skill_dirs(manifest: Manifest, skill: str | None) -> list[Path]:
@@ -100,7 +101,11 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    state = State.load()
+    try:
+        state = State.load()
+    except StateError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     hosts = [name for name, target in manifest.targets.items() if target.enabled]
     if not manifest.skills:
         print("no skills registered in manifest")
@@ -124,12 +129,15 @@ def cmd_skills(args: argparse.Namespace) -> int:
     if args.disabled:
         enabled = False
 
-    state = State.load()
+    try:
+        state = State.load()
+    except StateError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     status_hosts = selected_status_hosts(manifest, host)
-    governance_lookup = None
+    governance_lookup: Callable[[Skill], tuple[dict[str, str], dict[str, str]]] | None = None
     if args.with_status:
-        def governance_lookup(skill):
-            return _governance_for_skill(manifest, skill.name, state)
+        governance_lookup = lambda skill: _governance_for_skill(manifest, skill.name, state)
 
     try:
         rows = catalog_rows(

@@ -1,6 +1,8 @@
 from pathlib import Path
 
 from my_skills import cli
+from my_skills import install_commands
+from my_skills.state import State
 
 
 def _make_repo(tmp_path: Path) -> tuple[Path, Path]:
@@ -40,6 +42,25 @@ def _make_multi_host_repo(tmp_path: Path) -> tuple[Path, Path, Path]:
         "---\nname: alpha\ndescription: A valid multi-host skill.\n---\n\n# Alpha\n"
     )
     return tmp_path, claude, codex
+
+
+def _make_two_skill_repo(tmp_path: Path) -> tuple[Path, Path]:
+    target = tmp_path / "hosts" / "claude"
+    (tmp_path / "my-skills.toml").write_text(
+        'schema_version = 1\nskills_root = "skills"\n\n'
+        f'[targets.claude]\nenabled = true\nscope = "user"\npath = "{target}"\n\n'
+        f'[targets.codex]\nenabled = false\nscope = "user"\npath = "{tmp_path / "hosts" / "codex"}"\n\n'
+        f'[targets.hermes]\nenabled = false\nscope = "user"\npath = "{tmp_path / "hosts" / "hermes"}"\n\n'
+        '[skills.alpha]\nenabled = true\nhosts = ["claude"]\n\n'
+        '[skills.beta]\nenabled = true\nhosts = ["claude"]\n'
+    )
+    for name in ("alpha", "beta"):
+        skill = tmp_path / "skills" / name
+        skill.mkdir(parents=True)
+        skill.joinpath("SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: {name} install test skill.\n---\n\n# {name}\n"
+        )
+    return tmp_path, target
 
 
 def _prep(tmp_path, monkeypatch):
@@ -83,6 +104,36 @@ def test_install_creates_then_noop(tmp_path, monkeypatch, capsys):
     capsys.readouterr()
     assert cli.main(["install"]) == 0
     assert "unchanged" in capsys.readouterr().out
+
+
+def test_install_partial_failure_saves_successful_records(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    repo, target = _make_two_skill_repo(tmp_path)
+    state_root = tmp_path / "state"
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("XDG_STATE_HOME", str(state_root))
+    real_copy_install = install_commands.copy_install
+
+    def fail_beta(item, mode="copy"):
+        if item.skill == "beta":
+            raise OSError("disk full")
+        return real_copy_install(item, mode=mode)
+
+    monkeypatch.setattr(install_commands, "copy_install", fail_beta)
+
+    assert cli.main(["install", "--host", "claude"]) == 1
+
+    out = capsys.readouterr().out
+    assert "created: alpha -> claude" in out
+    assert "FAILED: beta -> claude (disk full)" in out
+    assert (target / "alpha" / "SKILL.md").exists()
+    assert not (target / "beta").exists()
+    state = State.load(state_root / "my-skills" / "state.json")
+    assert state.get("alpha", "claude") is not None
+    assert state.get("beta", "claude") is None
 
 
 def test_install_collision_blocks(tmp_path, monkeypatch, capsys):
@@ -149,3 +200,35 @@ def test_uninstall_multi_host_requires_yes(tmp_path, monkeypatch, capsys):
     assert cli.main(["uninstall", "alpha", "--host", "all", "--yes"]) == 0
     assert not (claude / "alpha").exists()
     assert not (codex / "alpha").exists()
+
+
+def test_uninstall_partial_failure_saves_successful_removals(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    repo, claude, codex = _make_multi_host_repo(tmp_path)
+    state_root = tmp_path / "state"
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("XDG_STATE_HOME", str(state_root))
+    assert cli.main(["install", "alpha", "--host", "all", "--yes"]) == 0
+    capsys.readouterr()
+    real_uninstall = install_commands.uninstall
+
+    def fail_codex(path):
+        if path == codex / "alpha":
+            raise OSError("permission denied")
+        real_uninstall(path)
+
+    monkeypatch.setattr(install_commands, "uninstall", fail_codex)
+
+    assert cli.main(["uninstall", "alpha", "--host", "all", "--yes"]) == 1
+
+    out = capsys.readouterr().out
+    assert "removed: alpha -> claude" in out
+    assert "FAILED: alpha -> codex (permission denied)" in out
+    assert not (claude / "alpha").exists()
+    assert (codex / "alpha" / "SKILL.md").exists()
+    state = State.load(state_root / "my-skills" / "state.json")
+    assert state.get("alpha", "claude") is None
+    assert state.get("alpha", "codex") is not None
