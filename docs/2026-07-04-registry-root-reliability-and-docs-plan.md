@@ -398,3 +398,55 @@ CHANGELOG `### Fixed` 한 줄.
   help 숨김, `remove`/`new` 명령 신설 — 실재하는 개선점이나 root 신뢰성과 무관.
   후속 기획서로 다룬다.
 - 버전 범프(0.2.0) 및 릴리스 — 릴리스 시점에 `docs/release-checklist.md`를 따른다.
+
+## 9. 구현 착수 판정 (CodeGraph 리뷰 반영)
+
+**판정: 조건부 승인.**
+
+이 기획의 핵심 진단(RC1 root 캐시 덮어쓰기, RC2 테스트 격리 부재, RC3 문서 모델
+혼동)은 현재 코드와 일치한다. `find_repo_root()`는 cwd에서 `my-skills.toml`을
+찾으면 캐시를 바로 덮어쓰고, 테스트 전역 격리는 없으며, `doctor`는 active root,
+state/data 경로, CLI 버전을 보여주지 않는다. 따라서 **PR1은 즉시 착수 가능**하다.
+
+단, **PR2 착수 전** 아래 정책을 문서와 테스트 계약에 반영해야 한다.
+
+1. **`bootstrap`의 active root 기록 정책을 확정한다.**
+   현재 `bootstrap_commands.py::cmd_bootstrap()`은 `cache_repo_root(root)`를 직접
+   호출하고, `tests/test_cli_bootstrap.py`도 root 캐시 기록을 기대한다. P1 원칙을
+   엄격히 적용하려면 `bootstrap`은 더 이상 active root를 기록하지 않아야 한다.
+   유지한다면 `bootstrap`을 명시적 active-root 변경 명령의 예외로 문서화하고
+   테스트도 그 계약을 유지한다.
+
+   **권장:** 기록 제거. `bootstrap`은 contributor/dev editable install 경로이고,
+   registry 선택은 `init-registry`와 `set-root`가 맡는 편이 역할 분리가 명확하다.
+
+2. **fresh machine에서 tool repo 실행 시 first-run 캐시 정책을 명확히 한다.**
+   T2-1의 현재 설계는 캐시가 없거나 무효일 때 cwd root를 first-run으로 기록한다.
+   tool repo도 `my-skills.toml`을 가지므로, fresh machine에서 tool repo 안에서
+   명령을 실행하면 여전히 tool repo가 active root로 기록될 수 있다. 이는 T4-2/T4-3의
+   "tool repo 안에서 명령을 실행해도 active root는 바뀌지 않는다"는 문구와 충돌한다.
+
+   **권장:** 이번 PR에서는 tool repo 식별/차단을 새로 만들지 말고, 문서를 정확히
+   고친다. 즉 "캐시가 없으면 cwd registry가 최초 active root로 기록될 수 있다"는
+   사실을 README/seed skill/AGENTS.md에 반영한다. tool repo 자동 식별과 차단은 seed
+   배치 변경과 맞물릴 수 있으므로 별도 후속 기획으로 분리한다.
+
+3. **`set-root [path]`에서 path 생략 동작은 cache fallback을 금지한다.**
+   path 생략 시 `find_repo_root()`를 그대로 쓰면 cwd 밖에서 기존 cache root를 찾아
+   같은 값을 다시 기록하는 no-op 성공이 될 수 있다. path 생략은 cwd 상향 탐색만
+   수행해야 하며, cwd와 부모 어디에도 `my-skills.toml`이 없으면 exit 2로 실패해야
+   한다.
+
+   **권장 구현:** `find_cwd_root()` 또는 `resolve_root(allow_cache=False)`처럼
+   cache fallback을 끈 내부 API를 둔다. `set-root [path]`는 이 API를 사용하고,
+   `find_repo_root()`는 기존 공개 시그니처를 유지한다.
+
+4. **`doctor`의 root 미설정 exit code를 테스트로 고정한다.**
+   현재 `cmd_doctor()`는 manifest를 못 읽으면 `Manifest: INVALID (...)`와 exit 1을
+   반환한다. PR3는 `Registry: not configured`를 출력하도록 바꾸므로, root 미설정을
+   진단 가능한 정상 상태(exit 0)로 볼지 manifest invalid(exit 1)로 볼지 결정해야
+   한다. 어느 쪽이든 `tests/test_doctor.py` 또는 기존 CLI 테스트에 명시적으로 고정한다.
+
+위 네 항목이 반영되면 PR2~PR4도 구현 착수 가능하다. 반영 전에는 PR2 구현자가
+`bootstrap`, first-run 캐시, `set-root` 생략 인자, `doctor` exit code를 각자 판단하게
+되어 문서-코드 불일치가 남을 위험이 크다.
