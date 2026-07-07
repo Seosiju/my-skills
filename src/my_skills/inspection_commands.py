@@ -11,14 +11,16 @@ from typing import Callable
 
 from .audit.analyzers import run_audit
 from .audit.gate import audit_policy_from_manifest
+from . import __version__
 from . import config as config_mod
 from .catalog import catalog_rows, rows_json, rows_table, selected_status_hosts
 from .checks import compose_validation
-from .cli_runtime import load_manifest_from_cwd
+from .cli_runtime import resolve_root, load_manifest_from_cwd
 from .config import Manifest, ManifestError, Skill
+from .data import data_root
 from .hosts import all_hosts
 from .planner import status_of
-from .state import State, StateError
+from .state import State, StateError, default_state_path
 
 
 def _skill_dirs(manifest: Manifest, skill: str | None) -> list[Path]:
@@ -62,16 +64,45 @@ def _writable(path: Path) -> bool:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
+    print(f"my-skills {__version__}")
     print(f"OS:     {platform.platform()}")
     print(f"Shell:  {os.environ.get('SHELL', 'unknown')}")
     print(f"Python: {platform.python_version()}")
 
     manifest = None
     manifest_error = None
+    resolution = None
     try:
-        manifest = load_manifest_from_cwd()
+        resolution = resolve_root(write_cache=False)
+        manifest = config_mod.load_manifest(resolution.root)
     except ManifestError as exc:
         manifest_error = exc
+
+    print()
+    if resolution is None:
+        if manifest_error and not str(manifest_error).startswith("my-skills.toml not found"):
+            print(f"Registry: INVALID ({manifest_error})")
+        else:
+            print(
+                "Registry: not configured (run 'my-skills init-registry' or "
+                "'my-skills set-root')"
+            )
+    else:
+        print(f"Registry: {resolution.root} (source: {resolution.source})")
+        if (
+            resolution.source == "cwd"
+            and resolution.cached is not None
+            and resolution.cached != resolution.root
+        ):
+            print(
+                "warning: this directory is not the active registry "
+                f"(active: {resolution.cached})"
+            )
+    if manifest is not None:
+        enabled = sum(1 for skill in manifest.skills.values() if skill.enabled)
+        print(f"Skills:   {len(manifest.skills)} registered, {enabled} enabled")
+    print(f"State:    {default_state_path()}")
+    print(f"Data:     {data_root()}")
 
     print("\nHosts:")
     for host in all_hosts():
@@ -90,6 +121,12 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if manifest_error is None:
         print("\nManifest: valid")
         return 0
+    if resolution is None:
+        if str(manifest_error).startswith("my-skills.toml not found"):
+            print("\nManifest: not checked")
+            return 0
+        print(f"\nManifest: INVALID ({manifest_error})")
+        return 1
     print(f"\nManifest: INVALID ({manifest_error})")
     return 1
 

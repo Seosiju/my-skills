@@ -9,6 +9,9 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ### Added
 
+- `set-root` command for explicitly selecting the active registry root.
+- `--version` flag, and expanded `doctor` output with the active registry root
+  source, CLI version, skill counts, and state/data paths.
 - GitHub Actions CI for tests, package build, and CLI release smoke checks.
 - Contributor, security, changelog, and release checklist documentation.
 - GitHub-first install documentation using `uv tool install
@@ -16,6 +19,10 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ### Changed
 
+- Running a command inside a `my-skills` directory no longer silently repoints
+  the machine-wide active registry when another valid active root is cached; use
+  `my-skills set-root` or `init-registry` to switch. First-run discovery still
+  records the root when none is cached.
 - **Breaking:** `validate` — and the always-on validation that runs before
   `install`, `sync`, `import`, and `share` — now applies the full audit
   analyzer set with a fixed internal policy. Skills that previously passed
@@ -34,6 +41,10 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ### Fixed
 
+- Running the test suite no longer overwrites the real user's my-skills state
+  file and active-root cache.
+- `init-registry` now creates the scaffold commit even when the target is
+  already an empty git repository.
 - `install`/`sync` no longer lose install state when a plan item fails
   mid-run: each successful item is recorded immediately and failures are
   reported per item with a non-zero exit.

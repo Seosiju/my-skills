@@ -25,20 +25,28 @@ drifted instead of silently clobbering your work.
 
 ## How it works
 
-A skill is just a directory under `skills/<name>/` with a `SKILL.md` that carries
-YAML frontmatter (`name`, `description`) — the [Agent Skills](https://agentskills.io/specification)
-standard. The `skills/` directory is the **canonical** source of truth.
+### One tool, two repos
+
+The tool repo (this repository) is what you install. Your registry (default
+`~/my-agent-skills`, created by `init-registry`) is where your skills live.
+Cloning this repository is only for contributors; it is not your registry.
+
+A skill is just a directory under your registry's `skills/<name>/` with a
+`SKILL.md` that carries YAML frontmatter (`name`, `description`) — the
+[Agent Skills](https://agentskills.io/specification) standard. Your registry's
+`skills/` directory is the **canonical** source of truth.
 
 Each agent (Claude Code, Codex, Hermes) is a **host**. `install` copies a canonical
 skill into a host; `sync` keeps those copies up to date. Because copies can be edited
 in place, `my-skills` tracks **drift** so a `sync` never overwrites local changes
 without telling you.
 
-Think of `skills/` as your source and each host copy as a build output:
+Think of your registry's `skills/` as your source and each host copy as a build
+output:
 
 ```mermaid
 flowchart LR
-    edit["✏️ You"] --> src["skills/&lt;name&gt;<br/><b>source (canonical)</b>"]
+    edit["✏️ You"] --> src["registry skills/&lt;name&gt;<br/><b>source (canonical)</b>"]
     ext["external skill"] -.->|import / share| src
     src -->|"install (first deploy)"| out
     src -->|"sync (re-deploy)"| out
@@ -62,6 +70,7 @@ Install the CLI from GitHub, then create your private registry:
 uv tool install git+https://github.com/Seosiju/my-skills.git
 
 my-skills init-registry        # prompts for a location; default: ~/my-agent-skills
+my-skills doctor               # confirm the Registry line points at your registry
 my-skills install --dry-run    # preview seeded default skill installs
 my-skills install              # deploy enabled skills into your agents
 ```
@@ -110,7 +119,8 @@ canonical skills contain personal, company, or machine-specific context. Keep
 secrets out of both repos; put them under `my-skills data-path <skill>`.
 
 Create a private registry. With no path, the default is `~/my-agent-skills`;
-`init-registry` seeds the default public-safe skills and runs `git init`:
+`init-registry` seeds the default public-safe skills, records the active root,
+and runs `git init`:
 
 ```bash
 uv tool install git+https://github.com/Seosiju/my-skills.git
@@ -130,6 +140,31 @@ my-agent-skills/
 Pass `--no-defaults` for a blank registry, or `--no-git` if you want a plain
 folder with no git repository. `bootstrap` is now a contributor path for editable
 source checkouts, not the normal first-run setup.
+
+## Where commands look for your registry
+
+Most commands resolve a registry in this order:
+
+1. `MY_SKILLS_ROOT` environment variable, for a one-command override.
+2. `my-skills.toml` in the current directory or one of its parents, for that
+   command only.
+3. The cached active root written by `init-registry` or `set-root`.
+
+If you run a command inside one registry while another valid active root is
+cached, the command uses the current directory for that invocation and prints a
+note to stderr; it does not silently repoint the active root. To switch
+permanently, run:
+
+```bash
+my-skills set-root /path/to/your/registry
+my-skills doctor
+```
+
+On a machine with no active root yet, first-run discovery from the current
+directory can record that registry for convenience. Contributor clones also
+contain seed `skills/` and `my-skills.toml` files for packaging and tests, so
+use `my-skills doctor` and check the `Registry:` line before making real skill
+changes.
 
 Add your first private skill:
 
@@ -261,11 +296,26 @@ tokens, or personal memory.
 
 ## Layout
 
+### Repository layout (the CLI project)
+
 ```text
-my-skills.toml            # manifest: hosts + skills + defaults
-skills/<name>/SKILL.md    # canonical skills
-src/my_skills/            # the CLI package
+my-skills.toml            # dev/test manifest for this CLI project
+skills/<name>/SKILL.md    # public seed sources packaged into the wheel
+src/my_skills/            # CLI package
 tests/                    # unit + fixture-driven tests
+```
+
+The `skills/` directory in this repository is seed source and a dev fixture for
+tests/CI. It is not your registry.
+
+### Your registry layout
+
+```text
+my-agent-skills/
+├── my-skills.toml
+├── skills/<name>/SKILL.md
+├── .gitignore
+└── README.md
 ```
 
 The manifest's `enabled` flag controls default selection: a bare `install` / `sync`

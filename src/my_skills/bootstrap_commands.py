@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-from .cli_runtime import cache_repo_root, find_repo_root
+from .cli_runtime import find_repo_root
 from .config import ManifestError
 from .install_commands import cmd_install
 
@@ -59,9 +60,21 @@ def _dry_run_install_command(args: argparse.Namespace) -> list[str]:
     return command
 
 
+def _install_skills(args: argparse.Namespace, root: Path) -> int:
+    previous = os.environ.get("MY_SKILLS_ROOT")
+    os.environ["MY_SKILLS_ROOT"] = str(root)
+    try:
+        return cmd_install(_install_args(args))
+    finally:
+        if previous is None:
+            os.environ.pop("MY_SKILLS_ROOT", None)
+        else:
+            os.environ["MY_SKILLS_ROOT"] = previous
+
+
 def cmd_bootstrap(args: argparse.Namespace) -> int:
     try:
-        root = find_repo_root(write_cache=not args.dry_run).resolve()
+        root = find_repo_root(write_cache=False).resolve()
     except ManifestError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -76,9 +89,6 @@ def cmd_bootstrap(args: argparse.Namespace) -> int:
             print(f"  would run: {_format_command(preview)}")
         return 0
 
-    cache_repo_root(root)
-    print(f"Cached repo root: {root}")
-
     if not args.skip_tool_install:
         print("Installing my-skills CLI with uv tool install...")
         rc = _run_tool_install(root)
@@ -87,9 +97,9 @@ def cmd_bootstrap(args: argparse.Namespace) -> int:
 
     if not args.skip_skill_install:
         print("Installing enabled skills into agent hosts...")
-        rc = cmd_install(_install_args(args))
+        rc = _install_skills(args, root)
         if rc != 0:
             return rc
 
-    print("Bootstrap complete. Run `my-skills doctor` from any directory.")
+    print("Bootstrap complete. Run `my-skills doctor` to inspect registry configuration.")
     return 0

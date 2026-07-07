@@ -65,11 +65,10 @@ def test_bootstrap_installs_cli_and_enabled_skills(tmp_path, monkeypatch, capsys
     assert calls == [
         ["/bin/uv", "tool", "install", "--editable", str(repo), "--force", "--link-mode=copy"]
     ]
-    assert (tmp_path / "config" / "my-skills" / "root").read_text().strip() == str(
-        repo
-    )
+    assert not (tmp_path / "config" / "my-skills" / "root").exists()
     assert (target / "my-skills" / "SKILL.md").exists()
-    assert "Bootstrap complete" in out
+    assert "Cached repo root" not in out
+    assert "Bootstrap complete. Run `my-skills doctor` to inspect registry configuration." in out
 
 
 def test_bootstrap_reports_missing_uv_without_installing_skills(

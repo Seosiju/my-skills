@@ -137,25 +137,24 @@ def _prompt_registry_target() -> Path:
 
 
 def _init_git(target: Path) -> None:
-    if (target / ".git").exists():
-        print("git repository already exists; skipped git init")
-        return
-
     git = shutil.which("git")
     if git is None:
         print("git command not found; skipped git init")
         return
 
-    init = subprocess.run(
-        [git, "init"],
-        cwd=target,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    if init.returncode != 0:
-        print("git init failed; skipped initial commit")
-        return
+    if (target / ".git").exists():
+        print("git repository already exists; skipped git init")
+    else:
+        init = subprocess.run(
+            [git, "init"],
+            cwd=target,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if init.returncode != 0:
+            print("git init failed; skipped initial commit")
+            return
 
     staged_paths = [*INITIAL_COMMIT_PATHS]
     if any(path.is_file() for path in (target / "skills").rglob("*")):

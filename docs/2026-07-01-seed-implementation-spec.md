@@ -155,6 +155,30 @@ skill into them. Editing a host copy directly causes **drift**, which the CLI
 detects and refuses to silently overwrite. git is optional — the registry works
 as a plain folder; version control and remotes are the user's choice.
 
+## Which registry am I operating on?
+
+Before changing skills, run:
+
+```bash
+my-skills doctor
+```
+
+Read the `Registry:` line. If it is not the registry the user expects, fix it
+before writing:
+
+```bash
+my-skills set-root /path/to/registry
+```
+
+Use `MY_SKILLS_ROOT=/path/to/registry my-skills <cmd>` only for a one-command
+override.
+
+Do not point at a clone of the `my-skills` CLI project. The CLI source checkout
+contains `my-skills.toml` and `skills/` as seed sources and test fixtures, but it
+is not the user's registry. If there is already a different active root, running
+a command inside a clone does not silently switch it; use `set-root` only when
+the user explicitly wants to make a registry active.
+
 ## First-time setup (the front door)
 
 If the user has no registry yet, set one up. Install the CLI once:
@@ -188,7 +212,7 @@ in git (public or private).
 ## When there is no registry yet
 
 If a command fails with `my-skills.toml not found`, no registry has been created
-on this machine. Do not point at a clone — create a registry:
+on this machine. Do not point at a CLI clone — create a registry:
 
 ```bash
 my-skills init-registry

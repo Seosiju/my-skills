@@ -32,13 +32,47 @@ def test_env_override_invalid_raises(tmp_path, monkeypatch):
         find_repo_root(start=tmp_path)
 
 
-def test_cwd_search_finds_and_caches(tmp_path):
+def test_cwd_search_finds_and_caches_first_run(tmp_path):
     root = tmp_path / "repo"
     (root / "sub").mkdir(parents=True)
     _make_root(root)
     assert find_repo_root(start=root / "sub") == root.resolve()
     # discovery writes the cache so later cwd-less runs resolve
     assert _root_cache_path().read_text().strip() == str(root.resolve())
+
+
+def test_cwd_search_does_not_overwrite_different_valid_cache(
+    tmp_path, capsys
+):
+    active = tmp_path / "active"
+    cwd_root = tmp_path / "cwd-root"
+    (cwd_root / "sub").mkdir(parents=True)
+    active.mkdir()
+    _make_root(active)
+    _make_root(cwd_root)
+    cache = _root_cache_path()
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(str(active.resolve()) + "\n")
+
+    assert find_repo_root(start=cwd_root / "sub") == cwd_root.resolve()
+
+    err = capsys.readouterr().err
+    assert "active registry is" in err
+    assert "my-skills set-root" in err
+    assert cache.read_text(encoding="utf-8").strip() == str(active.resolve())
+
+
+def test_cwd_search_replaces_invalid_cache_on_first_run(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir(parents=True)
+    _make_root(root)
+    cache = _root_cache_path()
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(str(tmp_path / "missing") + "\n")
+
+    assert find_repo_root(start=root) == root.resolve()
+
+    assert cache.read_text(encoding="utf-8").strip() == str(root.resolve())
 
 
 def test_cache_fallback_when_not_under_root(tmp_path):
@@ -58,5 +92,5 @@ def test_cache_fallback_when_not_under_root(tmp_path):
 def test_nothing_found_raises(tmp_path):
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
-    with pytest.raises(ManifestError, match="not found"):
+    with pytest.raises(ManifestError, match="set-root"):
         find_repo_root(start=elsewhere)
