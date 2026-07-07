@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from my_skills import cli
+from my_skills import __version__, cli
 
 
 def _make_registry(path):
@@ -29,7 +29,7 @@ def test_version_flag_prints_cli_version(capsys):
         cli.main(["--version"])
 
     assert exc.value.code == 0
-    assert capsys.readouterr().out.strip() == "my-skills 0.1.0"
+    assert capsys.readouterr().out.strip() == f"my-skills {__version__}"
 
 
 def test_doctor_reports_registry_source_version_state_and_data(
@@ -45,7 +45,7 @@ def test_doctor_reports_registry_source_version_state_and_data(
 
     out = capsys.readouterr().out
     assert rc == 0
-    assert "my-skills 0.1.0" in out
+    assert f"my-skills {__version__}" in out
     assert f"Registry: {registry.resolve()} (source: cache)" in out
     assert "Skills:   2 registered, 1 enabled" in out
     assert f"State:    {tmp_path / 'xdg-state' / 'my-skills' / 'state.json'}" in out
