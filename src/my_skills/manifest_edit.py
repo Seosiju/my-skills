@@ -26,6 +26,12 @@ def set_skill_enabled(manifest_path: Path, skill: str, enabled: bool) -> None:
     _write_lines(manifest_path, lines)
 
 
+def has_skill_section(manifest_path: Path, skill: str) -> bool:
+    lines = _read_lines(manifest_path)
+    start, _end = _skill_section(lines, skill)
+    return start is not None
+
+
 def register_skill(
     manifest_path: Path,
     skill: str,

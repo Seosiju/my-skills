@@ -14,7 +14,12 @@ from .config import Manifest, ManifestError, load_manifest
 from .data import skill_data_path
 from .frontmatter import FrontmatterError, parse_frontmatter
 from .hashing import hash_directory
-from .manifest_edit import ManifestEditError, register_skill, set_skill_enabled
+from .manifest_edit import (
+    ManifestEditError,
+    has_skill_section,
+    register_skill,
+    set_skill_enabled,
+)
 from .sharing import (
     ShareBlockedError,
     apply_share_from_host,
@@ -112,7 +117,7 @@ def _register_imported_skill(
     *,
     enabled: bool,
 ) -> str:
-    if name not in manifest.skills:
+    if not has_skill_section(manifest_path, name):
         hosts = tuple(
             target_name
             for target_name, target in manifest.targets.items()

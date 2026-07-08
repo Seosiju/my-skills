@@ -178,3 +178,62 @@ def test_import_enable_existing_skill_updates_main_manifest_despite_local_overla
 
     main_manifest = (repo / "my-skills.toml").read_text(encoding="utf-8")
     assert '[skills.brand]\nenabled = true\nhosts = ["claude"]' in main_manifest
+
+
+def test_import_registers_skill_present_only_in_local_overlay(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo = _repo(tmp_path)
+    skill = _skill(tmp_path)
+    shutil.copytree(skill, repo / "skills" / "brand")
+    (repo / "my-skills.local.toml").write_text(
+        '[skills.brand]\nenabled = true\nhosts = ["codex"]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(repo)
+
+    assert cli.main(["import", str(skill)]) == 0
+
+    main_manifest = (repo / "my-skills.toml").read_text(encoding="utf-8")
+    expected = '[skills.brand]\nenabled = false\nhosts = ["claude", "codex"]'
+    assert expected in main_manifest
+
+
+def test_import_enable_registers_skill_present_only_in_local_overlay(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo = _repo(tmp_path)
+    skill = _skill(tmp_path)
+    shutil.copytree(skill, repo / "skills" / "brand")
+    (repo / "my-skills.local.toml").write_text(
+        '[skills.brand]\nenabled = false\nhosts = ["codex"]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(repo)
+
+    assert cli.main(["import", "--enable", str(skill)]) == 0
+
+    main_manifest = (repo / "my-skills.toml").read_text(encoding="utf-8")
+    expected = '[skills.brand]\nenabled = true\nhosts = ["claude", "codex"]'
+    assert expected in main_manifest
+
+
+def test_import_validation_block_does_not_modify_manifest(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo = _repo(tmp_path)
+    skill = _skill(tmp_path)
+    skill.joinpath("SKILL.md").write_text(
+        "---\nname: brand\n---\n\n# Missing description\n",
+        encoding="utf-8",
+    )
+    original = (repo / "my-skills.toml").read_text(encoding="utf-8")
+    monkeypatch.chdir(repo)
+
+    assert cli.main(["import", str(skill)]) == 1
+
+    assert (repo / "my-skills.toml").read_text(encoding="utf-8") == original
+    assert not (repo / "skills" / "brand").exists()
