@@ -7,6 +7,8 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-09
+
 ### Added
 
 - `set-root` command for explicitly selecting the active registry root.
