@@ -227,12 +227,21 @@ my-skills disable cli-inventory
 ```bash
 # Import an external skill directory into canonical skills/.
 my-skills import ~/.hermes/skills/cli-inventory
+my-skills enable cli-inventory
+my-skills install cli-inventory --host <host>
+
+# Or register it as enabled immediately.
+my-skills import ~/.hermes/skills/cli-inventory --enable
 
 # Or review a host's local skills, then promote one into my-skills.
 my-skills share --from claude --plan --json
 my-skills share --from claude cli-inventory --enable
 my-skills sync cli-inventory
 ```
+
+`import` registers the skill in `my-skills.toml` automatically. By default the
+new entry is disabled; pass `--enable` or run `my-skills enable <skill>` before
+installing it.
 
 ### Develop a skill live
 

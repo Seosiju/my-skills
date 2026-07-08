@@ -1,7 +1,7 @@
 # import 매니페스트 자동 등록 기획서
 
 > 작성일: 2026-07-07 (2026-07-08 교차 검토 반영)
-> 상태: 구현 대기 (Codex 작업용) — 독립 세션 교차 검토 통과
+> 상태: 구현 완료 (Codex 작업용) — 독립 세션 교차 검토 통과
 > 대상 저장소: github.com/Seosiju/my-skills
 > 관련 문서: docs/2026-07-04-registry-root-reliability-and-docs-plan.md (용어 정의 §0을 그대로 따른다)
 
@@ -150,7 +150,7 @@ register_skill(root / "my-skills.toml", name, enabled=args.enable, hosts=hosts)
 if name not in manifest.skills:
     hosts = tuple(t for t, target in manifest.targets.items() if target.enabled)
     register_skill(root / "my-skills.toml", name, enabled=args.enable, hosts=hosts)
-elif args.enable and not manifest.skills[name].enabled:
+elif args.enable:
     set_skill_enabled(root / "my-skills.toml", name, True)
 ```
 
@@ -267,3 +267,7 @@ hosts = ["claude", "codex", "hermes"]
   "매니페스트 객체 기반 재등록 생략"으로 확정(헬퍼 신설안 기각),
   §5.3 `source_type` 보강 범위 제외 확정. 검토 과정에서 F7(local 오버레이
   되쓰기 부작용)이 추가 식별되어 테스트 4b/4c로 반영.
+- **2026-07-08** 구현 반영 (Codex): `import` 자동 등록, `--enable`,
+  up-to-date 경로 등록, 기존 항목 hosts/local overlay 보호, README/SKILL/
+  CHANGELOG 갱신 완료. `--enable`은 effective manifest 값과 무관하게 메인
+  manifest의 `enabled` 키만 갱신하도록 §5.1 예시를 정정.

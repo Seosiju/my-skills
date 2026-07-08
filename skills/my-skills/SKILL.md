@@ -120,6 +120,29 @@ user explicitly confirms overwriting it.
 Never use `--skip-audit` for share/import unless the user explicitly accepts the
 audit risk. `--force` only answers "may overwrite?"; it does not bypass audit.
 
+## Create Or Import A Skill
+
+For a new skill, write it in a temporary directory first, then import it into
+the registry:
+
+```bash
+my-skills import /path/to/skill
+my-skills enable <skill>
+my-skills install <skill> --host <host>
+```
+
+`import` copies the directory into canonical `skills/` and registers it in
+`my-skills.toml`. New imports are disabled by default. Use `--enable` when the
+user explicitly wants to register the skill as enabled immediately:
+
+```bash
+my-skills import /path/to/skill --enable
+my-skills install <skill> --host <host>
+```
+
+After import, edit the canonical registry copy and use `sync` to update managed
+host installs.
+
 ## Audit
 
 Run audit before a write when the user asks about risk, provenance, or whether a

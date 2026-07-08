@@ -224,12 +224,21 @@ my-skills disable cli-inventory
 ```bash
 # 외부 스킬 디렉터리를 정규 skills/로 가져온다.
 my-skills import ~/.hermes/skills/cli-inventory
+my-skills enable cli-inventory
+my-skills install cli-inventory --host <host>
+
+# 또는 가져오면서 바로 활성 상태로 등록한다.
+my-skills import ~/.hermes/skills/cli-inventory --enable
 
 # 또는 호스트의 로컬 스킬을 검토한 뒤 하나를 my-skills로 승격한다.
 my-skills share --from claude --plan --json
 my-skills share --from claude cli-inventory --enable
 my-skills sync cli-inventory
 ```
+
+`import`는 스킬을 `my-skills.toml`에 자동 등록합니다. 기본 등록 상태는
+disabled이므로 설치 전에 `--enable`을 붙이거나 `my-skills enable <skill>`을
+실행합니다.
 
 ### 스킬을 실시간으로 개발하기
 

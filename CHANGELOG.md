@@ -10,6 +10,7 @@ are the release source of truth while PyPI publishing remains undecided.
 ### Added
 
 - `set-root` command for explicitly selecting the active registry root.
+- `import --enable` for registering an imported skill as enabled immediately.
 - `--version` flag, and expanded `doctor` output with the active registry root
   source, CLI version, skill counts, and state/data paths.
 - GitHub Actions CI for tests, package build, and CLI release smoke checks.
@@ -23,6 +24,9 @@ are the release source of truth while PyPI publishing remains undecided.
   the machine-wide active registry when another valid active root is cached; use
   `my-skills set-root` or `init-registry` to switch. First-run discovery still
   records the root when none is cached.
+- `import` now registers copied skills in `my-skills.toml` automatically. New
+  imports default to disabled unless `--enable` is passed, and re-importing an
+  existing registered skill preserves its hosts and local-overlay separation.
 - **Breaking:** `validate` — and the always-on validation that runs before
   `install`, `sync`, `import`, and `share` — now applies the full audit
   analyzer set with a fixed internal policy. Skills that previously passed
