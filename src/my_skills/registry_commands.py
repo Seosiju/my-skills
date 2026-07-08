@@ -10,11 +10,11 @@ from .audit.formatting import format_gate
 from .audit.gate import audit_policy_from_manifest, audit_skills
 from .checks import compose_validation
 from .cli_runtime import find_repo_root
-from .config import ManifestError, load_manifest
+from .config import Manifest, ManifestError, load_manifest
 from .data import skill_data_path
 from .frontmatter import FrontmatterError, parse_frontmatter
 from .hashing import hash_directory
-from .manifest_edit import ManifestEditError, set_skill_enabled
+from .manifest_edit import ManifestEditError, register_skill, set_skill_enabled
 from .sharing import (
     ShareBlockedError,
     apply_share_from_host,
@@ -105,6 +105,27 @@ def cmd_disable(args: argparse.Namespace) -> int:
     return _cmd_set_enabled(args, False)
 
 
+def _register_imported_skill(
+    manifest: Manifest,
+    manifest_path: Path,
+    name: str,
+    *,
+    enabled: bool,
+) -> str:
+    if name not in manifest.skills:
+        hosts = tuple(
+            target_name
+            for target_name, target in manifest.targets.items()
+            if target.enabled
+        )
+        register_skill(manifest_path, name, enabled=enabled, hosts=hosts)
+        return "enabled" if enabled else "disabled"
+    if enabled:
+        set_skill_enabled(manifest_path, name, True)
+        return "enabled"
+    return "enabled" if manifest.skills[name].enabled else "disabled"
+
+
 def cmd_import(args: argparse.Namespace) -> int:
     try:
         root = find_repo_root()
@@ -149,6 +170,17 @@ def cmd_import(args: argparse.Namespace) -> int:
     if target_dir.exists():
         if hash_directory(target_dir) == hash_directory(source):
             print(f"up to date: {name} already matches the canonical skill")
+            try:
+                state = _register_imported_skill(
+                    manifest,
+                    root / "my-skills.toml",
+                    name,
+                    enabled=args.enable,
+                )
+            except ManifestEditError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 2
+            print(f"registered: {name} ({state})")
             return 0
         if not args.force:
             print(f"[BLOCKED] {name}: a different canonical skill already exists at")
@@ -161,7 +193,21 @@ def cmd_import(args: argparse.Namespace) -> int:
     target_dir.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source, target_dir)
     print(f"imported: {name} -> {target_dir}")
-    print(f"Next: add [skills.{name}] to my-skills.toml, then `my-skills sync`.")
+    try:
+        state = _register_imported_skill(
+            manifest,
+            root / "my-skills.toml",
+            name,
+            enabled=args.enable,
+        )
+    except ManifestEditError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"registered: {name} ({state})")
+    if args.enable:
+        print(f"Next: `my-skills install {name} --host <host>`.")
+    else:
+        print(f"Next: `my-skills enable {name}`, then `my-skills install {name} --host <host>`.")
     return 0
 
 

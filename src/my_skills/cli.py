@@ -218,6 +218,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--force", action="store_true", help="Overwrite an existing different canonical skill"
     )
     p_import.add_argument(
+        "--enable",
+        action="store_true",
+        help="Register the skill as enabled (default: registered but disabled)",
+    )
+    p_import.add_argument(
         "--skip-audit",
         action="store_true",
         help="Explicitly bypass the audit gate before writing",
