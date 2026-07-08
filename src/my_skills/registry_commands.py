@@ -131,6 +131,15 @@ def _register_imported_skill(
     return "enabled" if manifest.skills[name].enabled else "disabled"
 
 
+def _first_symlink(root: Path) -> Path | None:
+    if root.is_symlink():
+        return root
+    for path in root.rglob("*"):
+        if path.is_symlink():
+            return path
+    return None
+
+
 def cmd_import(args: argparse.Namespace) -> int:
     try:
         root = find_repo_root()
@@ -143,6 +152,16 @@ def cmd_import(args: argparse.Namespace) -> int:
     if not (source / "SKILL.md").is_file():
         print(f"error: {source} is not an Agent Skill (no SKILL.md)", file=sys.stderr)
         return 2
+
+    symlink = _first_symlink(source)
+    if symlink is not None:
+        relative_symlink = (
+            Path(".") if symlink == source else symlink.relative_to(source)
+        )
+        print(f"[BLOCKED] {source.name}: import source contains symlink")
+        print(f"  symlink: {relative_symlink}")
+        print("\nNothing was imported (fix the source first).", file=sys.stderr)
+        return 1
 
     result = compose_validation(source)
     if not result.ok:

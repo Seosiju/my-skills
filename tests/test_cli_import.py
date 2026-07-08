@@ -237,3 +237,42 @@ def test_import_validation_block_does_not_modify_manifest(
 
     assert (repo / "my-skills.toml").read_text(encoding="utf-8") == original
     assert not (repo / "skills" / "brand").exists()
+
+
+def test_import_rejects_source_symlink_without_copy_or_registration(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo = _repo(tmp_path)
+    skill = _skill(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside.joinpath("secret.txt").write_text(
+        'api_key = "abcd1234"\n',
+        encoding="utf-8",
+    )
+    skill.joinpath("refs").symlink_to(outside, target_is_directory=True)
+    original = (repo / "my-skills.toml").read_text(encoding="utf-8")
+    monkeypatch.chdir(repo)
+
+    assert cli.main(["import", str(skill), "--skip-audit"]) == 1
+
+    assert (repo / "my-skills.toml").read_text(encoding="utf-8") == original
+    assert not (repo / "skills" / "brand").exists()
+
+
+def test_import_rejects_symlinked_source_root_without_registration(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo = _repo(tmp_path)
+    skill = _skill(tmp_path)
+    source = tmp_path / "source-link"
+    source.symlink_to(skill, target_is_directory=True)
+    original = (repo / "my-skills.toml").read_text(encoding="utf-8")
+    monkeypatch.chdir(repo)
+
+    assert cli.main(["import", str(source), "--skip-audit"]) == 1
+
+    assert (repo / "my-skills.toml").read_text(encoding="utf-8") == original
+    assert not (repo / "skills" / "brand").exists()
