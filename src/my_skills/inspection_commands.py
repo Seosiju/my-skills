@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from typing import Callable
 
+import my_skills.update_commands as update_commands
+
 from .audit.analyzers import run_audit
 from .audit.gate import audit_policy_from_manifest
 from . import __version__
@@ -65,6 +67,10 @@ def _writable(path: Path) -> bool:
 
 def cmd_doctor(args: argparse.Namespace) -> int:
     print(f"my-skills {__version__}")
+    if getattr(args, "no_update_check", False):
+        print("Update:  skipped")
+    else:
+        print(update_commands.format_doctor_update_status())
     print(f"OS:     {platform.platform()}")
     print(f"Shell:  {os.environ.get('SHELL', 'unknown')}")
     print(f"Python: {platform.python_version()}")

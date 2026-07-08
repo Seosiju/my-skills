@@ -33,7 +33,7 @@ def test_validate_malformed_exit_nonzero(tmp_path, monkeypatch):
 
 def test_doctor_exit_zero(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(_make_repo(tmp_path))
-    rc = cli.main(["doctor"])
+    rc = cli.main(["doctor", "--no-update-check"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "Manifest: valid" in out

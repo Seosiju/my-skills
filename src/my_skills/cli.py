@@ -16,6 +16,7 @@ from .registry_commands import (
     cmd_import,
     cmd_share,
 )
+from .update_apply import cmd_update
 
 __all__ = ["build_parser", "find_repo_root", "main"]
 
@@ -45,7 +46,31 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor = sub.add_parser(
         "doctor", help="Report environment, hosts, and manifest health"
     )
+    p_doctor.add_argument(
+        "--no-update-check",
+        action="store_true",
+        help="Skip checking the latest released CLI version",
+    )
     p_doctor.set_defaults(func=cmd_doctor)
+
+    p_update = sub.add_parser("update", help="Update the installed my-skills CLI")
+    p_update.add_argument(
+        "--channel",
+        choices=("stable", "main"),
+        default="stable",
+        help="Update target (default: stable release tag)",
+    )
+    p_update.add_argument(
+        "--check",
+        action="store_true",
+        help="Only report whether an update is available",
+    )
+    p_update.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show the update command without changing the installed CLI",
+    )
+    p_update.set_defaults(func=cmd_update)
 
     p_bootstrap = sub.add_parser(
         "bootstrap",
