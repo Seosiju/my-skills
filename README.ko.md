@@ -238,7 +238,8 @@ my-skills sync cli-inventory
 
 `import`는 스킬을 `my-skills.toml`에 자동 등록합니다. 기본 등록 상태는
 disabled이므로 설치 전에 `--enable`을 붙이거나 `my-skills enable <skill>`을
-실행합니다.
+실행합니다. audit와 복사 경계가 같은 디렉터리 트리로 유지되도록, symlink를
+포함한 import 소스는 차단됩니다.
 
 ### 스킬을 실시간으로 개발하기
 

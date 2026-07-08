@@ -241,7 +241,8 @@ my-skills sync cli-inventory
 
 `import` registers the skill in `my-skills.toml` automatically. By default the
 new entry is disabled; pass `--enable` or run `my-skills enable <skill>` before
-installing it.
+installing it. Import sources that contain symlinks are rejected so the audit
+and copy boundaries stay the same directory tree.
 
 ### Develop a skill live
 

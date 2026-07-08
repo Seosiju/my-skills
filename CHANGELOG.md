@@ -27,6 +27,8 @@ are the release source of truth while PyPI publishing remains undecided.
 - `import` now registers copied skills in `my-skills.toml` automatically. New
   imports default to disabled unless `--enable` is passed, and re-importing an
   existing registered skill preserves its hosts and local-overlay separation.
+- `import` now rejects source directories that contain symlinks, preventing the
+  copy step from pulling files outside the audited source tree.
 - **Breaking:** `validate` — and the always-on validation that runs before
   `install`, `sync`, `import`, and `share` — now applies the full audit
   analyzer set with a fixed internal policy. Skills that previously passed

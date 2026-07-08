@@ -140,6 +140,9 @@ my-skills import /path/to/skill --enable
 my-skills install <skill> --host <host>
 ```
 
+Import sources must not contain symlinks. Copy real files into the source
+directory before importing so audit and copy inspect the same tree.
+
 After import, edit the canonical registry copy and use `sync` to update managed
 host installs.
 
