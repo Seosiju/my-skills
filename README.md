@@ -84,6 +84,31 @@ my-skills doctor
 my-skills skills --json
 ```
 
+## Updating the CLI
+
+`my-skills doctor` reports when a newer stable CLI release is available.
+Updates are never applied automatically; run the update command explicitly when
+you want to replace the installed tool:
+
+```bash
+my-skills doctor
+my-skills update
+```
+
+By default, `update` installs the latest `vMAJOR.MINOR.PATCH` release tag. To
+check without changing anything:
+
+```bash
+my-skills update --check
+my-skills update --dry-run
+```
+
+For development builds from the `main` branch:
+
+```bash
+my-skills update --channel main
+```
+
 `skills` shows every skill and where it's installed across your hosts:
 
 ```text

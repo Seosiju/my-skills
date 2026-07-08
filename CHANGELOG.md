@@ -7,6 +7,13 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ## [Unreleased]
 
+### Added
+
+- `doctor` now reports whether the installed CLI is behind the latest stable
+  release tag, with `doctor --no-update-check` for offline diagnostics.
+- `update` command for explicitly updating the installed CLI to the latest
+  stable release tag, plus an opt-in `--channel main` development channel.
+
 ## [0.2.0] - 2026-07-09
 
 ### Added
