@@ -100,6 +100,27 @@ def _verified_version(
     return observed
 
 
+def _verify_main_commit(status: update_commands.UpdateStatus) -> bool:
+    if status.channel != "main" or status.latest is None:
+        return True
+    installed = update_commands.read_install_info()
+    if installed.commit_id is None:
+        print(
+            "warning: updated main commit could not be verified "
+            "(install metadata unavailable)",
+            file=sys.stderr,
+        )
+        return True
+    if installed.commit_id != status.latest.commitish:
+        print(
+            "error: updated main commit mismatch: "
+            f"expected {status.latest.commitish[:7]}, got {installed.commit_id[:7]}",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
 def cmd_update(args: argparse.Namespace) -> int:
     status = update_commands.check_update(args.channel)
     print(f"Current: my-skills {status.current.version}")
@@ -155,6 +176,8 @@ def cmd_update(args: argparse.Namespace) -> int:
 
     observed = _verified_version(status)
     if observed is None:
+        return 1
+    if not _verify_main_commit(status):
         return 1
     suffix = " from main" if status.channel == "main" else ""
     print(f"Updated: {observed}{suffix}")
