@@ -1,44 +1,51 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 import my_skills.update_commands as update_commands
 from my_skills import __version__, cli
 
 
-def _make_registry(path):
+def _make_registry(path: Path) -> Path:
     path.mkdir(parents=True)
-    (path / "my-skills.toml").write_text(
-        'schema_version = 1\n'
-        'skills_root = "skills"\n'
-        "\n"
-        "[skills.example]\n"
-        "enabled = true\n"
-        'hosts = ["codex"]\n'
-        "\n"
-        "[skills.disabled]\n"
-        "enabled = false\n"
-        'hosts = ["codex"]\n',
-        encoding="utf-8",
+    manifest = "\n".join(
+        [
+            "schema_version = 1",
+            'skills_root = "skills"',
+            "",
+            "[skills.example]",
+            "enabled = true",
+            'hosts = ["codex"]',
+            "",
+            "[skills.disabled]",
+            "enabled = false",
+            'hosts = ["codex"]',
+            "",
+        ]
     )
+    _ = (path / "my-skills.toml").write_text(manifest, encoding="utf-8")
     (path / "skills").mkdir()
     return path
 
 
-def test_version_flag_prints_cli_version(capsys):
+def test_version_flag_prints_cli_version(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as exc:
-        cli.main(["--version"])
+        _ = cli.main(["--version"])
 
     assert exc.value.code == 0
     assert capsys.readouterr().out.strip() == f"my-skills {__version__}"
 
 
 def test_doctor_reports_registry_source_version_state_and_data(
-    tmp_path, monkeypatch, capsys
-):
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     registry = _make_registry(tmp_path / "registry")
     assert cli.main(["set-root", str(registry)]) == 0
-    capsys.readouterr()
+    _ = capsys.readouterr()
     (tmp_path / "outside").mkdir(exist_ok=True)
     monkeypatch.chdir(tmp_path / "outside")
     monkeypatch.setattr(
@@ -61,8 +68,10 @@ def test_doctor_reports_registry_source_version_state_and_data(
 
 
 def test_doctor_without_configured_root_is_diagnostic_success(
-    tmp_path, monkeypatch, capsys
-):
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         update_commands,
@@ -81,8 +90,10 @@ def test_doctor_without_configured_root_is_diagnostic_success(
 
 
 def test_doctor_reports_invalid_env_root_as_manifest_error(
-    tmp_path, monkeypatch, capsys
-):
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("MY_SKILLS_ROOT", str(tmp_path / "missing"))
     monkeypatch.setattr(
@@ -100,10 +111,14 @@ def test_doctor_reports_invalid_env_root_as_manifest_error(
     assert "Manifest: INVALID" in out
 
 
-def test_doctor_no_update_check_skips_remote_lookup(tmp_path, monkeypatch, capsys):
+def test_doctor_no_update_check_skips_remote_lookup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     registry = _make_registry(tmp_path / "registry")
     assert cli.main(["set-root", str(registry)]) == 0
-    capsys.readouterr()
+    _ = capsys.readouterr()
     (tmp_path / "outside").mkdir(exist_ok=True)
     monkeypatch.chdir(tmp_path / "outside")
 

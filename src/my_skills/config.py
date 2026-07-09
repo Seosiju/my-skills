@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import os
 import tomllib
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 # Built-in default user-scope install paths (plan section 5.4 / decision 3).
 BUILTIN_TARGET_PATHS: dict[str, str] = {
@@ -18,6 +20,50 @@ BUILTIN_TARGET_PATHS: dict[str, str] = {
     "codex": "~/.agents/skills",
     "hermes": "~/.hermes/skills",
 }
+TomlTable = dict[str, object]
+
+
+def _as_table(value: object) -> TomlTable:
+    if not isinstance(value, dict):
+        return {}
+    raw_table = cast(dict[object, object], value)
+    table: TomlTable = {}
+    for key, item in raw_table.items():
+        if isinstance(key, str):
+            table[key] = item
+    return table
+
+
+def _as_str(value: object, default: str = "") -> str:
+    return value if isinstance(value, str) else default
+
+
+def _as_bool(value: object, default: bool) -> bool:
+    return value if isinstance(value, bool) else default
+
+
+def _as_int(value: object, default: int) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
+
+
+def _as_str_list(value: object) -> list[str]:
+    if not isinstance(value, Iterable) or isinstance(value, str):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _merge_tables(*tables: TomlTable) -> TomlTable:
+    merged: TomlTable = {}
+    for table in tables:
+        merged.update(table)
+    return merged
 
 
 class ManifestError(ValueError):
@@ -83,76 +129,86 @@ class Manifest:
         return self.root / self.skills_root
 
 
-def _read_toml(path: Path) -> dict:
+def _read_toml(path: Path) -> TomlTable:
     try:
         with path.open("rb") as fh:
-            return tomllib.load(fh)
+            return _as_table(tomllib.load(fh))
     except tomllib.TOMLDecodeError as exc:
         raise ManifestError(f"invalid TOML in {path}: {exc}") from exc
 
 
-def _resolve_defaults(data: dict, local: dict) -> Defaults:
-    merged = {**data.get("defaults", {}), **local.get("defaults", {})}
+def _resolve_defaults(data: TomlTable, local: TomlTable) -> Defaults:
+    merged = _merge_tables(
+        _as_table(data.get("defaults")),
+        _as_table(local.get("defaults")),
+    )
     return Defaults(
-        install_mode=merged.get("install_mode", "copy"),
-        collision=merged.get("collision", "error"),
-        verify_after_install=merged.get("verify_after_install", True),
+        install_mode=_as_str(merged.get("install_mode"), "copy"),
+        collision=_as_str(merged.get("collision"), "error"),
+        verify_after_install=_as_bool(merged.get("verify_after_install"), True),
     )
 
 
-def _resolve_audit(data: dict, local: dict) -> AuditSettings:
-    merged = {**data.get("audit", {}), **local.get("audit", {})}
+def _resolve_audit(data: TomlTable, local: TomlTable) -> AuditSettings:
+    merged = _merge_tables(
+        _as_table(data.get("audit")),
+        _as_table(local.get("audit")),
+    )
     return AuditSettings(
-        enabled=bool(merged.get("enabled", True)),
-        profile=str(merged.get("profile", "default")),
-        threshold=merged.get("threshold"),
-        disabled_rules=list(merged.get("disabled_rules", [])),
+        enabled=_as_bool(merged.get("enabled"), True),
+        profile=_as_str(merged.get("profile"), "default"),
+        threshold=_as_str(merged.get("threshold")) or None,
+        disabled_rules=_as_str_list(merged.get("disabled_rules")),
     )
 
 
-def _resolve_targets(data: dict, local: dict, cli: dict) -> dict[str, Target]:
-    cli_targets = cli.get("targets", {})
+def _resolve_targets(data: TomlTable, local: TomlTable, cli: TomlTable) -> dict[str, Target]:
+    data_targets = _as_table(data.get("targets"))
+    local_targets = _as_table(local.get("targets"))
+    cli_targets = _as_table(cli.get("targets"))
     names = (
         set(BUILTIN_TARGET_PATHS)
-        | set(data.get("targets", {}))
-        | set(local.get("targets", {}))
+        | set(data_targets)
+        | set(local_targets)
         | set(cli_targets)
     )
     result: dict[str, Target] = {}
     for name in sorted(names):
-        merged = {
-            **data.get("targets", {}).get(name, {}),
-            **local.get("targets", {}).get(name, {}),
-            **cli_targets.get(name, {}),
-        }
-        path_value = merged.get("path") or BUILTIN_TARGET_PATHS.get(name)
+        merged = _merge_tables(
+            _as_table(data_targets.get(name)),
+            _as_table(local_targets.get(name)),
+            _as_table(cli_targets.get(name)),
+        )
+        path_value = _as_str(merged.get("path")) or BUILTIN_TARGET_PATHS.get(name)
         if not path_value:
             raise ManifestError(
                 f"target '{name}' has no path and no built-in default"
             )
         result[name] = Target(
             name=name,
-            enabled=bool(merged.get("enabled", True)),
-            scope=str(merged.get("scope", "user")),
+            enabled=_as_bool(merged.get("enabled"), True),
+            scope=_as_str(merged.get("scope"), "user"),
             path=expand_path(path_value),
         )
     return result
 
 
-def _resolve_skills(data: dict, local: dict) -> dict[str, Skill]:
-    names = set(data.get("skills", {})) | set(local.get("skills", {}))
+def _resolve_skills(data: TomlTable, local: TomlTable) -> dict[str, Skill]:
+    data_skills = _as_table(data.get("skills"))
+    local_skills = _as_table(local.get("skills"))
+    names = set(data_skills) | set(local_skills)
     result: dict[str, Skill] = {}
     for name in sorted(names):
-        merged = {
-            **data.get("skills", {}).get(name, {}),
-            **local.get("skills", {}).get(name, {}),
-        }
+        merged = _merge_tables(
+            _as_table(data_skills.get(name)),
+            _as_table(local_skills.get(name)),
+        )
         result[name] = Skill(
             name=name,
-            enabled=bool(merged.get("enabled", True)),
-            hosts=list(merged.get("hosts", [])),
-            source_type=str(merged.get("source_type", "")),
-            source_revision=str(merged.get("source_revision", "")),
+            enabled=_as_bool(merged.get("enabled"), True),
+            hosts=_as_str_list(merged.get("hosts")),
+            source_type=_as_str(merged.get("source_type")),
+            source_revision=_as_str(merged.get("source_revision")),
         )
     return result
 
@@ -160,7 +216,7 @@ def _resolve_skills(data: dict, local: dict) -> dict[str, Skill]:
 def load_manifest(
     root: Path | str,
     *,
-    cli_overrides: dict | None = None,
+    cli_overrides: TomlTable | None = None,
 ) -> Manifest:
     """Load ``my-skills.toml`` (and optional ``my-skills.local.toml``) from *root*."""
     root = Path(root)
@@ -174,13 +230,13 @@ def load_manifest(
     cli = cli_overrides or {}
 
     skills_root = (
-        cli.get("skills_root")
-        or local.get("skills_root")
-        or data.get("skills_root", "skills")
+        _as_str(cli.get("skills_root"))
+        or _as_str(local.get("skills_root"))
+        or _as_str(data.get("skills_root"), "skills")
     )
 
     return Manifest(
-        schema_version=int(data.get("schema_version", 1)),
+        schema_version=_as_int(data.get("schema_version"), 1),
         skills_root=skills_root,
         defaults=_resolve_defaults(data, local),
         audit=_resolve_audit(data, local),

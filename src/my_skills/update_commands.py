@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from importlib import metadata
-from typing import Literal
+from typing import Literal, cast
 
 from . import __version__
 
@@ -23,21 +24,7 @@ CommandRunner = Callable[
     subprocess.CompletedProcess[str],
 ]
 CommandFinder = Callable[[str], str | None]
-_DIRECT_URL_STRING_RE = re.compile(
-    r'"(?P<key>url|requested_revision|commit_id)"\s*:\s*'
-    + r'"(?P<value>(?:\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4})|[^"\\])*)"'
-)
-_JSON_ESCAPE_RE = re.compile(r'\\(["\\/bfnrt])|\\u([0-9a-fA-F]{4})')
-_JSON_ESCAPES = {
-    '"': '"',
-    "\\": "\\",
-    "/": "/",
-    "b": "\b",
-    "f": "\f",
-    "n": "\n",
-    "r": "\r",
-    "t": "\t",
-}
+JsonObject = dict[str, object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,20 +82,31 @@ def _parse_version(value: str) -> tuple[int, int, int] | None:
     return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
 
 
-def _replace_json_escape(match: re.Match[str]) -> str:
-    simple = match.group(1)
-    if simple is not None:
-        return _JSON_ESCAPES[simple]
-    codepoint = match.group(2)
-    if codepoint is None:
-        return ""
-    return chr(int(codepoint, 16))
+def _as_json_object(value: object) -> JsonObject | None:
+    if not isinstance(value, dict):
+        return None
+    raw_object = cast(dict[object, object], value)
+    result: JsonObject = {}
+    for key, item in raw_object.items():
+        if isinstance(key, str):
+            result[key] = item
+    return result
 
 
-def _direct_url_string(raw: str, key: str) -> str | None:
-    for match in _DIRECT_URL_STRING_RE.finditer(raw):
-        if match.group("key") == key:
-            return _JSON_ESCAPE_RE.sub(_replace_json_escape, match.group("value"))
+def _decode_json_object(raw: str) -> JsonObject | None:
+    try:
+        decoded = cast(object, json.loads(raw))
+    except json.JSONDecodeError:
+        return None
+    return _as_json_object(decoded)
+
+
+def _json_string(payload: JsonObject | None, key: str) -> str | None:
+    if payload is None:
+        return None
+    value = payload.get(key)
+    if isinstance(value, str):
+        return value
     return None
 
 
@@ -126,9 +124,11 @@ def read_install_info() -> InstallInfo:
     if distribution is not None:
         raw_direct_url = distribution.read_text("direct_url.json")
         if raw_direct_url:
-            source_url = _direct_url_string(raw_direct_url, "url")
-            requested_revision = _direct_url_string(raw_direct_url, "requested_revision")
-            commit_id = _direct_url_string(raw_direct_url, "commit_id")
+            direct_url = _decode_json_object(raw_direct_url)
+            vcs_info = _as_json_object(direct_url.get("vcs_info")) if direct_url else None
+            source_url = _json_string(direct_url, "url")
+            requested_revision = _json_string(vcs_info, "requested_revision")
+            commit_id = _json_string(vcs_info, "commit_id")
 
     return InstallInfo(
         version=version,

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
 from collections.abc import Sequence
+
+import pytest
 
 import my_skills.update_commands as update_commands
 from my_skills import cli
@@ -23,9 +26,13 @@ def _install_info(version: str = "0.2.0") -> update_commands.InstallInfo:
     )
 
 
+def _git_path(_name: str) -> str:
+    return "/usr/bin/git"
+
+
 def test_latest_stable_ref_uses_highest_semver_tag_and_ignores_prerelease() -> None:
     def run(
-        command: Sequence[str], timeout: int | None = None
+        command: Sequence[str], _timeout: int | None = None
     ) -> subprocess.CompletedProcess[str]:
         return _completed(
             command,
@@ -38,7 +45,7 @@ def test_latest_stable_ref_uses_highest_semver_tag_and_ignores_prerelease() -> N
             ),
         )
 
-    ref = update_commands.latest_stable_ref(run=run, which=lambda name: "/usr/bin/git")
+    ref = update_commands.latest_stable_ref(run=run, which=_git_path)
 
     assert ref.name == "v0.10.0"
     assert ref.version == (0, 10, 0)
@@ -62,7 +69,7 @@ def test_format_update_status_reports_available_stable_release() -> None:
 
 
 def test_update_check_exits_one_when_stable_update_is_available(
-    monkeypatch, capsys
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(update_commands, "read_install_info", lambda: _install_info("0.2.0"))
     monkeypatch.setattr(
@@ -84,7 +91,9 @@ def test_update_check_exits_one_when_stable_update_is_available(
     assert "Update available" in out
 
 
-def test_update_dry_run_prints_main_channel_install_command(monkeypatch, capsys) -> None:
+def test_update_dry_run_prints_main_channel_install_command(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     monkeypatch.setattr(update_commands, "read_install_info", lambda: _install_info("0.2.0"))
     monkeypatch.setattr(
         update_commands,
@@ -108,7 +117,9 @@ def test_update_dry_run_prints_main_channel_install_command(monkeypatch, capsys)
     )
 
 
-def test_update_reports_missing_uv_without_installing(monkeypatch, capsys) -> None:
+def test_update_reports_missing_uv_without_installing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     monkeypatch.setattr(update_commands, "read_install_info", lambda: _install_info("0.2.0"))
     monkeypatch.setattr(
         update_commands,
@@ -119,7 +130,11 @@ def test_update_reports_missing_uv_without_installing(monkeypatch, capsys) -> No
             commitish="abc123",
         ),
     )
-    monkeypatch.setattr(update_commands.shutil, "which", lambda name: None)
+
+    def missing_command(_name: str) -> None:
+        return None
+
+    monkeypatch.setattr(shutil, "which", missing_command)
 
     rc = cli.main(["update"])
 
@@ -128,16 +143,21 @@ def test_update_reports_missing_uv_without_installing(monkeypatch, capsys) -> No
     assert "uv not found; install uv first" in err
 
 
-def test_update_runs_uv_install_and_verifies_stable_version(monkeypatch, capsys) -> None:
+def test_update_runs_uv_install_and_verifies_stable_version(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     calls: list[list[str]] = []
 
     def run(
-        command: Sequence[str], timeout: int | None = None
+        command: Sequence[str], _timeout: int | None = None
     ) -> subprocess.CompletedProcess[str]:
         calls.append(list(command))
         if command[0] == "/bin/uv":
             return _completed(command)
         return _completed(command, stdout="my-skills 0.3.0\n")
+
+    def find_command(name: str) -> str:
+        return "/bin/uv" if name == "uv" else "/bin/my-skills"
 
     monkeypatch.setattr(update_commands, "read_install_info", lambda: _install_info("0.2.0"))
     monkeypatch.setattr(
@@ -149,11 +169,7 @@ def test_update_runs_uv_install_and_verifies_stable_version(monkeypatch, capsys)
             commitish="abc123",
         ),
     )
-    monkeypatch.setattr(
-        update_commands.shutil,
-        "which",
-        lambda name: "/bin/uv" if name == "uv" else "/bin/my-skills",
-    )
+    monkeypatch.setattr(shutil, "which", find_command)
     monkeypatch.setattr(update_commands, "run_command", run)
 
     rc = cli.main(["update"])

@@ -3,10 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Protocol
 
 from .analyzers import run_audit
 from .models import AuditResult
-from .policy import AuditPolicy, policy_from_config
+from .policy import AuditPolicy, AuditPolicyConfig, policy_from_config
+
+
+class AuditConfigSource(Protocol):
+    @property
+    def audit(self) -> AuditPolicyConfig | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,8 +40,8 @@ def audit_skills(
     return AuditGateResult(tuple(run_audit(skill, policy=policy) for skill in skills))
 
 
-def audit_policy_from_manifest(manifest) -> AuditPolicy:
-    return policy_from_config(getattr(manifest, "audit", None))
+def audit_policy_from_manifest(manifest: AuditConfigSource) -> AuditPolicy:
+    return policy_from_config(manifest.audit)
 
 
 def audit_metadata(result: AuditResult) -> dict[str, str]:
