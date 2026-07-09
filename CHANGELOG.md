@@ -7,6 +7,8 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-09
+
 ### Added
 
 - `doctor` now reports whether the installed CLI is behind the latest stable
