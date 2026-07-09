@@ -82,6 +82,26 @@ def test_read_install_info_tolerates_broken_direct_url(monkeypatch) -> None:
     assert info.executable == "/bin/my-skills"
 
 
+def test_read_install_info_reads_direct_url_vcs_metadata(monkeypatch) -> None:
+    direct_url = (
+        '{"url":"https://github.com/Seosiju/my-skills.git",'
+        '"vcs_info":{"requested_revision":"main","commit_id":"abcdef"}}'
+    )
+    monkeypatch.setattr(update_commands.metadata, "version", lambda name: "0.2.0")
+    monkeypatch.setattr(
+        update_commands.metadata,
+        "distribution",
+        lambda name: _Distribution(direct_url),
+    )
+    monkeypatch.setattr(update_commands.shutil, "which", lambda name: "/bin/my-skills")
+
+    info = update_commands.read_install_info()
+
+    assert info.source_url == "https://github.com/Seosiju/my-skills.git"
+    assert info.requested_revision == "main"
+    assert info.commit_id == "abcdef"
+
+
 def test_stable_status_current_ahead_and_unknown_current() -> None:
     latest = _stable_ref((0, 3, 0))
 
@@ -139,7 +159,7 @@ def test_post_install_version_mismatch_fails_stable_update(monkeypatch, capsys) 
         "which",
         lambda name: "/bin/uv" if name == "uv" else "/bin/my-skills",
     )
-    monkeypatch.setattr(update_commands, "_run_command", run)
+    monkeypatch.setattr(update_commands, "run_command", run)
 
     rc = cli.main(["update"])
 
@@ -193,7 +213,7 @@ def test_main_update_installs_main_and_verifies_commit_metadata(monkeypatch, cap
         "which",
         lambda name: "/bin/uv" if name == "uv" else "/bin/my-skills",
     )
-    monkeypatch.setattr(update_commands, "_run_command", run)
+    monkeypatch.setattr(update_commands, "run_command", run)
 
     rc = cli.main(["update", "--channel", "main"])
 
@@ -236,7 +256,7 @@ def test_main_update_warns_when_commit_metadata_is_unavailable(monkeypatch, caps
         "which",
         lambda name: "/bin/uv" if name == "uv" else "/bin/my-skills",
     )
-    monkeypatch.setattr(update_commands, "_run_command", run)
+    monkeypatch.setattr(update_commands, "run_command", run)
 
     rc = cli.main(["update", "--channel", "main"])
 
@@ -276,7 +296,7 @@ def test_main_update_fails_when_commit_metadata_mismatches(monkeypatch, capsys) 
         "which",
         lambda name: "/bin/uv" if name == "uv" else "/bin/my-skills",
     )
-    monkeypatch.setattr(update_commands, "_run_command", run)
+    monkeypatch.setattr(update_commands, "run_command", run)
 
     rc = cli.main(["update", "--channel", "main"])
 

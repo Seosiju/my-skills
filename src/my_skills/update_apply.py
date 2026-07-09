@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import argparse
 import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
-from typing import assert_never
+from typing import Protocol
 
 from . import update_commands
 
@@ -15,16 +14,18 @@ VersionRunner = Callable[
 ]
 
 
+class UpdateArgs(Protocol):
+    channel: update_commands.UpdateChannel
+    check: bool
+    dry_run: bool
+
+
 def _install_target(status: update_commands.UpdateStatus) -> str:
     if status.latest is None:
         raise update_commands.UpdateCheckError("latest ref unavailable")
-    match status.channel:
-        case "stable":
-            return status.latest.name
-        case "main":
-            return "main"
-        case unreachable:
-            assert_never(unreachable)
+    if status.channel == "stable":
+        return status.latest.name
+    return "main"
 
 
 def _display_command(command: Sequence[str]) -> str:
@@ -53,27 +54,23 @@ def _print_target(status: update_commands.UpdateStatus) -> None:
 
 
 def _check_exit_code(status: update_commands.UpdateStatus) -> int:
-    match status.state:
-        case "available":
-            print("Update available")
-            return 1
-        case "not-checked" | "unknown-current":
-            print(f"Update status unknown: {status.detail}", file=sys.stderr)
-            return 2
-        case "current":
-            print("Already up to date")
-            return 0
-        case "ahead":
-            print("Installed version is ahead of the latest stable release")
-            return 0
-        case unreachable:
-            assert_never(unreachable)
+    if status.state == "available":
+        print("Update available")
+        return 1
+    if status.state == "not-checked" or status.state == "unknown-current":
+        print(f"Update status unknown: {status.detail}", file=sys.stderr)
+        return 2
+    if status.state == "current":
+        print("Already up to date")
+        return 0
+    print("Installed version is ahead of the latest stable release")
+    return 0
 
 
 def _verified_version(
     status: update_commands.UpdateStatus, run: VersionRunner | None = None
 ) -> str | None:
-    runner = update_commands._run_command if run is None else run
+    runner = update_commands.run_command if run is None else run
     executable = shutil.which("my-skills") or "my-skills"
     try:
         result = runner([executable, "--version"], update_commands.DEFAULT_TIMEOUT_SECONDS)
@@ -92,8 +89,7 @@ def _verified_version(
         expected = ".".join(str(part) for part in status.latest.version)
         if observed != f"my-skills {expected}":
             print(
-                "error: updated command did not report expected version "
-                f"{expected}: {observed}",
+                f"error: updated command did not report expected version {expected}: {observed}",
                 file=sys.stderr,
             )
             return None
@@ -106,22 +102,22 @@ def _verify_main_commit(status: update_commands.UpdateStatus) -> bool:
     installed = update_commands.read_install_info()
     if installed.commit_id is None:
         print(
-            "warning: updated main commit could not be verified "
-            "(install metadata unavailable)",
+            "warning: updated main commit could not be verified (install metadata unavailable)",
             file=sys.stderr,
         )
         return True
     if installed.commit_id != status.latest.commitish:
+        expected = status.latest.commitish[:7]
+        actual = installed.commit_id[:7]
         print(
-            "error: updated main commit mismatch: "
-            f"expected {status.latest.commitish[:7]}, got {installed.commit_id[:7]}",
+            f"error: updated main commit mismatch: expected {expected}, got {actual}",
             file=sys.stderr,
         )
         return False
     return True
 
 
-def cmd_update(args: argparse.Namespace) -> int:
+def cmd_update(args: UpdateArgs) -> int:
     status = update_commands.check_update(args.channel)
     print(f"Current: my-skills {status.current.version}")
     _print_target(status)
@@ -157,7 +153,7 @@ def cmd_update(args: argparse.Namespace) -> int:
     command = _install_command(uv, target)
     print(f"Updating via {_display_command(command)}")
     try:
-        result = update_commands._run_command(
+        result = update_commands.run_command(
             command, update_commands.INSTALL_TIMEOUT_SECONDS
         )
     except FileNotFoundError:
@@ -169,7 +165,7 @@ def cmd_update(args: argparse.Namespace) -> int:
 
     if result.returncode != 0:
         print(
-            f"error: uv tool install failed: {update_commands._first_stderr_line(result)}",
+            f"error: uv tool install failed: {update_commands.first_stderr_line(result)}",
             file=sys.stderr,
         )
         return 1

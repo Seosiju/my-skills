@@ -154,7 +154,7 @@ def test_update_runs_uv_install_and_verifies_stable_version(monkeypatch, capsys)
         "which",
         lambda name: "/bin/uv" if name == "uv" else "/bin/my-skills",
     )
-    monkeypatch.setattr(update_commands, "_run_command", run)
+    monkeypatch.setattr(update_commands, "run_command", run)
 
     rc = cli.main(["update"])
 

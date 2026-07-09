@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 import shutil
 import subprocess
@@ -24,6 +23,21 @@ CommandRunner = Callable[
     subprocess.CompletedProcess[str],
 ]
 CommandFinder = Callable[[str], str | None]
+_DIRECT_URL_STRING_RE = re.compile(
+    r'"(?P<key>url|requested_revision|commit_id)"\s*:\s*'
+    + r'"(?P<value>(?:\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4})|[^"\\])*)"'
+)
+_JSON_ESCAPE_RE = re.compile(r'\\(["\\/bfnrt])|\\u([0-9a-fA-F]{4})')
+_JSON_ESCAPES = {
+    '"': '"',
+    "\\": "\\",
+    "/": "/",
+    "b": "\b",
+    "f": "\f",
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +69,7 @@ class UpdateCheckError(RuntimeError):
     pass
 
 
-def _run_command(
+def run_command(
     command: Sequence[str], timeout: int | None = DEFAULT_TIMEOUT_SECONDS
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -67,6 +81,13 @@ def _run_command(
     )
 
 
+def first_stderr_line(result: subprocess.CompletedProcess[str]) -> str:
+    line = result.stderr.strip().splitlines()
+    if line:
+        return line[0]
+    return "command failed"
+
+
 def _parse_version(value: str) -> tuple[int, int, int] | None:
     match = VERSION_RE.fullmatch(value)
     if match is None:
@@ -74,18 +95,21 @@ def _parse_version(value: str) -> tuple[int, int, int] | None:
     return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
 
 
-def _first_stderr_line(result: subprocess.CompletedProcess[str]) -> str:
-    line = result.stderr.strip().splitlines()
-    if line:
-        return line[0]
-    return "command failed"
+def _replace_json_escape(match: re.Match[str]) -> str:
+    simple = match.group(1)
+    if simple is not None:
+        return _JSON_ESCAPES[simple]
+    codepoint = match.group(2)
+    if codepoint is None:
+        return ""
+    return chr(int(codepoint, 16))
 
 
-def _safe_vcs_value(payload, key: str) -> str | None:
-    if not isinstance(payload, dict):
-        return None
-    value = payload.get(key)
-    return value if isinstance(value, str) else None
+def _direct_url_string(raw: str, key: str) -> str | None:
+    for match in _DIRECT_URL_STRING_RE.finditer(raw):
+        if match.group("key") == key:
+            return _JSON_ESCAPE_RE.sub(_replace_json_escape, match.group("value"))
+    return None
 
 
 def read_install_info() -> InstallInfo:
@@ -102,14 +126,9 @@ def read_install_info() -> InstallInfo:
     if distribution is not None:
         raw_direct_url = distribution.read_text("direct_url.json")
         if raw_direct_url:
-            try:
-                direct_url = json.loads(raw_direct_url)
-            except json.JSONDecodeError:
-                direct_url = None
-            source_url = _safe_vcs_value(direct_url, "url")
-            vcs_info = direct_url.get("vcs_info") if isinstance(direct_url, dict) else None
-            requested_revision = _safe_vcs_value(vcs_info, "requested_revision")
-            commit_id = _safe_vcs_value(vcs_info, "commit_id")
+            source_url = _direct_url_string(raw_direct_url, "url")
+            requested_revision = _direct_url_string(raw_direct_url, "requested_revision")
+            commit_id = _direct_url_string(raw_direct_url, "commit_id")
 
     return InstallInfo(
         version=version,
@@ -122,7 +141,7 @@ def read_install_info() -> InstallInfo:
 
 def latest_stable_ref(
     *,
-    run: CommandRunner = _run_command,
+    run: CommandRunner = run_command,
     which: CommandFinder = shutil.which,
 ) -> RemoteRef:
     if which("git") is None:
@@ -138,7 +157,7 @@ def latest_stable_ref(
         raise UpdateCheckError("network unavailable") from exc
 
     if result.returncode != 0:
-        raise UpdateCheckError(_first_stderr_line(result))
+        raise UpdateCheckError(first_stderr_line(result))
 
     candidates: list[RemoteRef] = []
     for line in result.stdout.splitlines():
@@ -165,7 +184,7 @@ def latest_stable_ref(
 
 def latest_main_ref(
     *,
-    run: CommandRunner = _run_command,
+    run: CommandRunner = run_command,
     which: CommandFinder = shutil.which,
 ) -> RemoteRef:
     if which("git") is None:
@@ -178,7 +197,7 @@ def latest_main_ref(
         raise UpdateCheckError("network unavailable") from exc
 
     if result.returncode != 0:
-        raise UpdateCheckError(_first_stderr_line(result))
+        raise UpdateCheckError(first_stderr_line(result))
     fields = result.stdout.strip().split()
     if len(fields) < 2:
         raise UpdateCheckError("main branch not found")
