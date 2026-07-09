@@ -48,6 +48,8 @@ Run:
 uv run pytest
 uv build
 uv run my-skills doctor
+uv run my-skills update --check
+uv run my-skills update --dry-run
 uv run my-skills skills --json
 uv run my-skills bootstrap --dry-run
 uv run my-skills install my-skills --host hermes --dry-run
@@ -59,6 +61,8 @@ Then verify the GitHub install path from the same clean clone:
 uv tool install --force git+https://github.com/Seosiju/my-skills.git
 my-skills bootstrap --dry-run
 my-skills doctor
+my-skills update --check
+my-skills update --dry-run
 my-skills skills --json
 my-skills install my-skills --host hermes --dry-run
 ```

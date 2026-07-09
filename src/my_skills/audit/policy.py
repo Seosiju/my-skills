@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import Protocol
 
 from .models import Severity, severity_from_text
 
@@ -10,6 +12,20 @@ PROFILE_THRESHOLDS: dict[str, Severity | None] = {
     "strict": Severity.HIGH,
     "permissive": None,
 }
+
+
+class AuditPolicyConfig(Protocol):
+    @property
+    def enabled(self) -> bool: ...
+
+    @property
+    def profile(self) -> str: ...
+
+    @property
+    def threshold(self) -> str | None: ...
+
+    @property
+    def disabled_rules(self) -> Iterable[str]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,11 +42,13 @@ class AuditPolicy:
         return PROFILE_THRESHOLDS.get(self.profile, Severity.CRITICAL)
 
 
-def policy_from_config(config) -> AuditPolicy:
-    threshold = severity_from_text(getattr(config, "threshold", None))
+def policy_from_config(config: AuditPolicyConfig | None) -> AuditPolicy:
+    if config is None:
+        return AuditPolicy()
+    threshold = severity_from_text(config.threshold)
     return AuditPolicy(
-        enabled=bool(getattr(config, "enabled", True)),
-        profile=str(getattr(config, "profile", "default")),
+        enabled=bool(config.enabled),
+        profile=str(config.profile),
         threshold=threshold,
-        disabled_rules=frozenset(getattr(config, "disabled_rules", [])),
+        disabled_rules=frozenset(config.disabled_rules),
     )

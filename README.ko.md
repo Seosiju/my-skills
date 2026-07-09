@@ -84,6 +84,29 @@ my-skills doctor
 my-skills skills --json
 ```
 
+## CLI 업데이트
+
+`my-skills doctor`는 더 최신 안정 CLI 릴리스가 있으면 알려줍니다. 업데이트는
+자동으로 적용되지 않으며, 설치된 도구를 바꾸려면 명시적으로 update 명령을 실행합니다:
+
+```bash
+my-skills doctor
+my-skills update
+```
+
+기본값은 최신 `vMAJOR.MINOR.PATCH` 릴리스 tag입니다. 실제 변경 없이 확인하려면:
+
+```bash
+my-skills update --check
+my-skills update --dry-run
+```
+
+`main` 브랜치의 개발 빌드를 설치하려면:
+
+```bash
+my-skills update --channel main
+```
+
 `skills`는 모든 스킬과 호스트별 설치 위치를 보여줍니다:
 
 ```text

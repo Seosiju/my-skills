@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import platform
 import shutil
 import sys
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Protocol
+
+import my_skills.update_commands as update_commands
 
 from .audit.analyzers import run_audit
 from .audit.gate import audit_policy_from_manifest
@@ -16,11 +17,27 @@ from . import config as config_mod
 from .catalog import catalog_rows, rows_json, rows_table, selected_status_hosts
 from .checks import compose_validation
 from .cli_runtime import resolve_root, load_manifest_from_cwd
-from .config import Manifest, ManifestError, Skill
+from .config import Manifest, ManifestError, Skill, load_manifest
 from .data import data_root
 from .hosts import all_hosts
 from .planner import status_of
 from .state import State, StateError, default_state_path
+
+
+class ValidateArgs(Protocol):
+    skill: str | None
+
+
+class DoctorArgs(Protocol):
+    no_update_check: bool
+
+
+class SkillsArgs(Protocol):
+    host: str | None
+    enabled: bool
+    disabled: bool
+    with_status: bool
+    json: bool
 
 
 def _skill_dirs(manifest: Manifest, skill: str | None) -> list[Path]:
@@ -32,7 +49,7 @@ def _skill_dirs(manifest: Manifest, skill: str | None) -> list[Path]:
     return sorted(path for path in skills_dir.iterdir() if path.is_dir())
 
 
-def cmd_validate(args: argparse.Namespace) -> int:
+def cmd_validate(args: ValidateArgs) -> int:
     try:
         manifest = load_manifest_from_cwd()
     except ManifestError as exc:
@@ -63,8 +80,12 @@ def _writable(path: Path) -> bool:
     return os.access(probe, os.W_OK)
 
 
-def cmd_doctor(args: argparse.Namespace) -> int:
+def cmd_doctor(args: DoctorArgs) -> int:
     print(f"my-skills {__version__}")
+    if args.no_update_check:
+        print("Update:  skipped")
+    else:
+        print(update_commands.format_doctor_update_status())
     print(f"OS:     {platform.platform()}")
     print(f"Shell:  {os.environ.get('SHELL', 'unknown')}")
     print(f"Python: {platform.python_version()}")
@@ -74,7 +95,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     resolution = None
     try:
         resolution = resolve_root(write_cache=False)
-        manifest = config_mod.load_manifest(resolution.root)
+        manifest = load_manifest(resolution.root)
     except ManifestError as exc:
         manifest_error = exc
 
@@ -85,7 +106,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         else:
             print(
                 "Registry: not configured (run 'my-skills init-registry' or "
-                "'my-skills set-root')"
+                + "'my-skills set-root')"
             )
     else:
         print(f"Registry: {resolution.root} (source: {resolution.source})")
@@ -96,7 +117,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         ):
             print(
                 "warning: this directory is not the active registry "
-                f"(active: {resolution.cached})"
+                + f"(active: {resolution.cached})"
             )
     if manifest is not None:
         enabled = sum(1 for skill in manifest.skills.values() if skill.enabled)
@@ -115,7 +136,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             path, enabled = config_mod.expand_path(host.default_user_path), True
         print(
             f"  {host.display_name:12} exe={detected:18} "
-            f"enabled={enabled!s:5} writable={_writable(path)!s:5} path={path}"
+            + f"enabled={enabled!s:5} writable={_writable(path)!s:5} path={path}"
         )
 
     if manifest_error is None:
@@ -131,7 +152,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 1
 
 
-def cmd_status(args: argparse.Namespace) -> int:
+def cmd_status(_args: object) -> int:
     try:
         manifest = load_manifest_from_cwd()
     except ManifestError as exc:
@@ -154,7 +175,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_skills(args: argparse.Namespace) -> int:
+def cmd_skills(args: SkillsArgs) -> int:
     try:
         manifest = load_manifest_from_cwd()
     except ManifestError as exc:
