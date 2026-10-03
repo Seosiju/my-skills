@@ -14,11 +14,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
-# Built-in default user-scope install paths (plan section 5.4 / decision 3).
+from .hosts import all_hosts
+
+# Defaults come from the same host contract used by diagnostics and installation.
 BUILTIN_TARGET_PATHS: dict[str, str] = {
-    "claude": "~/.claude/skills",
-    "codex": "~/.agents/skills",
-    "hermes": "~/.hermes/skills",
+    host.name: host.default_user_path for host in all_hosts()
+}
+BUILTIN_TARGET_ENABLED: dict[str, bool] = {
+    host.name: host.default_enabled for host in all_hosts()
 }
 TomlTable = dict[str, object]
 
@@ -186,7 +189,7 @@ def _resolve_targets(data: TomlTable, local: TomlTable, cli: TomlTable) -> dict[
             )
         result[name] = Target(
             name=name,
-            enabled=_as_bool(merged.get("enabled"), True),
+            enabled=_as_bool(merged.get("enabled"), BUILTIN_TARGET_ENABLED.get(name, True)),
             scope=_as_str(merged.get("scope"), "user"),
             path=expand_path(path_value),
         )

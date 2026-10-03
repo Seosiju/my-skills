@@ -135,3 +135,24 @@ def test_doctor_no_update_check_skips_remote_lookup(
     assert "Update:  skipped" in out
     assert f"Registry: {registry.resolve()} (source: cache)" in out
     assert "Manifest: valid" in out
+
+
+@pytest.mark.parametrize("detected", [True, False])
+@pytest.mark.parametrize("configured", [True, False])
+def test_doctor_agy_detection_and_default_activation(
+    tmp_path, monkeypatch, capsys, detected, configured
+):
+    import my_skills.inspection_commands as inspection
+
+    monkeypatch.chdir(tmp_path)
+    if configured:
+        registry = _make_registry(tmp_path / "registry")
+        with (registry / "my-skills.toml").open("a") as fh:
+            fh.write(f'\n[targets.agy]\nenabled = true\npath = "{tmp_path / "agy"}"\n')
+        monkeypatch.setenv("MY_SKILLS_ROOT", str(registry))
+    monkeypatch.setattr(inspection.shutil, "which", lambda name: "/bin/agy" if name == "agy" and detected else None)
+    assert cli.main(["doctor", "--no-update-check"]) == 0
+    line = next(line for line in capsys.readouterr().out.splitlines() if "Antigravity CLI" in line)
+    assert ("found (agy)" if detected else "not found") in line
+    assert f"enabled={configured!s}" in line
+    assert (str(tmp_path / "agy") if configured else ".gemini/config/skills") in line

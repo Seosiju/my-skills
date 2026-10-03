@@ -133,7 +133,7 @@ def cmd_doctor(args: DoctorArgs) -> int:
             target = manifest.targets[host.name]
             path, enabled = target.path, target.enabled
         else:
-            path, enabled = config_mod.expand_path(host.default_user_path), True
+            path, enabled = config_mod.expand_path(host.default_user_path), host.default_enabled
         print(
             f"  {host.display_name:12} exe={detected:18} "
             + f"enabled={enabled!s:5} writable={_writable(path)!s:5} path={path}"

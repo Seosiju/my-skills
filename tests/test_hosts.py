@@ -7,7 +7,7 @@ from my_skills.hosts import HostConfig, all_hosts, get_host, host_names
 def test_no_duplicate_names():
     names = host_names()
     assert len(names) == len(set(names))
-    assert set(names) == {"claude", "codex", "hermes"}
+    assert set(names) == {"claude", "codex", "hermes", "agy"}
 
 
 def test_get_host_unknown_raises():
@@ -30,3 +30,14 @@ def test_host_contract(host: HostConfig):
     assert host.default_project_path
     assert isinstance(host.supports_symlink, bool)
     assert host.reload_hint
+
+
+def test_agy_contract_and_opt_in_default():
+    host = get_host("agy")
+    assert host.display_name == "Antigravity CLI"
+    assert host.detect_commands == ("agy",)
+    assert host.default_user_path == "~/.gemini/config/skills"
+    assert host.default_project_path == ".agents/skills"
+    assert host.supports_symlink is True
+    assert host.default_enabled is False
+    assert all(get_host(name).default_enabled for name in ("claude", "codex", "hermes"))

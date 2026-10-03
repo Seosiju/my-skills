@@ -105,3 +105,31 @@ def test_cli_override_beats_local(tmp_path):
         tmp_path, cli_overrides={"targets": {"claude": {"path": "/tmp/cli-skills"}}}
     )
     assert m.targets["claude"].path == Path("/tmp/cli-skills")
+
+
+def test_agy_omitted_preserves_existing_default_selection(tmp_path):
+    from my_skills.cli_runtime import resolve_hosts
+
+    manifest = load_manifest(_write_manifest(tmp_path))
+    assert resolve_hosts(manifest, "all") == ["claude", "codex", "hermes"]
+    assert manifest.targets["agy"].enabled is False
+    assert str(manifest.targets["agy"].path).endswith("/.gemini/config/skills")
+    assert resolve_hosts(manifest, "agy") == ["agy"]
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_agy_explicit_activation_and_override_precedence(tmp_path, monkeypatch, enabled):
+    monkeypatch.chdir(tmp_path)
+    _write_manifest(tmp_path, BASE + f'\n[targets.agy]\nenabled = {str(enabled).lower()}\n')
+    assert load_manifest(tmp_path).targets["agy"].enabled is enabled
+    (tmp_path / "my-skills.local.toml").write_text(
+        '[targets.agy]\nenabled = true\npath = "local-agy"\n'
+    )
+    local = load_manifest(tmp_path).targets["agy"]
+    assert local.enabled is True
+    assert local.path == tmp_path / "local-agy"
+    override = load_manifest(tmp_path, cli_overrides={"targets": {"agy": {
+        "enabled": False, "path": str(tmp_path / "cli-agy")
+    }}}).targets["agy"]
+    assert override.enabled is False
+    assert override.path == tmp_path / "cli-agy"

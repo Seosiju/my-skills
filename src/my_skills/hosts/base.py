@@ -24,3 +24,4 @@ class HostConfig:
     optional_metadata: tuple[str, ...] = ()
     description_max_chars: int = 768
     frontmatter_keep_fields: tuple[str, ...] = ("name", "description")
+    default_enabled: bool = True
