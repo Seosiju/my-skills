@@ -2,7 +2,7 @@
 
 **Agent Skill을 한 번 작성하고, 모든 에이전트에서 사용하세요.**
 
-_스킬을 위한 하나의 정규(canonical) 위치 — Claude Code·Codex·Hermes 전반에 설치·동기화·공유._
+_스킬을 위한 하나의 정규(canonical) 위치 — Claude Code·Codex·Hermes·Antigravity CLI 전반에 설치·동기화·공유._
 
 [English](README.md) | **한국어**
 
@@ -18,10 +18,43 @@ CLI입니다. 스킬을 한 번 편집하면 `sync`가 어디든 전파하며, �
 
 ## 왜 쓰나요
 
-- **한 번 작성, 어디서든 실행** — 같은 스킬이 Claude Code·Codex·Hermes에서 동작합니다.
+- **한 번 작성, 어디서든 실행** — 같은 스킬이 Claude Code·Codex·Hermes·Antigravity CLI에서 동작합니다.
 - **조용한 덮어쓰기 없음** — 설치는 기본적으로 복사하며, 건드리기 전에 로컬 편집(drift)을 감지합니다.
 - **머신-로컬은 로컬에** — 비밀값·경로·계정은 정규 스킬이나 git에 절대 들어가지 않습니다.
 - **CI 친화적** — `validate`, `install`, `sync --check`는 오류나 드리프트 시 비정상 종료코드를 반환합니다.
+
+## Antigravity CLI (agy)
+
+AGY는 **명시적으로 활성화하는 호스트**입니다. 기존 manifest가 agy를 생략하면
+Claude Code·Codex·Hermes의 기본 대상은 유지됩니다. 새 레지스트리는 agy를
+명시적으로 비활성화하며, 시드 스킬의 지원 목록에는 agy를 포함합니다. 활성화하려면:
+
+```toml
+[targets.agy]
+enabled = true
+scope = "user"
+path = "~/.gemini/config/skills"
+```
+
+원하는 스킬의 `hosts`에도 `agy`를 넣으세요. `--host all`은 활성 대상만 선택하고,
+`--host agy`를 명시하면 다른 호스트처럼 비활성 대상도 선택할 수 있습니다.
+이행 전 검증·감사·dry-run을 거칩니다:
+
+```bash
+my-skills doctor --no-update-check
+my-skills install <skill> --host agy --dry-run --json
+my-skills install <skill> --host agy
+my-skills skills --host agy --json
+agy -p '/skills' --output-format json
+```
+
+프로젝트 경로는 `.agents/skills`입니다. 전역 경로의 일반 폴더·symlink 발견은
+**Antigravity CLI 1.2.16**에서 확인했으며, 해당 `/skills` 검증은 모델 턴·토큰이
+0이었습니다. IDE나 모든 CLI 버전을 검증한 의미는 아닙니다. 공식 문서에는
+`~/.gemini/antigravity-cli/skills`도 있으므로 다른 버전에서는 발견을 재확인하고
+필요하면 대상 경로를 덮어쓰세요. 기존 미관리 스킬은 비교 후 발견 경로 밖에 백업하고
+기존 충돌 검사 절차로 이행합니다. 공개 Hermes 지원은 유지하며 개인 레지스트리에서
+필요에 따라 비활성화할 수 있습니다.
 
 ## 어떻게 동작하나요
 
@@ -37,7 +70,7 @@ frontmatter(`name`, `description`)를 가진 `SKILL.md`를 포함합니다 —
 [Agent Skills](https://agentskills.io/specification) 표준입니다. registry의
 `skills/` 디렉터리가 **정규(canonical)** 진실의 원천입니다.
 
-각 에이전트(Claude Code, Codex, Hermes)는 **호스트**입니다. `install`은 정규
+각 에이전트(Claude Code, Codex, Hermes, Antigravity CLI)는 **호스트**입니다. `install`은 정규
 스킬을 호스트로 복사하고, `sync`는 그 복사본을 최신으로 유지합니다. 복사본은
 제자리에서 편집될 수 있으므로, `my-skills`는 **드리프트**를 추적해 `sync`가 로컬
 변경을 알리지 않고 덮어쓰는 일이 없도록 합니다.
@@ -55,6 +88,7 @@ flowchart LR
         c["Claude Code"]
         x["Codex"]
         h["Hermes"]
+        a["Antigravity CLI (agy)"]
     end
 
     out -. "직접 수정하면" .-> drift["⚠️ DRIFTED<br/>sync가 덮어쓰지 않음"]
@@ -198,7 +232,7 @@ $EDITOR skills/my-private-skill/SKILL.md
 ```toml
 [skills.my-private-skill]
 enabled = true
-hosts = ["claude", "codex", "hermes"]
+hosts = ["claude", "codex", "hermes", "agy"]
 ```
 
 agent host에 쓰기 전에는 항상 미리 봅니다:

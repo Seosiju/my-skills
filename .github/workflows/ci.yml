@@ -41,6 +41,7 @@ jobs:
           uv run my-skills skills --json
           uv run my-skills bootstrap --dry-run
           uv run my-skills install my-skills --host hermes --dry-run
+          uv run my-skills install my-skills --host agy --dry-run
 
       - name: Run uv tool install smoke checks
         run: |
@@ -73,3 +74,9 @@ jobs:
           XDG_DATA_HOME="$tmp/data" \
           XDG_CONFIG_HOME="$tmp/config" \
             my-skills install my-skills --host hermes --dry-run
+          PATH="$tmp/bin:$PATH" \
+          HOME="$tmp/home" \
+          XDG_STATE_HOME="$tmp/state" \
+          XDG_DATA_HOME="$tmp/data" \
+          XDG_CONFIG_HOME="$tmp/config" \
+            my-skills install my-skills --host agy --dry-run

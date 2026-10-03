@@ -13,7 +13,7 @@ from .defaults import DEFAULT_SEED_FILES, DEFAULT_SEED_SKILLS, SeedUnavailable, 
 
 README_TITLE: Final = "Private Agent Skill Registry"
 DEFAULT_REGISTRY: Final = "~/my-agent-skills"
-SEED_HOSTS: Final = ("claude", "codex", "hermes")
+SEED_HOSTS: Final = ("claude", "codex", "hermes", "agy")
 
 MANIFEST: Final = (
     'schema_version = 1\n'
@@ -38,6 +38,11 @@ MANIFEST: Final = (
     "enabled = true\n"
     'scope = "user"\n'
     'path = "~/.hermes/skills"\n'
+    "\n"
+    "[targets.agy]\n"
+    "enabled = false\n"
+    'scope = "user"\n'
+    'path = "~/.gemini/config/skills"\n'
 )
 
 GITIGNORE: Final = (
@@ -77,6 +82,8 @@ README_BODY: Final = (
     "```\n"
     "\n"
     "Use `my-skills.local.toml` for machine-specific manifest overrides.\n"
+    "Antigravity CLI (`agy`) is opt-in: set `[targets.agy] enabled = true`\n"
+    "and include agy in each desired skill's hosts list before using --host all.\n"
 )
 
 

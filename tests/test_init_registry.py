@@ -14,7 +14,7 @@ import my_skills.init_registry_commands as init_registry_commands
 from my_skills.defaults import DEFAULT_SEED_SKILLS
 
 
-SEED_HOSTS = ["claude", "codex", "hermes"]
+SEED_HOSTS = ["claude", "codex", "hermes", "agy"]
 
 
 def _init_registry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -298,3 +298,19 @@ def test_init_registry_missing_git_is_graceful(
     out = capsys.readouterr().out
     assert "git command not found; skipped git init" in out
     assert not (target / ".git").exists()
+
+
+@pytest.mark.parametrize("with_defaults", [True, False])
+def test_init_registry_agy_opt_in_target(tmp_path, monkeypatch, with_defaults):
+    target = tmp_path / "registry"
+    argv = ["init-registry", str(target), "--no-git"]
+    if not with_defaults:
+        argv.append("--no-defaults")
+    assert cli.main(argv) == 0
+    manifest = tomllib.loads((target / "my-skills.toml").read_text())
+    assert manifest["targets"]["agy"] == {
+        "enabled": False, "scope": "user", "path": "~/.gemini/config/skills"
+    }
+    assert all(manifest["targets"][name]["enabled"] for name in ("claude", "codex", "hermes"))
+    if not with_defaults:
+        assert "skills" not in manifest

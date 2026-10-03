@@ -2,7 +2,7 @@
 
 **Write an Agent Skill once. Use it in every agent.**
 
-_One canonical home for your skills — installed, synced, and shared across Claude Code, Codex, and Hermes._
+_One canonical home for your skills — installed, synced, and shared across Claude Code, Codex, Hermes, and Antigravity CLI._
 
 **English** | [한국어](README.ko.md)
 
@@ -18,10 +18,44 @@ drifted instead of silently clobbering your work.
 
 ## Why
 
-- **Author once, run anywhere** — the same skill works in Claude Code, Codex, and Hermes.
+- **Author once, run anywhere** — the same skill works in Claude Code, Codex, Hermes, and Antigravity CLI.
 - **No silent overwrites** — installs copy by default and detect local edits (drift) before touching them.
 - **Machine-local stays local** — secrets, paths, and accounts never land in a canonical skill or in git.
 - **CI-friendly** — `validate`, `install`, and `sync --check` exit non-zero on errors or drift.
+
+## Antigravity CLI (agy)
+
+AGY is supported **opt-in**. Existing manifests that omit it keep their existing
+Claude Code/Codex/Hermes default targets. New registries explicitly disable AGY,
+while seeded skills include it in their supported hosts. To enable it, add:
+
+```toml
+[targets.agy]
+enabled = true
+scope = "user"
+path = "~/.gemini/config/skills"
+```
+
+Include `agy` in each desired skill's `hosts` list. `--host all` selects only
+enabled targets; explicit `--host agy` can select a disabled target, just like
+other explicit hosts. Use normal validation, audit, and dry-run before migration:
+
+```bash
+my-skills doctor --no-update-check
+my-skills install <skill> --host agy --dry-run --json
+my-skills install <skill> --host agy
+my-skills skills --host agy --json
+agy -p '/skills' --output-format json
+```
+
+The project path is `.agents/skills`. Global-path discovery for both regular
+folders and symlinks was verified with **Antigravity CLI 1.2.16**; `/skills`
+used zero model turns and tokens in that verification. This does not validate
+Antigravity IDE or every CLI version. Official documentation has also described
+`~/.gemini/antigravity-cli/skills`, so recheck discovery on other versions and use
+a target path override if needed. Preserve existing unmanaged skills: compare,
+back up outside discovery paths, and migrate through the usual collision checks.
+Public Hermes support remains unchanged; personal registries may disable it.
 
 ## How it works
 
@@ -36,7 +70,7 @@ A skill is just a directory under your registry's `skills/<name>/` with a
 [Agent Skills](https://agentskills.io/specification) standard. Your registry's
 `skills/` directory is the **canonical** source of truth.
 
-Each agent (Claude Code, Codex, Hermes) is a **host**. `install` copies a canonical
+Each agent (Claude Code, Codex, Hermes, Antigravity CLI) is a **host**. `install` copies a canonical
 skill into a host; `sync` keeps those copies up to date. Because copies can be edited
 in place, `my-skills` tracks **drift** so a `sync` never overwrites local changes
 without telling you.
@@ -55,6 +89,7 @@ flowchart LR
         c["Claude Code"]
         x["Codex"]
         h["Hermes"]
+        a["Antigravity CLI (agy)"]
     end
 
     out -. "if edited directly" .-> drift["⚠️ DRIFTED<br/>sync won't overwrite"]
@@ -203,7 +238,7 @@ Then register it in `my-skills.toml`:
 ```toml
 [skills.my-private-skill]
 enabled = true
-hosts = ["claude", "codex", "hermes"]
+hosts = ["claude", "codex", "hermes", "agy"]
 ```
 
 Preview before writing to agent hosts:

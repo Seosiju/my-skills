@@ -21,18 +21,23 @@ enabled = true
 scope = "user"
 path = "~/.hermes/skills"
 
+[targets.agy]
+enabled = false
+scope = "user"
+path = "~/.gemini/config/skills"
+
 [skills.cli-inventory]
 enabled = true
-hosts = ["claude", "codex", "hermes"]
+hosts = ["claude", "codex", "hermes", "agy"]
 
 [skills.personal-profile]
 enabled = true
-hosts = ["claude", "codex", "hermes"]
+hosts = ["claude", "codex", "hermes", "agy"]
 
 [skills.my-skills]
 enabled = true
-hosts = ["claude", "codex", "hermes"]
+hosts = ["claude", "codex", "hermes", "agy"]
 
 [skills.my-jira]
 enabled = true
-hosts = ["claude", "codex", "hermes"]
+hosts = ["claude", "codex", "hermes", "agy"]

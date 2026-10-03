@@ -138,7 +138,7 @@ PR3(위치 프롬프트·git init) → PR4(문서·스킬·help·E2E). PR2와 PR
 ````markdown
 ---
 name: my-skills
-description: Manage your my-skills registry from an agent conversation. Use when setting up or creating a registry, listing available skills, sharing a host-local skill into the registry, enabling or disabling a skill, or installing/syncing skills into Claude Code, Codex, or Hermes.
+description: Manage your my-skills registry from an agent conversation. Use when setting up or creating a registry, listing available skills, sharing a host-local skill into the registry, enabling or disabling a skill, or installing/syncing skills into Claude Code, Codex, Hermes, or Antigravity CLI (agy).
 ---
 
 # My Skills Registry
@@ -150,7 +150,7 @@ or disable the skill.
 **Mental model.** Your registry is a folder (default `~/my-agent-skills`) holding
 `my-skills.toml` (the manifest) and `skills/<name>/SKILL.md` (the canonical
 originals). Host directories (`~/.claude/skills`, `~/.agents/skills`,
-`~/.hermes/skills`) are **build outputs**: `install` and `sync` copy the canonical
+`~/.hermes/skills`, `~/.gemini/config/skills`) are **build outputs**: `install` and `sync` copy the canonical
 skill into them. Editing a host copy directly causes **drift**, which the CLI
 detects and refuses to silently overwrite. git is optional — the registry works
 as a plain folder; version control and remotes are the user's choice.
@@ -240,7 +240,7 @@ my-skills skills --json
 First produce a read-only plan:
 
 ```bash
-my-skills share --from <claude|codex|hermes> --plan --json
+my-skills share --from <claude|codex|hermes|agy> --plan --json
 ```
 
 Show the user the candidate skills, validation/audit risks, canonical status,
@@ -335,6 +335,27 @@ Multi-host writes require `--yes` after a reviewed dry-run plan. Read-only
 checks such as `install --dry-run` and `sync --check` do not need `--yes`.
 Only use `--host all --yes` when the user's request explicitly names all hosts
 and the dry-run plan has been shown or otherwise reviewed.
+
+## Antigravity CLI (agy)
+
+AGY is a supported, opt-in host. Set `enabled = true` under `[targets.agy]`
+and include `agy` in the desired skill's `hosts` list to add it to default
+cross-host operations. An omitted target is disabled; an explicit `--host agy`
+still selects it, following the same explicit-host rules as other agents.
+
+The user-scope path is `~/.gemini/config/skills`; the project path is
+`.agents/skills`. Copy and symlink discovery were verified with Antigravity CLI
+1.2.16. This does not establish Antigravity IDE or other-version compatibility.
+After installation, start a new CLI session and use `/skills` to check discovery:
+
+```bash
+my-skills install <skill> --host agy --dry-run --json
+my-skills skills --host agy --json
+agy -p '/skills' --output-format json
+```
+
+Preserve unmanaged AGY skills: compare and back them up outside its discovery
+path before migration. Do not force replacement or bypass audit automatically.
 
 ## Enable Or Disable
 

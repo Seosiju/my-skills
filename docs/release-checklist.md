@@ -29,6 +29,7 @@ my-skills bootstrap --dry-run
 my-skills doctor
 my-skills skills --json
 my-skills install my-skills --host hermes --dry-run
+my-skills install my-skills --host agy --dry-run
 ```
 
 For local release verification from a working tree, use:
@@ -38,6 +39,7 @@ uv run my-skills bootstrap --dry-run
 uv run my-skills doctor
 uv run my-skills skills --json
 uv run my-skills install my-skills --host hermes --dry-run
+uv run my-skills install my-skills --host agy --dry-run
 ```
 
 ## 3. Required Verification
@@ -53,6 +55,7 @@ uv run my-skills update --dry-run
 uv run my-skills skills --json
 uv run my-skills bootstrap --dry-run
 uv run my-skills install my-skills --host hermes --dry-run
+uv run my-skills install my-skills --host agy --dry-run
 ```
 
 Then verify the GitHub install path from the same clean clone:
@@ -65,10 +68,22 @@ my-skills update --check
 my-skills update --dry-run
 my-skills skills --json
 my-skills install my-skills --host hermes --dry-run
+my-skills install my-skills --host agy --dry-run
 ```
 
 The GitHub Actions workflow must pass the same test, build, source smoke, and
 tool-install smoke checks.
+
+For AGY support, also verify an isolated old manifest without `targets.agy`
+keeps AGY disabled and absent from default `--host all` plans. New-registry
+scaffolds must explicitly disable AGY while seeded skills support it. Do not
+repoint a maintainer's private registry for public smoke tests.
+
+Native discovery of regular folders and symlinks at `~/.gemini/config/skills`
+was verified with Antigravity CLI 1.2.16 using `agy -p '/skills'
+--output-format json` (zero model turns/tokens). Recheck discovery for different
+versions; do not claim Antigravity IDE validation. Preserve unmanaged installs
+before a migration, and retain existing Hermes regression checks.
 
 ## 4. Tag and Release
 

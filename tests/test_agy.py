@@ -1,7 +1,5 @@
 """AGY uses the common lifecycle and safety boundaries, including explicit opt-in."""
 import json
-from pathlib import Path
-
 import pytest
 
 from my_skills import cli
