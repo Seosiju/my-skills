@@ -7,6 +7,26 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-03
+
+### Added
+
+- Antigravity CLI (`agy`) host support for discovery diagnostics, validation,
+  install/sync, status/catalog, sharing, and uninstall through the existing
+  skill management workflow.
+- AGY user skills path `~/.gemini/config/skills` and workspace path
+  `.agents/skills`, with copy and symlink discovery verified on CLI 1.2.16.
+- Explicitly disabled AGY targets in newly initialized registries, and AGY in
+  the seed skills' supported-host lists for opt-in activation.
+- Regression coverage and source/installed-tool CI smoke checks for AGY.
+
+### Changed
+
+- Default target paths and activation now use the shared host contract. AGY
+  stays disabled when omitted from a manifest; existing Claude Code, Codex,
+  and Hermes activation defaults are preserved.
+- Public setup and release documentation now includes the AGY opt-in flow.
+
 ## [0.3.1] - 2026-07-09
 
 ### Added

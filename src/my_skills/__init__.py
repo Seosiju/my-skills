@@ -5,4 +5,4 @@ Agent Skills validation, a static security scan, a host registry, and the
 ``validate`` / ``doctor`` CLI commands.
 """
 
-__version__ = "0.3.1"
+__version__ = "0.4.0"
