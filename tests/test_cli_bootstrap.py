@@ -3,6 +3,8 @@ from pathlib import Path
 
 from my_skills import bootstrap_commands, cli
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
 
 def _make_repo(tmp_path: Path) -> tuple[Path, Path]:
     target = tmp_path / "hosts" / "codex"
@@ -86,3 +88,28 @@ def test_bootstrap_reports_missing_uv_without_installing_skills(
     assert rc == 2
     assert "uv command not found" in err
     assert not target.exists()
+
+
+def test_source_manifest_bootstrap_does_not_reinstall_retired_profile(
+    tmp_path, monkeypatch, capsys
+):
+    repo = tmp_path / "source-checkout"
+    repo.mkdir()
+    (repo / "my-skills.toml").write_text(
+        (REPO_ROOT / "my-skills.toml").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    target = tmp_path / "hosts" / "codex"
+    (repo / "my-skills.local.toml").write_text(
+        f'skills_root = "{(REPO_ROOT / "skills").as_posix()}"\n'
+        f'[targets.codex]\npath = "{target.as_posix()}"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(repo)
+
+    assert cli.main(["bootstrap", "--skip-tool-install", "--host", "codex"]) == 0
+
+    capsys.readouterr()
+    assert (target / "my-skills" / "SKILL.md").is_file()
+    assert (target / "cli-inventory" / "SKILL.md").is_file()
+    assert not (target / "personal-profile").exists()

@@ -23,9 +23,8 @@ Two files are written to ``<data-root>/cli-inventory/``:
   - ``inventory.md`` — a readable summary: the command tables, an "expected
     tools" check, and per-manager package counts.
 
-The data root is machine-local and is **never committed** (the same root
-``personal-profile`` uses). This script only reads the machine and writes the
-inventory there; it installs nothing.
+The data root is machine-local and is **never committed**. This script only
+reads the machine and writes the inventory there; it installs nothing.
 
 Resolve the data root host-neutrally, matching the ``my-skills`` rule:
 ``$XDG_DATA_HOME/my-skills/cli-inventory`` if ``XDG_DATA_HOME`` is set, else

@@ -60,6 +60,18 @@ def test_load_manifest_reads_skill_provenance(tmp_path):
     assert m.skills["beta"].source_revision == ""
 
 
+def test_legacy_profile_registration_remains_supported(tmp_path):
+    manifest = load_manifest(_write_manifest(
+        tmp_path,
+        BASE + '\n[skills.personal-profile]\nenabled = true\nhosts = ["codex"]\n'
+        'source_type = "builtin-seed"\nsource_revision = "0.4.0"\n',
+    ))
+
+    [skill] = selected_skills(manifest, explicit=["personal-profile"])
+    assert skill.enabled is True
+    assert skill.hosts == ["codex"]
+
+
 def test_missing_manifest_raises(tmp_path):
     with pytest.raises(ManifestError, match="manifest not found"):
         load_manifest(tmp_path)

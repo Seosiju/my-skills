@@ -93,6 +93,5 @@ is machine-specific and stays out of version control:
 - which package managers exist and what they installed
 
 Those live only at the data root (`<data-root>/cli-inventory/`), which is
-machine-local and never committed — the same root `personal-profile` uses. The
-canonical skill defines *what* to scan and *how*; the data root holds *the
-answers for this computer*.
+machine-local and never committed. The canonical skill defines *what* to scan
+and *how*; the data root holds *the answers for this computer*.
