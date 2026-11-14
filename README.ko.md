@@ -147,7 +147,6 @@ my-skills update --channel main
 SKILL             ENABLED  CLAUDE   CODEX    HERMES
 ----------------  -------  -------  -------  -------
 cli-inventory     yes      fresh    fresh    missing
-personal-profile  yes      fresh    stale    missing
 my-skills         yes      fresh    fresh    fresh
 ```
 
@@ -249,9 +248,13 @@ my-skills install
 | 스킬 | 하는 일 |
 |------|---------|
 | `cli-inventory` | 이 머신에 설치된 CLI 도구를 발견(PATH + Homebrew/npm/pipx/cargo/gem/pip)해 머신-로컬 인벤토리로 기록하고 빠르게 다시 읽기. |
-| `personal-profile` | 사용자에 대한 지속적인 사실(정체성, 선호)을 기억하고 에이전트 전반에 적용. |
 | `my-skills` | 카탈로그·share·install·sync 워크플로를 CLI로 안내하는 에이전트용 스킬. |
 | `my-jira` | 머신-로컬 설정 템플릿을 포함한 Jira/Atlassian 부트스트랩 스킬. 기본값은 비활성. |
+
+`personal-profile`은 더 이상 기본 포함되지 않습니다. 기본 목록은 새로 초기화하는
+registry에 적용되며, CLI 업데이트는 기존 스킬·호스트 설치본·머신-로컬 데이터를
+삭제하지 않습니다. 불필요한 호스트 설치본은
+`my-skills uninstall personal-profile --host <host>`로 명시적으로 삭제하세요.
 
 ## 일상 명령어
 
@@ -337,12 +340,12 @@ my-skills install cli-inventory --host claude --mode link
 ### 머신-로컬 데이터
 
 정규 스킬은 머신별 데이터를 절대 저장하지 않습니다. 실제 로컬 데이터가 필요한
-스킬(예: `personal-profile` 메모리)은 대신 모든 호스트가 공유하는 단일 데이터
+스킬(예: `cli-inventory` 스캔 결과)은 대신 모든 호스트가 공유하는 단일 데이터
 루트를 읽고 씁니다:
 
 ```bash
-my-skills data-path personal-profile          # 경로 해석
-my-skills data-path personal-profile --create # 그리고 생성
+my-skills data-path cli-inventory          # 경로 해석
+my-skills data-path cli-inventory --create # 그리고 생성
 ```
 
 데이터 루트는 머신-로컬이며 절대 커밋되지 않습니다. 비공개 설정이 필요한 스킬도

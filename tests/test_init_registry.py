@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -37,11 +38,35 @@ def test_init_registry_registers_seed_skills_in_manifest(
     manifest = tomllib.loads((target / "my-skills.toml").read_text(encoding="utf-8"))
 
     assert set(manifest["skills"]) == {name for name, _enabled in DEFAULT_SEED_SKILLS}
+    assert "personal-profile" not in manifest["skills"]
+    assert not (target / "skills" / "personal-profile").exists()
     for name, enabled in DEFAULT_SEED_SKILLS:
         assert manifest["skills"][name]["enabled"] is enabled
         assert manifest["skills"][name]["hosts"] == SEED_HOSTS
         assert manifest["skills"][name]["source_type"] == "builtin-seed"
         assert manifest["skills"][name]["source_revision"] == __version__
+
+
+def test_init_registry_does_not_restore_removed_skills_or_delete_local_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = _init_registry(tmp_path, monkeypatch)
+    removed = target / "skills" / "cli-inventory"
+    shutil.rmtree(removed)
+    manifest = (target / "my-skills.toml").read_bytes()
+    data_home = tmp_path / "data"
+    monkeypatch.setenv("XDG_DATA_HOME", str(data_home))
+    memory = data_home / "my-skills" / "personal-profile" / "memory.json"
+    memory.parent.mkdir(parents=True)
+    memory.write_text('{"keep": true}\n', encoding="utf-8")
+    capsys.readouterr()
+
+    assert cli.main(["init-registry", str(target), "--no-git"]) == 1
+
+    assert "registry scaffold already exists" in capsys.readouterr().err
+    assert not removed.exists()
+    assert (target / "my-skills.toml").read_bytes() == manifest
+    assert memory.read_text(encoding="utf-8") == '{"keep": true}\n'
 
 
 def test_init_registry_install_dry_run_has_seed_actions(
@@ -57,7 +82,7 @@ def test_init_registry_install_dry_run_has_seed_actions(
     assert rc == 0
     assert payload["actions"]
     action_skills = {action["skill"] for action in payload["actions"]}
-    assert {"cli-inventory", "personal-profile", "my-skills"} <= action_skills
+    assert action_skills == {"cli-inventory", "my-skills"}
     assert "my-jira" not in action_skills
 
 
@@ -244,11 +269,6 @@ def test_init_registry_seed_copy_does_not_copy_private_source_files(
     (source / "cli-inventory" / "scripts").mkdir()
     (source / "cli-inventory" / "scripts" / "scan_tools.py").write_text(
         "print('scan')\n",
-        encoding="utf-8",
-    )
-    (source / "personal-profile" / "references").mkdir()
-    (source / "personal-profile" / "references" / "schema.md").write_text(
-        "# Schema\n",
         encoding="utf-8",
     )
     (source / "my-jira" / "config.example.json").write_text(

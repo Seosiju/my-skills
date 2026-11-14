@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import tarfile
 import zipfile
 from pathlib import Path
 
@@ -10,11 +11,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SEED_PACKAGE_ROOT = "my_skills/_defaults/skills/"
 
 
-def test_wheel_contains_default_seed_skills(tmp_path: Path) -> None:
+def test_distributions_contain_defaults_without_retired_profile(tmp_path: Path) -> None:
     out_dir = tmp_path / "dist"
 
     subprocess.run(
-        ["uv", "build", "--wheel", "--out-dir", str(out_dir)],
+        ["uv", "build", "--out-dir", str(out_dir)],
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
@@ -34,9 +35,15 @@ def test_wheel_contains_default_seed_skills(tmp_path: Path) -> None:
         if name.startswith(SEED_PACKAGE_ROOT)
     ]
     assert seeded_paths
+    assert not any("personal-profile" in Path(path).parts for path in packaged)
     assert not [
         path
         for path in seeded_paths
         if any(part.startswith(".") for part in Path(path).parts)
         or "__pycache__" in Path(path).parts
     ]
+
+    [sdist] = out_dir.glob("my_skills-*.tar.gz")
+    with tarfile.open(sdist) as archive:
+        source_paths = archive.getnames()
+    assert not any("personal-profile" in Path(path).parts for path in source_paths)

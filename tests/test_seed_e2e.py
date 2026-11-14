@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_ENABLED_SKILLS = {"cli-inventory", "personal-profile", "my-skills"}
+DEFAULT_ENABLED_SKILLS = {"cli-inventory", "my-skills"}
 DEFAULT_DISABLED_SKILLS = {"my-jira"}
 
 
@@ -51,6 +51,7 @@ def test_seeded_registry_cold_cli_flow_installs_claude_host(tmp_path: Path) -> N
 
     manifest = tomllib.loads((registry / "my-skills.toml").read_text(encoding="utf-8"))
     assert set(manifest["skills"]) == DEFAULT_ENABLED_SKILLS | DEFAULT_DISABLED_SKILLS
+    assert not (registry / "skills" / "personal-profile").exists()
     for skill in DEFAULT_ENABLED_SKILLS | DEFAULT_DISABLED_SKILLS:
         assert (registry / "skills" / skill / "SKILL.md").is_file()
     seeded_paths = [
@@ -84,7 +85,7 @@ def test_seeded_registry_cold_cli_flow_installs_claude_host(tmp_path: Path) -> N
     for host_root in host_roots:
         assert (host_root / "my-skills" / "SKILL.md").is_file()
         assert (host_root / "cli-inventory" / "SKILL.md").is_file()
-        assert (host_root / "personal-profile" / "SKILL.md").is_file()
+        assert not (host_root / "personal-profile").exists()
         assert not (host_root / "my-jira").exists()
 
 

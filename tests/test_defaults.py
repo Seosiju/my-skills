@@ -9,7 +9,6 @@ from my_skills import defaults
 
 EXPECTED_SEED_SKILLS = (
     ("cli-inventory", True),
-    ("personal-profile", True),
     ("my-skills", True),
     ("my-jira", False),
 )

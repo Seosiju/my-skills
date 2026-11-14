@@ -1,7 +1,7 @@
 """Shared per-skill data root (plan section 15.4).
 
-Skills that hold real, machine-local data (for example ``personal-profile``'s
-memory) need ONE location that every host shares. Canonical skills are *copied*
+Skills that hold real, machine-local data (for example ``cli-inventory``'s
+scan results) need ONE location that every host shares. Canonical skills are *copied*
 out to each host directory on ``sync`` (``~/.claude/skills/<skill>``,
 ``~/.agents/skills/<skill>``, ``~/.hermes/skills/<skill>``), so a copy-relative
 ``local/`` would diverge per host and never converge. This module resolves a

@@ -150,7 +150,6 @@ my-skills update --channel main
 SKILL             ENABLED  CLAUDE   CODEX    HERMES
 ----------------  -------  -------  -------  -------
 cli-inventory     yes      fresh    fresh    missing
-personal-profile  yes      fresh    stale    missing
 my-skills         yes      fresh    fresh    fresh
 ```
 
@@ -255,9 +254,13 @@ my-skills install
 | Skill | What it does |
 |-------|--------------|
 | `cli-inventory` | Discover the CLI tools installed on this machine (PATH + Homebrew/npm/pipx/cargo/gem/pip) and record them to a machine-local inventory you can read back quickly. |
-| `personal-profile` | Remembers durable user facts (identity, preferences) and applies them across agents. |
 | `my-skills` | Agent-facing skill that guides catalog, share, install, and sync workflows through the CLI. |
 | `my-jira` | Disabled-by-default Jira/Atlassian bootstrap skill with a machine-local config template. |
+
+`personal-profile` is no longer bundled. The default set applies to newly
+initialized registries; updating the CLI does not delete existing registry skills,
+host installations, or machine-local data. Remove unwanted host copies explicitly
+with `my-skills uninstall personal-profile --host <host>`.
 
 ## Everyday commands
 
@@ -342,11 +345,11 @@ and never committed.
 ### Machine-local data
 
 Canonical skills never store machine-specific data. Skills that need real local data
-(e.g. the `personal-profile` memory) read and write a single shared data root instead:
+(e.g. `cli-inventory` scan results) read and write a single shared data root instead:
 
 ```bash
-my-skills data-path personal-profile          # resolve the path
-my-skills data-path personal-profile --create # and create it
+my-skills data-path cli-inventory          # resolve the path
+my-skills data-path cli-inventory --create # and create it
 ```
 
 The data root is machine-local and never committed. Skills that need private

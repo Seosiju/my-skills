@@ -31,7 +31,8 @@ def _tracked_text() -> dict[str, str]:
     text_by_path: dict[str, str] = {}
     for rel in _tracked_files():
         path = REPO_ROOT / rel
-        if path.suffix not in TEXT_SUFFIXES:
+        # git ls-files includes unstaged deletions from the working tree.
+        if path.suffix not in TEXT_SUFFIXES or not path.is_file():
             continue
         text_by_path[rel] = path.read_text(encoding="utf-8")
     return text_by_path

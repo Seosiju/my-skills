@@ -1,6 +1,6 @@
 [project]
 name = "my-skills"
-version = "0.4.0"
+version = "0.4.1"
 description = "Personal cross-agent Agent Skill registry: manage, validate, install and sync skills across Claude Code, Codex, Hermes and Antigravity CLI."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -39,8 +39,6 @@ packages = ["src/my_skills"]
 "skills/cli-inventory/SKILL.md" = "my_skills/_defaults/skills/cli-inventory/SKILL.md"
 "skills/cli-inventory/references/inventory-schema.md" = "my_skills/_defaults/skills/cli-inventory/references/inventory-schema.md"
 "skills/cli-inventory/scripts/scan_tools.py" = "my_skills/_defaults/skills/cli-inventory/scripts/scan_tools.py"
-"skills/personal-profile/SKILL.md" = "my_skills/_defaults/skills/personal-profile/SKILL.md"
-"skills/personal-profile/references/schema.md" = "my_skills/_defaults/skills/personal-profile/references/schema.md"
 "skills/my-skills/SKILL.md" = "my_skills/_defaults/skills/my-skills/SKILL.md"
 "skills/my-jira/SKILL.md" = "my_skills/_defaults/skills/my-jira/SKILL.md"
 "skills/my-jira/config.example.json" = "my_skills/_defaults/skills/my-jira/config.example.json"

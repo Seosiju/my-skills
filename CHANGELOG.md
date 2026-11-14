@@ -7,6 +7,15 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-14
+
+### Removed
+
+- `personal-profile` from default registry seeds, the source-checkout skill
+  manifest, and wheel/source distributions. New registries and source-checkout
+  bootstrap installs no longer include this skill. Existing registry skills,
+  host installations, and machine-local data are preserved.
+
 ## [0.4.0] - 2026-10-03
 
 ### Added
