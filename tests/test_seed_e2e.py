@@ -105,3 +105,52 @@ def test_no_defaults_cold_cli_flow_creates_empty_registry(tmp_path: Path) -> Non
 
     skills = json.loads(_run_cli(["skills", "--json"], env=env, cwd=work).stdout)
     assert skills["skills"] == []
+
+
+def test_legacy_seed_can_install_and_stays_removed_after_disable(tmp_path: Path) -> None:
+    env, home, work = _cold_env(tmp_path)
+    env["XDG_DATA_HOME"] = str(home / ".local" / "share")
+    registry = home / "legacy-reg"
+    _run_cli(
+        ["init-registry", str(registry), "--no-defaults", "--no-git"],
+        env=env,
+        cwd=work,
+    )
+    manifest_path = registry / "my-skills.toml"
+    manifest_path.write_text(
+        manifest_path.read_text(encoding="utf-8")
+        + '\n[skills.personal-profile]\nenabled = true\nhosts = ["codex"]\n'
+        + 'source_type = "builtin-seed"\nsource_revision = "0.4.0"\n',
+        encoding="utf-8",
+    )
+    source = registry / "skills" / "personal-profile" / "SKILL.md"
+    source.parent.mkdir()
+    legacy_skill = (
+        "---\nname: personal-profile\n"
+        "description: A legacy user skill retained in an existing registry.\n"
+        "---\n\n# Personal Profile\n\nKeep existing user preferences.\n"
+    )
+    source.write_text(legacy_skill, encoding="utf-8")
+    data_root = Path(env["XDG_DATA_HOME"]) / "my-skills" / "personal-profile"
+    data_root.mkdir(parents=True)
+    profile = data_root / "profile.md"
+    profile.write_text("Existing profile data.\n", encoding="utf-8")
+    installed = home / ".agents" / "skills" / "personal-profile" / "SKILL.md"
+
+    _run_cli(["install", "--host", "codex"], env=env, cwd=work)
+    _run_cli(["sync", "--host", "codex"], env=env, cwd=work)
+    _run_cli(["doctor", "--no-update-check"], env=env, cwd=work)
+    assert installed.read_text(encoding="utf-8") == legacy_skill
+    assert _run_cli(["data-path", "personal-profile"], env=env, cwd=work).stdout.strip() == str(data_root)
+
+    _run_cli(["disable", "personal-profile"], env=env, cwd=work)
+    _run_cli(["uninstall", "personal-profile", "--host", "codex"], env=env, cwd=work)
+    _run_cli(["install", "--host", "codex"], env=env, cwd=work)
+    _run_cli(["sync", "--host", "codex"], env=env, cwd=work)
+
+    assert not installed.parent.exists()
+    assert source.read_text(encoding="utf-8") == legacy_skill
+    assert profile.read_text(encoding="utf-8") == "Existing profile data.\n"
+    manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["skills"]["personal-profile"]["enabled"] is False
+    assert manifest["skills"]["personal-profile"]["source_revision"] == "0.4.0"

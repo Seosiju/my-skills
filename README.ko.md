@@ -252,9 +252,20 @@ my-skills install
 | `my-jira` | 머신-로컬 설정 템플릿을 포함한 Jira/Atlassian 부트스트랩 스킬. 기본값은 비활성. |
 
 `personal-profile`은 더 이상 기본 포함되지 않습니다. 기본 목록은 새로 초기화하는
-registry에 적용되며, CLI 업데이트는 기존 스킬·호스트 설치본·머신-로컬 데이터를
-삭제하지 않습니다. 불필요한 호스트 설치본은
-`my-skills uninstall personal-profile --host <host>`로 명시적으로 삭제하세요.
+registry에 적용됩니다. CLI 패키지 업데이트는 별도 개인 registry의 스킬·호스트
+설치본·머신-로컬 데이터를 삭제하지 않습니다. 이 tool repo를 pull하면 포함된 seed
+원본은 갱신되므로, 개인 스킬은 별도 registry에서 관리하세요.
+
+registry에 `personal-profile`이 아직 등록돼 있으면 먼저 비활성화한 뒤 호스트
+설치본을 삭제하세요. 그래야 이후 `install`이나 `sync`가 다시 설치하지 않습니다:
+
+```bash
+my-skills disable personal-profile
+my-skills uninstall personal-profile --host <host>
+```
+
+이미 등록을 지웠다면 `uninstall`만 실행하세요. 설치 상태에 기록된 기존 관리
+설치본은 스킬 등록 없이도 삭제할 수 있습니다.
 
 ## 일상 명령어
 

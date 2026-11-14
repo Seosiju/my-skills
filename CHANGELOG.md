@@ -13,8 +13,9 @@ are the release source of truth while PyPI publishing remains undecided.
 
 - `personal-profile` from default registry seeds, the source-checkout skill
   manifest, and wheel/source distributions. New registries and source-checkout
-  bootstrap installs no longer include this skill. Existing registry skills,
-  host installations, and machine-local data are preserved.
+  bootstrap installs no longer include this skill. Updating the CLI package
+  preserves skills in separate personal registries, host installations, and
+  machine-local data.
 
 ## [0.4.0] - 2026-10-03
 

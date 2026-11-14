@@ -258,9 +258,21 @@ my-skills install
 | `my-jira` | Disabled-by-default Jira/Atlassian bootstrap skill with a machine-local config template. |
 
 `personal-profile` is no longer bundled. The default set applies to newly
-initialized registries; updating the CLI does not delete existing registry skills,
-host installations, or machine-local data. Remove unwanted host copies explicitly
-with `my-skills uninstall personal-profile --host <host>`.
+initialized registries. Updating the CLI package does not delete skills in a
+separate personal registry, host installations, or machine-local data. Pulling
+this tool repo does update its bundled seed sources; keep personal skills in a
+separate registry.
+
+If your registry still registers `personal-profile`, disable it before removing
+host copies so a later `install` or `sync` does not restore them:
+
+```bash
+my-skills disable personal-profile
+my-skills uninstall personal-profile --host <host>
+```
+
+If the skill is already unregistered, run only `uninstall`; it can remove
+previously managed copies using the install state.
 
 ## Everyday commands
 
