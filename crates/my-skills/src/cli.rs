@@ -1,13 +1,15 @@
 //! Command-line surface. Owned by the integrator.
 //!
-//! Commands keep v0.4.1 names and flags (spec §6.9). `convert` and `hooks`
-//! are new (spec §6.6, §6.7). Until a command is wired to its module it
-//! exits with code 2 and says so, so a v1 alpha is never mistaken for a
-//! working command.
+//! Commands and flags match v0.4.1 (spec §6.9), plus the v1 additions:
+//! `sync --no-prune/--dry-run/--quiet`, `convert`, `hooks`, and
+//! `doctor --json`. Each command's handler lives in `crate::commands`.
 
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
+
+use crate::commands;
+use crate::manifest::InstallMode;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -26,190 +28,317 @@ pub enum ModeArg {
     Copy,
 }
 
-#[derive(Debug, Args)]
-pub struct Selection {
-    /// Skill name (default: enabled skills)
-    pub skill: Option<String>,
-    /// Target host name, or 'all' (default: enabled targets)
-    #[arg(long)]
-    pub host: Option<String>,
-    /// Include every registered skill
-    #[arg(long)]
-    pub all: bool,
+impl From<ModeArg> for InstallMode {
+    fn from(mode: ModeArg) -> Self {
+        match mode {
+            ModeArg::Link => InstallMode::Link,
+            ModeArg::Copy => InstallMode::Copy,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum Channel {
+    Stable,
+    Main,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Validate canonical skills against the Agent Skills standard
-    Validate {
-        skill: Option<String>,
-        #[arg(long)]
-        all: bool,
-        #[arg(long)]
-        json: bool,
-    },
+    Validate(ValidateArgs),
     /// Audit canonical skills for agent-skill security risks
-    Audit {
-        skill: Option<String>,
-        #[arg(long)]
-        all: bool,
-        #[arg(long)]
-        json: bool,
-    },
+    Audit(AuditArgs),
     /// Report environment, hosts, registry, hooks, and manifest health
-    Doctor {
-        #[arg(long)]
-        json: bool,
-    },
+    Doctor(DoctorArgs),
     /// Update the installed my-skills binary
-    Update {
-        #[arg(long)]
-        check: bool,
-        #[arg(long)]
-        dry_run: bool,
-    },
+    Update(UpdateArgs),
     /// Connect enabled skills for this machine
-    Bootstrap {
-        #[arg(long)]
-        dry_run: bool,
-    },
+    Bootstrap(BootstrapArgs),
     /// Create a private canonical skill registry scaffold
-    InitRegistry { path: Option<String> },
+    InitRegistry(InitRegistryArgs),
     /// Set the active registry root used when running outside a registry
-    SetRoot { path: String },
+    SetRoot(SetRootArgs),
     /// Connect skills into host directories (link by default)
-    Install {
-        #[command(flatten)]
-        selection: Selection,
-        #[arg(long, value_enum)]
-        mode: Option<ModeArg>,
-        #[arg(long)]
-        dry_run: bool,
-        #[arg(long)]
-        json: bool,
-        #[arg(long)]
-        yes: bool,
-        #[arg(long)]
-        skip_audit: bool,
-    },
-    /// Reconcile host directories with the manifest (create and prune)
-    Sync {
-        #[command(flatten)]
-        selection: Selection,
-        /// Report drift only; change nothing
-        #[arg(long)]
-        check: bool,
-        /// Do not remove connections the manifest no longer wants
-        #[arg(long)]
-        no_prune: bool,
-        #[arg(long)]
-        dry_run: bool,
-        #[arg(long)]
-        yes: bool,
-        #[arg(long)]
-        quiet: bool,
-        #[arg(long)]
-        skip_audit: bool,
-    },
-    /// Remove managed connections (never the canonical source)
-    Uninstall {
-        skill: String,
-        #[arg(long)]
-        host: Option<String>,
-        #[arg(long)]
-        yes: bool,
-        #[arg(long)]
-        dry_run: bool,
-    },
-    /// Switch existing connections between link and copy
-    Convert {
-        #[command(flatten)]
-        selection: Selection,
-        #[arg(long, value_enum)]
-        to: ModeArg,
-        #[arg(long)]
-        dry_run: bool,
-        #[arg(long)]
-        yes: bool,
-    },
-    /// Install, remove, or inspect the registry's git hooks
-    Hooks {
-        #[command(subcommand)]
-        action: HooksAction,
-    },
-    /// Show connection status per skill and host
-    Status {
-        #[arg(long)]
-        json: bool,
-    },
-    /// List registered canonical skills
-    Skills {
-        #[arg(long)]
-        json: bool,
-    },
-    /// Plan or perform sharing host-local skills into canonical
-    Share {
-        #[arg(long)]
-        from: String,
-        skill: Option<String>,
-        #[arg(long)]
-        plan: bool,
-        #[arg(long)]
-        json: bool,
-        #[arg(long)]
-        enable: bool,
-    },
+    Install(InstallArgs),
+    /// Plan sharing host-local skills into canonical
+    Share(ShareArgs),
     /// Enable a registered skill in the manifest
-    Enable { skill: String },
+    Enable(SkillNameArgs),
     /// Disable a registered skill in the manifest
-    Disable { skill: String },
+    Disable(SkillNameArgs),
+    /// Show connection status per skill and host
+    Status(StatusArgs),
+    /// List registered canonical skills
+    Skills(SkillsArgs),
+    /// Reconcile host directories with the manifest (connect and prune)
+    Sync(SyncArgs),
+    /// Remove managed connections (never the canonical source)
+    Uninstall(UninstallArgs),
     /// Import an external skill directory into canonical skills/
-    Import {
-        source: String,
-        #[arg(long)]
-        enable: bool,
-    },
-    /// Print a skill's machine-local data directory
-    DataPath {
-        skill: String,
-        #[arg(long)]
-        create: bool,
-    },
+    Import(ImportArgs),
+    /// Print a skill's shared machine-local data directory
+    DataPath(DataPathArgs),
+    /// Switch existing connections between link and copy
+    Convert(ConvertArgs),
+    /// Install, remove, or inspect the registry's git hooks
+    Hooks(HooksArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct ValidateArgs {
+    pub skill: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct AuditArgs {
+    pub skill: Option<String>,
+    #[arg(long)]
+    pub all: bool,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct DoctorArgs {
+    /// Skip the network check for a newer my-skills release
+    #[arg(long)]
+    pub no_update_check: bool,
+    /// Machine-readable output (v1)
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct UpdateArgs {
+    #[arg(long, value_enum, default_value = "stable")]
+    pub channel: Channel,
+    #[arg(long)]
+    pub check: bool,
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct BootstrapArgs {
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Accepted for v0.4.1 compatibility; v1 has no tool install step
+    #[arg(long)]
+    pub skip_tool_install: bool,
+    #[arg(long)]
+    pub skip_skill_install: bool,
+    #[arg(long)]
+    pub host: Option<String>,
+    #[arg(long)]
+    pub all: bool,
+    #[arg(long, value_enum)]
+    pub mode: Option<ModeArg>,
+}
+
+#[derive(Debug, Args)]
+pub struct InitRegistryArgs {
+    pub path: Option<String>,
+    #[arg(long, conflicts_with = "no_defaults")]
+    pub with_defaults: bool,
+    #[arg(long)]
+    pub no_defaults: bool,
+    #[arg(long)]
+    pub no_git: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SetRootArgs {
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct InstallArgs {
+    pub skill: Option<String>,
+    #[arg(long)]
+    pub host: Option<String>,
+    #[arg(long)]
+    pub all: bool,
+    #[arg(long, value_enum)]
+    pub mode: Option<ModeArg>,
+    #[arg(long)]
+    pub dry_run: bool,
+    #[arg(long)]
+    pub json: bool,
+    #[arg(long)]
+    pub skip_audit: bool,
+    #[arg(long)]
+    pub yes: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct ShareArgs {
+    pub skill: Option<String>,
+    #[arg(long = "from")]
+    pub from_host: String,
+    #[arg(long)]
+    pub plan: bool,
+    #[arg(long)]
+    pub json: bool,
+    #[arg(long, conflicts_with = "disable")]
+    pub enable: bool,
+    #[arg(long)]
+    pub disable: bool,
+    #[arg(long)]
+    pub force: bool,
+    #[arg(long)]
+    pub skip_audit: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SkillNameArgs {
+    pub skill: String,
+}
+
+#[derive(Debug, Args)]
+pub struct StatusArgs {
+    /// Machine-readable output (v1)
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SkillsArgs {
+    #[arg(long)]
+    pub json: bool,
+    #[arg(long)]
+    pub host: Option<String>,
+    #[arg(long, conflicts_with = "disabled")]
+    pub enabled: bool,
+    #[arg(long)]
+    pub disabled: bool,
+    #[arg(long)]
+    pub with_status: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct SyncArgs {
+    pub skill: Option<String>,
+    #[arg(long)]
+    pub host: Option<String>,
+    #[arg(long)]
+    pub all: bool,
+    /// Report drift only; change nothing
+    #[arg(long)]
+    pub check: bool,
+    #[arg(long)]
+    pub yes: bool,
+    #[arg(long)]
+    pub skip_audit: bool,
+    /// Keep connections the manifest no longer wants (v1)
+    #[arg(long)]
+    pub no_prune: bool,
+    /// Print the plan without writing (v1)
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Print only changes and problems; for git hooks (v1)
+    #[arg(long)]
+    pub quiet: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct UninstallArgs {
+    pub skill: Option<String>,
+    #[arg(long)]
+    pub host: Option<String>,
+    #[arg(long)]
+    pub yes: bool,
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct ImportArgs {
+    pub source: String,
+    #[arg(long)]
+    pub force: bool,
+    #[arg(long)]
+    pub enable: bool,
+    #[arg(long)]
+    pub skip_audit: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct DataPathArgs {
+    pub skill: String,
+    #[arg(long)]
+    pub create: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct ConvertArgs {
+    pub skill: Option<String>,
+    #[arg(long, value_enum)]
+    pub to: ModeArg,
+    #[arg(long)]
+    pub host: Option<String>,
+    #[arg(long)]
+    pub all: bool,
+    #[arg(long)]
+    pub dry_run: bool,
+    #[arg(long)]
+    pub yes: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct HooksArgs {
+    #[command(subcommand)]
+    pub action: HooksAction,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum HooksAction {
-    Install,
+    /// Write the managed hooks into the active registry
+    Install(HooksInstallArgs),
+    /// Remove the managed hooks (hooks without the marker are left alone)
     Uninstall,
+    /// Show which hooks are installed and whether my-skills is reachable
     Status,
+    /// Hook entry points; called by the installed hook scripts
+    #[command(hide = true)]
+    Run(HooksRunArgs),
 }
 
-fn command_name(command: &Command) -> &'static str {
-    match command {
-        Command::Validate { .. } => "validate",
-        Command::Audit { .. } => "audit",
-        Command::Doctor { .. } => "doctor",
-        Command::Update { .. } => "update",
-        Command::Bootstrap { .. } => "bootstrap",
-        Command::InitRegistry { .. } => "init-registry",
-        Command::SetRoot { .. } => "set-root",
-        Command::Install { .. } => "install",
-        Command::Sync { .. } => "sync",
-        Command::Uninstall { .. } => "uninstall",
-        Command::Convert { .. } => "convert",
-        Command::Hooks { .. } => "hooks",
-        Command::Status { .. } => "status",
-        Command::Skills { .. } => "skills",
-        Command::Share { .. } => "share",
-        Command::Enable { .. } => "enable",
-        Command::Disable { .. } => "disable",
-        Command::Import { .. } => "import",
-        Command::DataPath { .. } => "data-path",
-    }
+#[derive(Debug, Args)]
+pub struct HooksInstallArgs {
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct HooksRunArgs {
+    /// pre-commit | post-merge | post-rewrite | post-checkout
+    pub hook: String,
+    /// Arguments git passed to the hook
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    pub git_args: Vec<String>,
 }
 
 pub fn run(cli: Cli) -> ExitCode {
-    let name = command_name(&cli.command);
-    eprintln!("my-skills {name}: not implemented yet in this v1 alpha build");
-    ExitCode::from(2)
+    match cli.command {
+        Command::Validate(args) => commands::inspect::validate(&args),
+        Command::Audit(args) => commands::inspect::audit(&args),
+        Command::Doctor(args) => commands::doctor::run(&args),
+        Command::Update(args) => commands::update::run(&args),
+        Command::Bootstrap(args) => commands::connect::bootstrap(&args),
+        Command::InitRegistry(args) => commands::registry::init_registry(&args),
+        Command::SetRoot(args) => commands::inspect::set_root(&args),
+        Command::Install(args) => commands::connect::install(&args),
+        Command::Share(args) => commands::registry::share(&args),
+        Command::Enable(args) => commands::registry::enable(&args),
+        Command::Disable(args) => commands::registry::disable(&args),
+        Command::Status(args) => commands::inspect::status(&args),
+        Command::Skills(args) => commands::registry::skills(&args),
+        Command::Sync(args) => commands::connect::sync(&args),
+        Command::Uninstall(args) => commands::connect::uninstall(&args),
+        Command::Import(args) => commands::registry::import(&args),
+        Command::DataPath(args) => commands::inspect::data_path(&args),
+        Command::Convert(args) => commands::connect::convert(&args),
+        Command::Hooks(args) => commands::hooks::run(&args),
+    }
 }

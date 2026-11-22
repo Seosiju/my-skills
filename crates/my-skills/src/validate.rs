@@ -187,3 +187,75 @@ fn get<'a>(metadata: &'a Mapping, name: &str) -> Option<&'a Node> {
         matches!(&**key, Node::String(key) if key == name).then_some(value.as_ref())
     })
 }
+
+/// v0.4.1 `checks.compose_validation`: standard validation plus a security
+/// audit with every rule enabled. Findings at `High` or above become errors
+/// (`security: <file>: <message>`); lower findings become warnings. Used by
+/// `validate`, `install`/`sync`, and the pre-commit hook.
+pub fn compose_validation(path: &Path) -> ValidationResult {
+    use crate::audit::{AuditPolicy, Severity, run_audit};
+
+    let mut result = validate_skill(path);
+    let policy = AuditPolicy {
+        enabled: true,
+        profile: "default".into(),
+        threshold: None,
+        disabled_rules: Vec::new(),
+    };
+    match run_audit(path, &policy) {
+        Ok(audit) => {
+            for finding in audit.findings {
+                let line = format!("security: {}: {}", finding.file, finding.message);
+                if finding.severity >= Severity::High {
+                    result.errors.push(line);
+                } else {
+                    result.warnings.push(line);
+                }
+            }
+        }
+        Err(err) => result.errors.push(format!("security: audit failed: {err}")),
+    }
+    result
+}
+
+#[cfg(test)]
+mod compose_tests {
+    use super::*;
+
+    fn fixture(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("tests")
+            .join("fixtures")
+            .join(name)
+    }
+
+    #[test]
+    fn matches_v041_compose_validation() {
+        // Expected values printed by v0.4.1 `checks.compose_validation`.
+        let good = compose_validation(&fixture("good-skill"));
+        assert!(
+            good.errors.is_empty() && good.warnings.is_empty(),
+            "{good:?}"
+        );
+
+        let secret = compose_validation(&fixture("secret-skill"));
+        assert_eq!(
+            secret.errors,
+            vec![
+                "security: SKILL.md: AWS access key id pattern",
+                "security: SKILL.md: secret-like assignment",
+            ]
+        );
+
+        let bad = compose_validation(&fixture("bad-name"));
+        assert_eq!(
+            bad.errors,
+            vec![
+                "name must be lowercase alphanumeric words separated by single hyphens (no leading, trailing, or consecutive hyphens)",
+                "directory name 'bad-name' does not match frontmatter name 'Bad--Name'",
+            ]
+        );
+    }
+}

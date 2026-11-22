@@ -19,7 +19,8 @@ fn golden() -> Value {
 fn fixture(path: &Value) -> PathBuf {
     let relative = path.as_str().unwrap().split('/').collect::<PathBuf>();
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
+        .join("..")
+        .join("..")
         .join(relative)
 }
 
