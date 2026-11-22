@@ -55,6 +55,9 @@ flowchart LR
 | 03:15 | **독립 감사**(agy 세션): 인계 문서에도 없던 코드 결함 6건, 빠진 문서, 공개 문서의 개인 운영 정보, 위생 테스트 공백 보고 | 보고서는 그 세션에 있음 |
 | 03:15~03:25 | 감사 항목을 하나씩 재확인(모두 사실). 높음 3건과 작은 결함 수정, 위생 테스트 Rust 이식, 이 문서 개정, 공개 문서 일반화 | `b79dbf5`, `f98fca5` |
 | 이후 | §7 B: 남은 쓰기 명령에 `--dry-run` 추가. §7 A: 모듈을 기능별로 재배치하고 테스트 데이터를 crate 안으로 이동 | `ee2ad94`, `b1113e8`, `2368f93` |
+| 이후 | Windows 실행 문서 작성 | `4dcce46` |
+| 08:15 | **두 번째 검토**(agy 세션): Windows 실행 문서와 최근 커밋 검토. 문서 보완 제안 5건, 코드·CI 참고 2건 | 보고서는 그 세션에 있음 |
+| 이후 | 제안을 하나씩 재확인(모두 사실). **문서만 수정**하고 코드·CI 항목은 §7 L로 기록 | 이 문서 커밋 |
 
 Codex 운영:
 - 1단계: `gpt-6.2-sol` `xhigh` 5개. 5시간 한도의 약 51%포인트를 썼다(99% → 48%).
@@ -189,6 +192,20 @@ Codex 운영:
 - 스펙의 열린 질문 Q1(Windows 경로 실측), Q3(Windows state 경로), Q5(코드 서명), Q7(0.4.x 안내)은 아직 결정하지 않았다.
 - 이 작업과 무관한 다른 도구의 worktree가 `git worktree list`에 `prunable`로 남아 있다.
 
+### 6.4 두 번째 검토(Windows 실행 문서)에서 나온 것
+
+사용자 결정에 따라 이번에는 **문서만 고쳤다.** 코드와 CI 항목은 §7 L에 남겼다.
+
+| 지적 | 확인 결과 | 처리 |
+|---|---|---|
+| runbook 4.3의 미리보기 명령(`status`, `sync --dry-run` 등)이, 활성 레지스트리 기록이 없는 PC에서는 처음 실행할 때 그 기록을 씀 | 사실 (`registry/root.rs`, `resolve_root(None, true)`) | runbook: 미리보기 동안 `MY_SKILLS_ROOT`를 지정. 코드 변경 여부는 §7 L |
+| 4.4에서 기존 copy가 일부만 있으면 convert만으로는 남은 연결이 MISSING으로 남음 | 사실 | runbook: convert를 먼저, 그 다음 bootstrap을 항상 실행 |
+| 3.5에 post-merge 확인이 없음. 시험용 manifest가 실제 host 폴더를 가리켜, post-* hook을 시험하면 실제 폴더에 대상 없는 junction이 남을 수 있음. Python 판이 PATH에 있으면 3단계에서 hook 검증을 끝낼 수 없음. doctor 출력 필터가 State/Data를 자름 | 사실 | runbook 3.5를 새로 씀: host 경로를 임시 폴더로 돌림, post-checkout·post-merge 확인 추가, Git Bash 세션에서만 Rust 판을 PATH 앞에 둠, Registry~Manifest 전체 확인 |
+| 스펙 §12 항목 4(공백 경로), 항목 5(줄바꿈), Q3(기존 state 유무)가 결과 기록에서 빠짐 | 사실. 레지스트리에 `.gitattributes`가 없고 Python 스크립트가 있음 | runbook: 시험 폴더 이름에 공백을 넣음, 4.2에 줄바꿈 확인 추가, 결과 표에 행 추가 |
+| PowerShell 5.1 세부: 없는 명령 호출 오류, 에이전트 설치 여부, `Write-Utf8`의 상대 경로, 새 터미널에서 변수 소실, agy 비대화형 조회 | 사실 (agy 조회는 macOS에서 검증된 방법) | runbook에 모두 반영 |
+| Linux CI의 `ETXTBSY` 간헐 실패가 `update_cli.rs`에서 재발 (run `45056025212`, 커밋 `0a9ab6f`) | 사실. 재시도는 `registry_init.rs`에만 있고 `support_i.rs`, `hooks_git.rs`에는 없음 | §7 L |
+| convert가 state를 두 번 저장 (`drive/apply.rs`의 `commit_record`와 `commands/connect.rs`의 `apply_plan`) | 사실. 결과는 같고 저장 횟수만 두 배 | §7 L |
+
 ---
 
 ## 7. 남은 작업
@@ -208,6 +225,7 @@ Codex 운영:
 | I | v1.0.0: `dev`를 `main`에 병합, README를 binary 설치 방식으로, 태그 | C, G, H | **필요** |
 | J | 자동 pull (macOS launchd, Windows 작업 스케줄러) | I | 스펙 작성 후 승인 |
 | K | worktree 정리 (`dev-stream-*` 8개와 그 브랜치. 디스크 약 12GB) | — | 확인 후 진행 |
+| L | 작은 코드 정리: (1) `support_i.rs`와 `hooks_git.rs`에 `ETXTBSY` 재시도 추가, (2) convert의 state 이중 저장 정리, (3) 읽기 전용 명령과 `--dry-run`이 활성 레지스트리 기록을 쓰지 않게 할지 결정, (4) H 결과에 따라 Windows에서 `HOME`보다 `USERPROFILE`을 우선할지 결정 | (4)는 H | 필요 없음 (동작 변경인 (3), (4)는 결정 후) |
 
 ### 권장 순서
 
@@ -269,7 +287,7 @@ Windows 전용 코드(`cfg(windows)`)는 CI에서만 컴파일된다.
 
 ### Windows PC에서 이어갈 때 (H)
 
-**`docs/2026-11-23-skill-drive-windows-runbook.md`를 그대로 넘긴다.**
+**`docs/2026-11-23-skill-drive-windows-runbook.md`를 그대로 넘긴다.** (두 번째 검토 반영본)
 사전 점검, 빌드, 실제 데이터를 건드리지 않는 확인, 실제 연결(dry-run 후 승인), 결과 기록 양식을 순서대로 담았다.
 스펙 §12는 확인할 항목의 목록이고, 실행 절차는 이 runbook을 따른다.
 - 레지스트리 manifest에는 아직 `install_mode = "copy"`가 명시돼 있다. 그래서 Windows에서는 `my-skills.local.toml`로 link를 지정한다(runbook 4.2).

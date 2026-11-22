@@ -28,7 +28,20 @@
 파일은 BOM 없는 UTF-8로 쓴다. Windows PowerShell 5.1의 `Set-Content -Encoding utf8`는 BOM을 붙이므로 쓰지 않고, 아래의 `Write-Utf8` 함수를 쓴다.
 
 ```powershell
-function Write-Utf8($Path, $Text) { [IO.File]::WriteAllText($Path, $Text, (New-Object Text.UTF8Encoding $false)) }
+function Write-Utf8($Path, $Text) {
+  # Resolve against the PowerShell location, not the process directory.
+  $full = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+  [IO.File]::WriteAllText($full, $Text, (New-Object Text.UTF8Encoding $false))
+}
+```
+
+**터미널을 새로 열었을 때** (3.3에서 에이전트를 새 세션으로 확인하다 보면 생기기 쉽다): 위 함수와 아래 변수를 다시 설정한 뒤 이어서 진행한다.
+
+```powershell
+$T  = Join-Path $env:TEMP "skill drive probe"
+$MS = (Resolve-Path "<tool repo>\target\release\my-skills.exe").Path
+# 3단계 안이라면 격리 환경도 다시 설정한다
+$env:MY_SKILLS_ROOT = "$T\registry"; $env:XDG_STATE_HOME = "$T\state"; $env:XDG_CONFIG_HOME = "$T\config"
 ```
 
 ---
@@ -40,7 +53,8 @@ git --version
 cargo --version; rustc --version          # Rust (MSVC toolchain)
 rustup show active-toolchain               # x86_64-pc-windows-msvc 여야 함
 Get-Command my-skills -All -ErrorAction SilentlyContinue | Format-Table Source
-my-skills --version 2>$null                # 기존 Python 0.4.x가 있으면 버전이 나옴
+if (Get-Command my-skills -ErrorAction SilentlyContinue) { my-skills --version }   # 기존 Python 0.4.x가 있으면 버전이 나옴
+Get-Command claude, codex, agy -ErrorAction SilentlyContinue | Format-Table Name, Source  # 세 에이전트 설치 여부
 Test-Path "$env:USERPROFILE\.local\state\my-skills\state.json"
 Test-Path "$env:USERPROFILE\.config\my-skills\root"
 foreach ($d in ".claude\skills", ".agents\skills", ".gemini\config\skills") {
@@ -55,7 +69,8 @@ foreach ($d in ".claude\skills", ".agents\skills", ".gemini\config\skills") {
 | `cargo`가 없음 | Rust가 없음 | rustup으로 설치. MSVC 빌드 도구("Desktop development with C++")가 필요하다. 설치는 **[멈춤]** 사용자 확인 후 |
 | `rustup show`가 `-gnu` | 다른 toolchain | MSVC toolchain으로 바꿀지 **[멈춤]** |
 | `my-skills`가 이미 있음 (0.4.x) | Python 판이 설치돼 있음 | 지우지 않는다. 2~3단계에서는 Rust binary를 **전체 경로로** 실행해서 충돌을 피한다 |
-| `state.json`이 있음 | 이 PC에 기존 연결 기록이 있음 | 4단계에서 copy 기록을 convert할 수 있다. 지금은 기록만 해 둔다 |
+| `state.json`이 있음 | 이 PC에 기존 연결 기록이 있음 | 4단계에서 copy 기록을 convert할 수 있다. 지금은 기록만 해 둔다. 스펙 Q3(Windows state 위치) 판단에도 쓴다 |
+| `claude`, `codex`, `agy` 중 없는 명령이 있음 | 그 에이전트가 설치되지 않음 | 3.3에서 그 에이전트는 확인할 수 없다. "junction을 못 찾음"과 구분해서 기록한다 |
 | host 폴더에 레지스트리 스킬과 같은 이름의 폴더가 있는데 기록은 없음 | 손으로 복사했거나 다른 도구가 만든 것 | 4단계 dry-run에서 `BLOCK_CONFLICT`로 나온다. **[멈춤]** 처리 방법은 사용자가 정한다 |
 
 결과는 5단계의 기록 양식에 적는다.
@@ -85,10 +100,11 @@ $MS = (Resolve-Path .\target\release\my-skills.exe).Path
 ### 3.1 격리 환경 만들기
 
 실제 연결 기록과 활성 레지스트리 설정을 건드리지 않도록 state와 config 위치를 임시 폴더로 돌린다.
+임시 폴더 이름에 일부러 공백을 넣었다. 공백이 든 경로에서 link 판정과 hook이 동작하는지도 함께 확인하기 위해서다.
 host 폴더는 실제 위치를 쓴다. 에이전트가 실제로 스킬을 발견하는지 확인하는 것이 목적이기 때문이다.
 
 ```powershell
-$T = Join-Path $env:TEMP "skill-drive-probe"
+$T = Join-Path $env:TEMP "skill drive probe"   # 공백이 든 경로로 시험한다 (스펙 §12 항목 4, hook 스크립트 인용 처리)
 Remove-Item -Recurse -Force $T -ErrorAction SilentlyContinue   # 이 임시 폴더만 지운다
 New-Item -ItemType Directory "$T\registry\skills\skill-drive-probe" | Out-Null
 Write-Utf8 "$T\registry\skills\skill-drive-probe\SKILL.md" @"
@@ -156,7 +172,7 @@ foreach ($d in ".claude\skills", ".agents\skills", ".gemini\config\skills") {
 |---|---|
 | Claude Code | 새 세션에서 "사용 가능한 스킬 중에 skill-drive-probe가 있나? 있으면 그 스킬의 지시대로 답해 줘"라고 묻는다. `PROBE-OK`가 나오면 발견한 것이다 |
 | Codex | 같은 방법으로 묻는다 |
-| agy (Antigravity CLI) | 새 세션에서 `/skills`로 목록을 확인한다. 같은 질문으로도 한 번 더 확인한다 |
+| agy (Antigravity CLI) | 먼저 `agy -p '/skills' --output-format json`으로 목록을 본다. 이 비대화형 조회는 모델을 호출하지 않으며, macOS에서 Antigravity CLI 1.2.16으로 검증됐다(`docs/release-checklist.md`). 이어서 새 세션에서 같은 질문으로 한 번 더 확인한다 |
 
 어떤 에이전트가 발견하지 못하면 다음을 차례로 확인하고 결과를 적는다. 이것이 스펙 Q1의 경로 실측이다.
 1. 그 에이전트의 문서나 설정에서 사용자 스킬 폴더 위치를 찾는다. 위치가 다르면 임시 manifest의 `[targets.<host>]`에 `path = '...'`를 넣고 3.2를 다시 한다.
@@ -176,43 +192,84 @@ Test-Path "$T\registry\skills\skill-drive-probe\SKILL.md"           # True: 원�
 ### 3.5 hook과 Git Bash 확인
 
 임시 레지스트리를 git 저장소로 만들고 hook을 시험한다. 실제 레지스트리에는 하지 않는다.
+post-checkout과 post-merge hook은 sync를 실행해 link를 만든다. 그래서 **이 단계에서는 host 경로를 임시 폴더로 돌린다.**
+돌리지 않으면 실제 host 폴더에 시험용 link가 생기고, 3.6에서 임시 폴더를 지운 뒤 대상이 없는 junction으로 남는다.
 
 ```powershell
 cd "$T\registry"
+Write-Utf8 "$T\registry\my-skills.local.toml" @"
+[targets.claude]
+path = '$T\hosts\claude'
+
+[targets.codex]
+path = '$T\hosts\codex'
+
+[targets.agy]
+path = '$T\hosts\agy'
+"@
+& $MS doctor --no-update-check   # Hosts의 세 경로가 모두 $T\hosts\... 인지 확인. 아니면 [멈춤]
 git init -q; git add -A; git -c user.name=probe -c user.email=probe@example.invalid commit -qm probe
 & $MS hooks install
-& $MS hooks status            # 네 hook 모두 installed, "my-skills on PATH" 결과 확인
+& $MS hooks status               # 네 hook 모두 installed
+"T = $T"; "MS = $MS"             # 아래 Git Bash에 그대로 붙여 넣는다
 ```
 
 Git Bash에서 같은 임시 레지스트리로 다음을 확인한다. hook은 Git Bash의 sh로 실행되기 때문이다.
 
 ```bash
-T_WIN='<3.1에서 출력한 T 값>'             # 예: C:\Users\<이름>\AppData\Local\Temp\skill-drive-probe
-MS="$(cygpath -u '<3.1에서 출력한 MS 값>')"   # 3단계에서는 Rust binary가 PATH에 없다
+T_WIN='<위에서 출력한 T 값>'
+MS="$(cygpath -u '<위에서 출력한 MS 값>')"
 cd "$(cygpath -u "$T_WIN")/registry"
-echo "HOME=$HOME"                       # 형식을 기록한다
+echo "HOME=$HOME"                                   # 형식을 기록한다
+command -v my-skills || echo "my-skills not on PATH" # 어느 판이 먼저 잡히는지 기록한다
+export PATH="$(dirname "$MS"):$PATH"                # 이 Git Bash 세션에서만 Rust 판을 앞에 둔다
+command -v my-skills                                # 이제 Rust 판 경로여야 한다
 export MY_SKILLS_ROOT="$(cygpath -w "$PWD")"
 export XDG_STATE_HOME="$T_WIN\\state" XDG_CONFIG_HOME="$T_WIN\\config"
+"$MS" doctor --no-update-check | sed -n '/^Registry:/,/^Manifest/p'   # Registry, State, Data, Hosts 경로 형식
+
+# (1) pre-commit: 깨진 스킬은 커밋되지 않아야 한다
 printf -- '---\nname: Broken--Name\n---\n' > skills/skill-drive-probe/SKILL.md
 git add -A && git -c user.name=probe -c user.email=probe@example.invalid commit -m broken
-# 기대: [BLOCKED] skill-drive-probe: ... 이 출력되고 커밋이 만들어지지 않음
-git log --oneline | head -1            # 여전히 "probe" 커밋이어야 함
+git log --oneline | head -1                          # 여전히 "probe" 커밋이어야 함
 git checkout HEAD -- skills/skill-drive-probe/SKILL.md   # stage된 깨진 내용까지 되돌림
-"$MS" doctor --no-update-check 2>/dev/null | sed -n '/Hosts:/,/Manifest/p'   # 경로 형식 확인
+
+# (2) post-checkout과 post-merge: 새 스킬이 자동으로 연결돼야 한다
+git switch -q -c side                                # post-checkout(브랜치 전환): sync 실행
+mkdir -p skills/skill-drive-probe-two
+printf -- '---\nname: skill-drive-probe-two\ndescription: Second temporary probe.\n---\n\nBody.\n' > skills/skill-drive-probe-two/SKILL.md
+printf '\n[skills.skill-drive-probe-two]\nenabled = true\n' >> my-skills.toml
+git add -A && git -c user.name=probe -c user.email=probe@example.invalid commit -qm "add second probe"
+git switch -q -                                      # 원래 브랜치로: post-checkout
+git merge -q --ff-only side                          # post-merge: sync 실행
+ls -la "$(cygpath -u "$T_WIN")/hosts/claude"         # skill-drive-probe, skill-drive-probe-two가 보여야 함
+```
+
+PowerShell에서 결과를 한 번 더 확인한다.
+
+```powershell
+Get-Item "$T\hosts\claude\skill-drive-probe-two" | Select-Object FullName, LinkType, Target   # Junction
 ```
 
 확인할 것:
-- pre-commit이 커밋을 막았는지. **막은 이유가 `[BLOCKED] skill-drive-probe: name must be ...` 같은 검증 메시지여야 한다.**
-  hook은 PATH의 `my-skills`를 먼저 찾는다. 1단계에서 Python 판이 PATH에 있었다면 hook이 Python 판을 실행한다. Python 판에는 `hooks` 명령이 없어서 `invalid choice` 같은 오류로 커밋이 막힌다. 그렇게 막혔다면 검증이 동작한 것이 아니다. 기록하고, 4.1에서 PATH 순서를 정한 뒤 다시 확인한다
-- hook이 `my-skills`를 찾았는지. PATH에 없으면 hook 안에 기록된 전체 경로를 쓴다
-- **`HOME`이 `/c/Users/...` 형식일 때** Git Bash에서 `my-skills doctor`를 실행해 host 경로가 올바른 Windows 경로로 나오는지. 지금 코드는 `HOME`을 `USERPROFILE`보다 먼저 쓴다. 경로가 깨지면 이것이 원인이다. 기록하고 **[멈춤]** (코드 수정이 필요함)
+- **pre-commit**: 커밋을 막았는지, 그리고 막은 이유가 `[BLOCKED] skill-drive-probe: name must be ...` 같은 검증 메시지인지.
+  hook은 PATH의 `my-skills`를 먼저 찾는다. 위에서 PATH 앞에 Rust 판을 둔 것은 이 때문이다.
+  처음 `command -v`에서 Python 판이 잡혔다면 그 사실을 기록한다. Python 판이 실행되면 `hooks` 명령이 없어 `invalid choice` 같은 오류로 막히는데, 이는 검증이 동작한 것이 아니다. 실제 사용에서는 4.1의 PATH 순서로 해결한다.
+- **post-checkout과 post-merge**: 새 스킬이 임시 host 폴더에 junction으로 연결됐는지. 연결되지 않았다면 Git Bash 환경에서 sync가 실패한 것이다. 출력을 기록하고 **[멈춤]**.
+- **경로 형식**: `HOME`이 `/c/Users/...` 형식일 때, `doctor`의 Registry, State, Data, Hosts가 모두 올바른 Windows 경로인지. 지금 코드는 `HOME`을 `USERPROFILE`보다 먼저 쓰기 때문에, 경로가 깨지면 이것이 원인이다. 기록하고 **[멈춤]** (코드 수정이 필요함).
+- **공백 경로**: 위 과정 전체가 공백이 든 `$T`에서 문제없이 동작했는지.
 
 ### 3.6 정리
 
 ```powershell
 cd ~
+# 먼저 실제 host 폴더에 시험용 스킬이 남지 않았는지 확인한다 (3.4에서 해제했어야 함).
+# 하나라도 True면 3.4를 다시 한 뒤 진행한다. 그대로 임시 폴더를 지우면 대상이 없는 junction이 남는다.
+foreach ($d in ".claude\skills", ".agents\skills", ".gemini\config\skills") {
+  "$d : " + (Test-Path "$env:USERPROFILE\$d\skill-drive-probe")
+}
 Remove-Item Env:MY_SKILLS_ROOT, Env:XDG_STATE_HOME, Env:XDG_CONFIG_HOME
-Remove-Item -Recurse -Force (Join-Path $env:TEMP "skill-drive-probe")   # 임시 폴더만
+Remove-Item -Recurse -Force (Join-Path $env:TEMP "skill drive probe")   # 임시 폴더만. 안의 junction은 모두 임시 폴더 안을 가리킨다
 ```
 
 3단계에서 하나라도 **[멈춤]**이 나왔다면 4단계로 가지 않는다.
@@ -231,6 +288,7 @@ Copy-Item $MS "$Bin\my-skills.exe"
 
 사용자 PATH에서 `$Bin`이 Python 판 `my-skills`보다 **앞에** 오도록 할지 사용자에게 확인한다. Python 판은 지우지 않는다.
 바꾼 뒤 새 PowerShell과 새 Git Bash에서 `my-skills --version`이 Rust 판(1.0.0-alpha.N)을 가리키는지 확인한다.
+새 터미널에서는 0절의 `Write-Utf8` 함수를 다시 정의한다. 4단계부터는 `$MS` 대신 PATH의 `my-skills`를 쓴다.
 
 ### 4.2 레지스트리 준비
 
@@ -239,7 +297,12 @@ Copy-Item $MS "$Bin\my-skills.exe"
 git clone <registry remote> <registry>
 cd <registry>
 git status -sb                 # 기본 브랜치이고 깨끗해야 함
+git config --get core.autocrlf                         # 값을 기록한다 (없으면 빈 줄)
+Test-Path .gitattributes                               # 현재 레지스트리에는 없다
+(git ls-files --eol | Select-String "w/crlf").Count    # 작업 폴더에서 CRLF로 바뀐 파일 수
 ```
+
+줄바꿈은 스펙 §12 항목 5의 확인 대상이다. 지금 레지스트리에는 `.sh` 스크립트가 없고 Python 스크립트는 CRLF여도 대체로 동작하므로, 문제가 보이지 않으면 기록만 한다.
 
 레지스트리의 `my-skills.toml`에는 지금 `install_mode = "copy"`가 명시돼 있다. 맥 전환(인계 문서 §7 G)에서 바뀔 예정이다.
 **이 PC에서는 기기별 설정 파일로 link를 지정한다.** 이 파일은 레지스트리 `.gitignore`에 있어서 다른 기기에 영향이 없다.
@@ -255,7 +318,11 @@ install_mode = "link"
 
 ### 4.3 dry-run **[멈춤: 사용자 승인]**
 
+`status`, `doctor`, `bootstrap`, `sync`는 현재 폴더에서 레지스트리를 찾는다. 활성 레지스트리가 아직 기록되지 않은 PC라면 **처음 실행할 때 그 위치를 기록한다**(v0.4.1과 같은 동작, `~\.config\my-skills\root`).
+승인 전에 아무것도 쓰지 않도록, 미리보기 동안에는 `MY_SKILLS_ROOT`로 레지스트리를 직접 지정한다. 이렇게 지정하면 그 기록을 쓰지 않는다.
+
 ```powershell
+$env:MY_SKILLS_ROOT = (Resolve-Path .).Path        # <registry> 안에서 실행
 my-skills set-root <registry> --dry-run
 my-skills doctor --no-update-check
 my-skills status
@@ -278,10 +345,15 @@ my-skills sync --dry-run
 
 ### 4.4 연결
 
+기존 copy 기록이 있으면 **convert를 먼저, 그 다음 bootstrap**을 실행한다.
+convert는 이미 기록된 연결만 바꾼다. 기록이 일부만 있으면(예: 일부 host만, 또는 맥에서 새로 추가한 스킬이 없음) 나머지는 bootstrap이 연결한다.
+순서를 반대로 하면 곧 link로 바꿀 copy를 bootstrap이 한 번 더 갱신하게 된다.
+
 ```powershell
+Remove-Item Env:MY_SKILLS_ROOT                        # 4.3에서 임시로 지정한 것
 my-skills set-root <registry>
-my-skills bootstrap                                   # 기존 copy가 없을 때
-my-skills convert --to link --host all --yes          # 4.3에서 승인한 경우에만
+my-skills convert --to link --host all --yes          # 4.3에서 기존 copy 전환을 승인한 경우에만, 먼저
+my-skills bootstrap                                   # 항상: 남은 스킬과 host를 연결
 my-skills status                                      # 활성 host 모두 FRESH
 my-skills sync --check                                # 종료 코드 0
 my-skills hooks install
@@ -303,12 +375,18 @@ my-skills hooks status
 | 항목 | 결과 |
 |---|---|
 | cargo test | 통과 N개 / 실패 N개 (windows 링크 테스트 실행 여부) |
+| 기존 Python 0.4.x, 기존 state.json (Q3 판단용) | 있음 / 없음, 있음 / 없음 |
+| 세 에이전트 명령 설치 여부 | claude / codex / agy 각각 |
 | Link capability | junction / symlink / copy fallback |
 | Claude Code 발견 | 예 / 아니요 (방법, 스킬 폴더 경로) |
 | Codex 발견 | 예 / 아니요 (방법, 스킬 폴더 경로) |
 | agy 발견 | 예 / 아니요 (`/skills` 결과, 스킬 폴더 경로) |
 | Git Bash `HOME` 형식과 doctor 경로 | 예: `/c/Users/...`, 경로 정상 / 깨짐 |
-| pre-commit 차단 (Git Bash) | 예 / 아니요 |
+| pre-commit 차단 (Git Bash) | 예 / 아니요 (막은 이유가 검증 메시지인지) |
+| post-checkout, post-merge가 link를 만듦 (Git Bash) | 예 / 아니요 |
+| 처음 Git Bash에서 잡힌 my-skills | Rust 판 / Python 판 / 없음 |
+| 공백이 든 경로에서 동작 | 정상 / 문제 |
+| 줄바꿈 | core.autocrlf 값, CRLF 파일 수, 문제 여부 |
 | hook이 my-skills를 찾음 | PATH / 기록된 전체 경로 / 실패 |
 | 실제 연결 (4단계) | 진행함 / 보류 (이유). 진행했다면 FRESH 개수, convert 개수 |
 | 기타 | 발견한 문제 |
