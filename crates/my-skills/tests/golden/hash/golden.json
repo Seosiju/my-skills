@@ -1,0 +1,13 @@
+{
+  "binary-over-64-kib": "sha256:fb88fba048379c80eee19551980e38071431e4e4ade3ff0264ee35421002d5a4",
+  "ds-store-directory": "sha256:e3a616c48f36d2d553ece13c7486fc677adbf8653484de42fcb05be7a21a877b",
+  "empty": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "empty-file": "sha256:af6cb5e1923b4aa91507444f877abf13cef8f38610b2b327c5654390cc38974d",
+  "empty-subdirectories": "sha256:bc9dd8777fe0df2b425e41db7b1bfb14ada6618f92658b0799e1953b5393b97a",
+  "gitignore": "sha256:ebb795fc3925eed88501a9f505fc9413b18f9884122273863d17137f8c28ff67",
+  "ignored-entries": "sha256:6941c9ad799a5cf41b839f8cea0cb7d57ca3e1f9e1a6b055703a689eec206e6c",
+  "mixed-unicode-order": "sha256:a08eb3aefac06c335eb2a5481e5e81484d41ea941b20c614829bc7a1e64fdd8e",
+  "nested": "sha256:6941c9ad799a5cf41b839f8cea0cb7d57ca3e1f9e1a6b055703a689eec206e6c",
+  "same-tree-different-root": "sha256:6941c9ad799a5cf41b839f8cea0cb7d57ca3e1f9e1a6b055703a689eec206e6c",
+  "single-skill": "sha256:bc9dd8777fe0df2b425e41db7b1bfb14ada6618f92658b0799e1953b5393b97a"
+}
