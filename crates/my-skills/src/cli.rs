@@ -9,7 +9,7 @@ use std::process::ExitCode;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 use crate::commands;
-use crate::manifest::InstallMode;
+use crate::registry::manifest::InstallMode;
 
 #[derive(Debug, Parser)]
 #[command(

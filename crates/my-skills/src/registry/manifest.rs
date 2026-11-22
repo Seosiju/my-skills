@@ -15,7 +15,7 @@ use std::{env, fs};
 use serde::{Deserialize, Serialize};
 use toml::{Table, Value};
 
-use crate::{Error, Result, hosts, paths};
+use crate::{Error, Result, drive::hosts, platform::paths};
 
 pub const MANIFEST_FILE: &str = "my-skills.toml";
 pub const LOCAL_MANIFEST_FILE: &str = "my-skills.local.toml";

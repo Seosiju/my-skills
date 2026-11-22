@@ -2,11 +2,11 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use my_skills::audit::{
+use my_skills::check::audit::{
     AuditFinding, AuditPolicy, AuditResult, Severity, audit_skills, cross_skill_findings,
     finding_json, format_gate, gate_json, policy_from_settings, result_json, run_audit,
 };
-use my_skills::manifest::AuditSettings;
+use my_skills::registry::manifest::AuditSettings;
 use serde_json::{Value, json};
 use tempfile::tempdir;
 
@@ -84,7 +84,7 @@ fn bundles_match_python_and_all_builtin_rules_are_exercised() {
         assert!(covered.contains(id), "no fixture covers {id}");
     }
     assert_eq!(
-        include_str!("../src/audit/builtin_rules.yaml"),
+        include_str!("../src/check/audit/builtin_rules.yaml"),
         include_str!("../../../src/my_skills/audit/builtin_rules.yaml")
     );
 }

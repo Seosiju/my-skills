@@ -3,8 +3,8 @@
 
 use std::fs;
 
-use my_skills::manifest::{CliOverrides, load_manifest};
-use my_skills::validate::gate_errors;
+use my_skills::check::validate::gate_errors;
+use my_skills::registry::manifest::{CliOverrides, load_manifest};
 
 fn registry(audit_table: &str) -> tempfile::TempDir {
     let tmp = tempfile::tempdir().unwrap();

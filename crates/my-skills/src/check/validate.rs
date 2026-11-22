@@ -5,8 +5,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::frontmatter::{Mapping, Node, parse_document, python_whitespace};
-use crate::hosts::HostConfig;
+use crate::check::frontmatter::{Mapping, Node, parse_document, python_whitespace};
+use crate::drive::hosts::HostConfig;
 
 const MAX_NAME_LEN: usize = 64;
 const MAX_DESCRIPTION_LEN: usize = 1024;
@@ -193,7 +193,7 @@ fn get<'a>(metadata: &'a Mapping, name: &str) -> Option<&'a Node> {
 /// (`security: <file>: <message>`); lower findings become warnings. Used by
 /// `validate`, `install`/`sync`, and the pre-commit hook.
 pub fn compose_validation(path: &Path) -> ValidationResult {
-    use crate::audit::{AuditPolicy, Severity, run_audit};
+    use crate::check::audit::{AuditPolicy, Severity, run_audit};
 
     let mut result = validate_skill(path);
     let policy = AuditPolicy {
@@ -228,14 +228,14 @@ pub fn compose_validation(path: &Path) -> ValidationResult {
 pub fn gate_errors(
     path: &Path,
     name: &str,
-    manifest: Option<&crate::manifest::Manifest>,
+    manifest: Option<&crate::registry::manifest::Manifest>,
 ) -> Vec<String> {
-    use crate::audit::{policy_from_settings, run_audit};
-    use crate::manifest::AuditSettings;
+    use crate::check::audit::{policy_from_settings, run_audit};
+    use crate::registry::manifest::AuditSettings;
 
     let mut errors = compose_validation(path).errors;
     let skill = manifest.and_then(|m| m.skills.get(name));
-    for host in crate::hosts::ALL {
+    for host in crate::drive::hosts::ALL {
         let enabled = manifest
             .and_then(|m| m.targets.get(host.name))
             .map_or(host.default_enabled, |target| target.enabled);

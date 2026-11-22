@@ -8,12 +8,12 @@ use std::process::ExitCode;
 use serde::Serialize;
 
 use crate::cli::DoctorArgs;
-use crate::hooks::{self, Git, HookStatus};
-use crate::link::{self, Created, LinkKind};
-use crate::manifest::{self, InstallMode, Manifest};
-use crate::runtime::{self, RootSource};
-use crate::state::{self, State};
-use crate::{hosts, paths, plan, self_update, validate};
+use crate::drive::link::{self, Created, LinkKind};
+use crate::drive::state::{self, State};
+use crate::git::hooks::{self, Git, HookStatus};
+use crate::registry::manifest::{self, InstallMode, Manifest};
+use crate::registry::root::{self, RootSource};
+use crate::{check::validate, drive::hosts, drive::plan, platform::paths, update};
 
 const PYTHON: &str = "not required (Rust binary)";
 
@@ -130,7 +130,7 @@ pub fn run(args: &DoctorArgs) -> ExitCode {
 
 impl Report {
     fn collect(no_update_check: bool) -> Self {
-        let update = self_update::update_status_line(no_update_check);
+        let update = update::update_status_line(no_update_check);
         let update = if no_update_check {
             "skipped".to_owned()
         } else {
@@ -246,7 +246,7 @@ impl Report {
 }
 
 fn registry() -> (Registry, ManifestHealth, Option<Manifest>) {
-    let resolution = match runtime::resolve_root(None, false) {
+    let resolution = match root::resolve_root(None, false) {
         Ok(resolution) => resolution,
         Err(error) if error.to_string().starts_with("my-skills.toml not found") => {
             return (Registry::default(), ManifestHealth::NotChecked, None);

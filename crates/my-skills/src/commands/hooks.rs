@@ -3,13 +3,13 @@
 use std::process::ExitCode;
 
 use crate::cli::{HooksAction, HooksArgs, HooksRunArgs, SyncArgs};
-use crate::{hooks, runtime};
+use crate::{git::hooks, registry::root};
 
 pub fn run(args: &HooksArgs) -> ExitCode {
     if let HooksAction::Run(run) = &args.action {
         return run_hook(run);
     }
-    let resolution = match runtime::resolve_root(None, false) {
+    let resolution = match root::resolve_root(None, false) {
         Ok(resolution) => resolution,
         Err(error) => return super::config_error(error),
     };
@@ -54,7 +54,7 @@ fn run_hook(args: &HooksRunArgs) -> ExitCode {
 
 fn pre_commit() -> ExitCode {
     let result = (|| {
-        let root = match runtime::resolve_root(None, false) {
+        let root = match root::resolve_root(None, false) {
             Ok(resolution) => resolution.root,
             Err(error) => hooks::registry_with_index_manifest().ok_or(error)?,
         };

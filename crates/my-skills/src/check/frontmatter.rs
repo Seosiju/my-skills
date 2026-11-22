@@ -41,11 +41,11 @@ pub fn parse_frontmatter(
     Ok((metadata, body))
 }
 
-pub(super) fn python_whitespace(c: char) -> bool {
+pub(crate) fn python_whitespace(c: char) -> bool {
     c.is_whitespace() || matches!(c, '\u{1c}'..='\u{1f}')
 }
 
-pub(super) fn parse_document(text: &str) -> Result<(Mapping, String), FrontmatterError> {
+pub(crate) fn parse_document(text: &str) -> Result<(Mapping, String), FrontmatterError> {
     if text.is_empty() {
         return Err(FrontmatterError(
             "file is empty: no frontmatter found".into(),
@@ -84,16 +84,16 @@ pub(super) fn parse_document(text: &str) -> Result<(Mapping, String), Frontmatte
 
 // Keep order and scalar types until validation has applied Python str() and
 // truthiness. The public Value contract only supports string keys and i64.
-pub(super) type Mapping = Vec<(Rc<Node>, Rc<Node>)>;
+pub(crate) type Mapping = Vec<(Rc<Node>, Rc<Node>)>;
 
 #[derive(Debug, PartialEq, Clone)]
-pub(super) struct Located {
+pub(crate) struct Located {
     node: Rc<Node>,
     index: usize,
 }
 
 #[derive(Debug, PartialEq)]
-pub(super) enum Node {
+pub(crate) enum Node {
     Null,
     Bool(bool),
     Int(String),
@@ -110,7 +110,7 @@ pub(super) enum Node {
 }
 
 impl Node {
-    pub(super) fn truthy(&self) -> bool {
+    pub(crate) fn truthy(&self) -> bool {
         match self {
             Self::Null => false,
             Self::Bool(value) => *value,
@@ -142,7 +142,7 @@ impl Node {
         }
     }
 
-    pub(super) fn python_string(&self) -> String {
+    pub(crate) fn python_string(&self) -> String {
         match self {
             Self::Null => "None".into(),
             Self::Bool(true) => "True".into(),
@@ -282,7 +282,7 @@ fn quote(value: &str, bytes: bool) -> String {
 }
 
 #[derive(Debug, PartialEq)]
-pub(super) struct Timestamp {
+pub(crate) struct Timestamp {
     year: u16,
     month: u8,
     day: u8,

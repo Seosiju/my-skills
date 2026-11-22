@@ -3,7 +3,7 @@ use std::fs;
 use std::io::ErrorKind;
 
 use my_skills::Error;
-use my_skills::hash::{hash_directory, hash_file};
+use my_skills::drive::hash::{hash_directory, hash_file};
 use serde::Deserialize;
 use tempfile::tempdir;
 

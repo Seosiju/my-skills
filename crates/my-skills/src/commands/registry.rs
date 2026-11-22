@@ -2,15 +2,15 @@
 
 use std::process::ExitCode;
 
-use crate::audit::format_gate;
-use crate::catalog::{self, display_path, json_output};
+use crate::check::audit::format_gate;
 use crate::cli::*;
-use crate::manifest::{CliOverrides, MANIFEST_FILE, Manifest};
-use crate::manifest_edit;
-use crate::seeds::{self, Scaffold};
-use crate::sharing::{self, Failure};
-use crate::state::State;
-use crate::{Error, Result, runtime};
+use crate::drive::state::State;
+use crate::registry::catalog::{self, display_path, json_output};
+use crate::registry::edit;
+use crate::registry::manifest::{CliOverrides, MANIFEST_FILE, Manifest};
+use crate::registry::seeds::{self, Scaffold};
+use crate::registry::share::{self, Failure};
+use crate::{Error, Result, registry::root};
 
 pub fn init_registry(args: &InitRegistryArgs) -> ExitCode {
     let target = match seeds::registry_target(args.path.as_deref()) {
@@ -65,7 +65,7 @@ pub fn skills(args: &SkillsArgs) -> ExitCode {
         }
         let hosts = match host {
             Some(host) => vec![host.to_owned()],
-            None => runtime::resolve_hosts(&manifest, None)?,
+            None => root::resolve_hosts(&manifest, None)?,
         };
         let enabled = if args.disabled {
             Some(false)
@@ -94,7 +94,7 @@ pub fn share(args: &ShareArgs) -> ExitCode {
         Err(err) => return super::config_error(err),
     };
     if args.plan || args.dry_run {
-        return match sharing::plan_share(&manifest, &args.from_host) {
+        return match share::plan_share(&manifest, &args.from_host) {
             Ok(plan) => {
                 let output = if args.json {
                     json_output(&plan)
@@ -118,7 +118,7 @@ pub fn share(args: &ShareArgs) -> ExitCode {
         Ok(state) => state,
         Err(err) => return super::config_error(err),
     };
-    match sharing::share(
+    match share::share(
         &manifest,
         &mut state,
         &args.from_host,
@@ -191,8 +191,8 @@ fn set_enabled(name: &str, enabled: bool, dry_run: bool) -> ExitCode {
     }
     let result = load().and_then(|manifest| {
         let path = manifest.root.join(MANIFEST_FILE);
-        sharing::ensure_outside_hosts(&path, sharing::target_paths(&manifest))?;
-        manifest_edit::set_skill_enabled(&path, name, enabled)
+        share::ensure_outside_hosts(&path, share::target_paths(&manifest))?;
+        edit::set_skill_enabled(&path, name, enabled)
     });
     if let Err(err) = result {
         return super::config_error(err);
@@ -207,7 +207,7 @@ pub fn import(args: &ImportArgs) -> ExitCode {
         Err(err) => return super::config_error(err),
     };
     let source = seeds::expand_user(&args.source);
-    match sharing::import(
+    match share::import(
         &manifest,
         &source,
         args.enable,
@@ -253,17 +253,14 @@ pub fn import(args: &ImportArgs) -> ExitCode {
         Err(Failure::Link(path)) => {
             println!(
                 "[BLOCKED] {}: import source contains symlink",
-                sharing::basename(&source)
+                share::basename(&source)
             );
             println!("  symlink: {}", display_path(&path));
             eprintln!("\nNothing was imported (fix the source first).");
             ExitCode::from(1)
         }
         Err(Failure::Validation(errors)) => {
-            println!(
-                "[BLOCKED] {}: validation failed",
-                sharing::basename(&source)
-            );
+            println!("[BLOCKED] {}: validation failed", share::basename(&source));
             for error in errors {
                 println!("  error: {error}");
             }
@@ -286,7 +283,7 @@ pub fn import(args: &ImportArgs) -> ExitCode {
 }
 
 fn load() -> Result<Manifest> {
-    runtime::load_manifest_from_cwd(&CliOverrides::default())
+    root::load_manifest_from_cwd(&CliOverrides::default())
 }
 
 fn enabled_label(enabled: bool) -> &'static str {

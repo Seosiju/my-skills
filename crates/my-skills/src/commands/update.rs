@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 use std::process::ExitCode;
 
 use crate::cli::{Channel, UpdateArgs};
-use crate::self_update::{CURRENT_VERSION, UpdateDownload, latest_release};
+use crate::update::{CURRENT_VERSION, UpdateDownload, latest_release};
 
 pub fn run(args: &UpdateArgs) -> ExitCode {
     let channel = match args.channel {

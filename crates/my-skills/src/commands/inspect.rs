@@ -9,21 +9,21 @@ use std::process::ExitCode;
 use serde_json::json;
 
 use super::config_error;
-use crate::audit::{
+use crate::check::audit::{
     AuditFinding, Severity, cross_skill_findings, finding_json, policy_from_settings, result_json,
     run_audit,
 };
+use crate::check::validate::compose_validation;
 use crate::cli::*;
-use crate::data::skill_data_path;
-use crate::link::{self, EntryKind};
-use crate::manifest::{CliOverrides, InstallMode, Manifest};
-use crate::plan;
-use crate::runtime;
-use crate::state::State;
-use crate::validate::compose_validation;
+use crate::drive::link::{self, EntryKind};
+use crate::drive::plan;
+use crate::drive::state::State;
+use crate::platform::data::skill_data_path;
+use crate::registry::manifest::{CliOverrides, InstallMode, Manifest};
+use crate::registry::root;
 
 fn load() -> Result<Manifest, ExitCode> {
-    runtime::load_manifest_from_cwd(&CliOverrides::default()).map_err(config_error)
+    root::load_manifest_from_cwd(&CliOverrides::default()).map_err(config_error)
 }
 
 fn skill_dirs(manifest: &Manifest, skill: Option<&str>) -> Vec<PathBuf> {
@@ -80,11 +80,11 @@ pub fn audit(args: &AuditArgs) -> ExitCode {
         Ok(m) => m,
         Err(code) => return code,
     };
-    let (skills, _) =
-        match runtime::select_requested(&manifest, args.skill.as_deref(), args.all, None) {
-            Ok(selection) => selection,
-            Err(e) => return config_error(e),
-        };
+    let (skills, _) = match root::select_requested(&manifest, args.skill.as_deref(), args.all, None)
+    {
+        Ok(selection) => selection,
+        Err(e) => return config_error(e),
+    };
     let policy = match policy_from_settings(&manifest.audit) {
         Ok(p) => p,
         Err(e) => return config_error(e),
@@ -226,14 +226,14 @@ pub fn status(args: &StatusArgs) -> ExitCode {
 pub fn set_root(args: &SetRootArgs) -> ExitCode {
     let record = |path: &Path| {
         if args.dry_run {
-            runtime::validate_repo_root(path)
+            root::validate_repo_root(path)
         } else {
-            runtime::cache_repo_root(path)
+            root::cache_repo_root(path)
         }
     };
     let root = match &args.path {
         Some(path) => record(Path::new(path)),
-        None => runtime::find_cwd_root(None).and_then(|p| record(&p)),
+        None => root::find_cwd_root(None).and_then(|p| record(&p)),
     };
     match root {
         Ok(root) if args.dry_run => {

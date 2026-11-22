@@ -196,7 +196,7 @@ fn post_install_version_mismatch_restores_original_executable() {
 #[test]
 fn doctor_skips_lookup_when_disabled() {
     assert_eq!(
-        my_skills::self_update::update_status_line(true),
+        my_skills::update::update_status_line(true),
         "not checked (--no-update-check)"
     );
 }

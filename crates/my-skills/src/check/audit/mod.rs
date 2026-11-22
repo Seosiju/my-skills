@@ -12,7 +12,7 @@ mod structure;
 
 use std::path::{Component, Path, PathBuf};
 
-use crate::manifest::AuditSettings;
+use crate::registry::manifest::AuditSettings;
 use crate::{Error, Result};
 
 pub use bundle::cross_skill_findings;

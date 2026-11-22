@@ -2,7 +2,7 @@ mod support_h;
 
 use std::fs;
 
-use my_skills::manifest_edit::{register_skill, set_skill_enabled};
+use my_skills::registry::edit::{register_skill, set_skill_enabled};
 use support_h::{Fixture, native};
 
 #[test]

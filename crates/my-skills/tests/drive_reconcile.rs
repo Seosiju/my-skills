@@ -4,11 +4,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use my_skills::install::{self, Connection, Outcome};
-use my_skills::link::{self, EntryKind};
-use my_skills::manifest::{CliOverrides, InstallMode, Manifest, load_manifest};
-use my_skills::plan::{self, Action, Status, SyncScope};
-use my_skills::state::State;
+use my_skills::drive::apply::{self, Connection, Outcome};
+use my_skills::drive::link::{self, EntryKind};
+use my_skills::drive::plan::{self, Action, Status, SyncScope};
+use my_skills::drive::state::State;
+use my_skills::registry::manifest::{CliOverrides, InstallMode, Manifest, load_manifest};
 
 const HOSTS: [&str; 4] = ["agy", "claude", "codex", "hermes"];
 
@@ -97,7 +97,7 @@ impl Drive {
             plan::plan_sync(&manifest, &state, &scope, manifest.defaults.install_mode).unwrap();
         for item in &items {
             assert!(!item.action.is_block(), "unexpected block: {item:?}");
-            install::apply(item, &mut state, None).unwrap();
+            apply::apply(item, &mut state, None).unwrap();
         }
         state.save().unwrap();
         items
@@ -298,7 +298,7 @@ fn disabled_target_installs_are_never_touched() {
         plan::plan_install_one(&manifest, skill, "hermes", &state, InstallMode::Copy).unwrap();
     assert_eq!(item.action, Action::Create);
     item.mode = InstallMode::Copy;
-    install::apply(&item, &mut state, None).unwrap();
+    apply::apply(&item, &mut state, None).unwrap();
     state.save().unwrap();
 
     drive.write_manifest(false, false, "link");
@@ -363,7 +363,7 @@ fn copy_mode_install_then_convert_to_link() {
     let plan = plan::plan_convert(&manifest, &state, &skills, &hosts, InstallMode::Link).unwrap();
     assert!(plan.iter().all(|i| i.action == Action::Convert), "{plan:?}");
     for item in &plan {
-        let outcome = install::apply(item, &mut state, None).unwrap();
+        let outcome = apply::apply(item, &mut state, None).unwrap();
         assert!(matches!(outcome, Outcome::Converted(Connection::Link(_))));
     }
     state.save().unwrap();

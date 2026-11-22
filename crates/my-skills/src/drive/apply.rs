@@ -8,12 +8,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use walkdir::WalkDir;
 
-use crate::hash::hash_directory;
-use crate::ignore::is_ignored;
-use crate::link::{self, Created, EntryKind, LinkKind};
-use crate::manifest::InstallMode;
-use crate::plan::{Action, PlanItem};
-use crate::state::{InstallRecord, State};
+use crate::drive::hash::hash_directory;
+use crate::drive::ignore::is_ignored;
+use crate::drive::link::{self, Created, EntryKind, LinkKind};
+use crate::drive::plan::{Action, PlanItem};
+use crate::drive::state::{InstallRecord, State};
+use crate::registry::manifest::InstallMode;
 use crate::{Error, Result};
 
 /// How a connection ended up on disk.

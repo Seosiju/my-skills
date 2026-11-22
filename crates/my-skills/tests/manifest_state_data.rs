@@ -4,13 +4,13 @@ use std::process::Command;
 use std::{env, fs};
 
 use my_skills::Error;
-use my_skills::data::skill_data_path;
-use my_skills::link::LinkKind;
-use my_skills::manifest::{
+use my_skills::drive::link::LinkKind;
+use my_skills::drive::state::{State, default_state_path};
+use my_skills::platform::data::skill_data_path;
+use my_skills::registry::manifest::{
     AuditSettings, CliOverrides, Defaults, InstallMode, LOCAL_MANIFEST_FILE, MANIFEST_FILE,
     expand_path, load_manifest, selected_skills,
 };
-use my_skills::state::{State, default_state_path};
 use serde_json::{Value, json};
 use tempfile::tempdir;
 

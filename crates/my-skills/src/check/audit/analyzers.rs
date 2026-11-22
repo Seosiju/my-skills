@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use walkdir::WalkDir;
 
-use crate::ignore::is_ignored;
+use crate::drive::ignore::is_ignored;
 
 use super::patterns::compile;
 use super::rules::finding;
@@ -239,7 +239,7 @@ fn path_repr(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audit::Severity;
+    use crate::check::audit::Severity;
 
     #[test]
     fn reports_scanner_read_errors_in_python_format() {

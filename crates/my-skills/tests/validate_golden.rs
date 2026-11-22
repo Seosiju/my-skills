@@ -2,10 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use my_skills::hosts::{ALL, CLAUDE};
-use my_skills::validate::{
+use my_skills::check::validate::{
     ValidationResult, validate_name, validate_skill, validate_skill_for_host,
 };
+use my_skills::drive::hosts::{ALL, CLAUDE};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -138,7 +138,7 @@ fn host_configuration_controls_limits_and_kept_fields() {
         "---\nname: tiny-skill\ndescription: 가나\ncustom: yes\nother: no\n---\n",
     )
     .unwrap();
-    let host = my_skills::hosts::HostConfig {
+    let host = my_skills::drive::hosts::HostConfig {
         name: "tiny",
         description_max_chars: 1,
         frontmatter_keep_fields: &["name", "description", "custom"],

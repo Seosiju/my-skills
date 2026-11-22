@@ -11,8 +11,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::manifest::{self, CliOverrides, MANIFEST_FILE, Manifest, Skill};
-use crate::{Error, Result, paths};
+use crate::registry::manifest::{self, CliOverrides, MANIFEST_FILE, Manifest, Skill};
+use crate::{Error, Result, platform::paths};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RootSource {

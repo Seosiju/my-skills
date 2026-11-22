@@ -10,17 +10,17 @@ use cap_std::fs::{Dir, OpenOptions};
 use serde::Serialize;
 use tempfile::{Builder, TempDir};
 
-use crate::audit::{self, AuditGateResult, AuditPolicy, Severity};
-use crate::catalog::{display_path, field, metadata, table};
-use crate::frontmatter::Node;
-use crate::hash::hash_directory;
-use crate::install::utc_now;
-use crate::link::{EntryKind, entry_kind, remove_link};
-use crate::manifest::{InstallMode, MANIFEST_FILE, Manifest};
-use crate::manifest_edit::{self, ManifestEdit};
-use crate::state::{InstallRecord, State};
-use crate::validate::{compose_validation, validate_name};
-use crate::{Error, Result, paths};
+use crate::check::audit::{self, AuditGateResult, AuditPolicy, Severity};
+use crate::check::frontmatter::Node;
+use crate::check::validate::{compose_validation, validate_name};
+use crate::drive::apply::utc_now;
+use crate::drive::hash::hash_directory;
+use crate::drive::link::{EntryKind, entry_kind, remove_link};
+use crate::drive::state::{InstallRecord, State};
+use crate::registry::catalog::{display_path, field, metadata, table};
+use crate::registry::edit::{self, ManifestEdit};
+use crate::registry::manifest::{InstallMode, MANIFEST_FILE, Manifest};
+use crate::{Error, Result, platform::paths};
 
 #[derive(Debug)]
 pub(crate) enum Failure {
@@ -331,7 +331,7 @@ pub(crate) fn import(
         .skills
         .get(&name)
         .is_some_and(|skill| skill.enabled);
-    let (edit, enabled) = manifest_edit::prepare_import(
+    let (edit, enabled) = edit::prepare_import(
         &manifest.root.join(MANIFEST_FILE),
         &name,
         enable,
@@ -407,7 +407,7 @@ pub(crate) fn share(
             )));
         }
     }
-    let edit = manifest_edit::prepare_registration(
+    let edit = edit::prepare_registration(
         &manifest.root.join(MANIFEST_FILE),
         &name,
         enabled,

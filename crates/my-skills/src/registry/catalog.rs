@@ -8,11 +8,11 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::Result;
-use crate::audit::{self, AuditPolicy, Severity};
-use crate::frontmatter::{Mapping, Node, parse_document};
-use crate::manifest::{Manifest, Skill};
-use crate::plan::status_of;
-use crate::state::State;
+use crate::check::audit::{self, AuditPolicy, Severity};
+use crate::check::frontmatter::{Mapping, Node, parse_document};
+use crate::drive::plan::status_of;
+use crate::drive::state::State;
+use crate::registry::manifest::{Manifest, Skill};
 
 #[derive(Serialize)]
 pub(crate) struct Catalog {

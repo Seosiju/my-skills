@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 
 use tempfile::NamedTempFile;
 
-use crate::frontmatter::python_whitespace;
-use crate::link::{EntryKind, entry_kind};
-use crate::validate::validate_name;
+use crate::check::frontmatter::python_whitespace;
+use crate::check::validate::validate_name;
+use crate::drive::link::{EntryKind, entry_kind};
 use crate::{Error, Result};
 
 pub fn set_skill_enabled(path: &Path, name: &str, enabled: bool) -> Result<()> {

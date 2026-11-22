@@ -10,7 +10,7 @@ use std::path::{MAIN_SEPARATOR, Path};
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
-use crate::ignore::{IGNORED_DIRS, is_ignored};
+use crate::drive::ignore::{IGNORED_DIRS, is_ignored};
 use crate::{Error, Result};
 
 /// Lowercase hex SHA-256 of one file's bytes (no prefix).
@@ -31,7 +31,7 @@ pub fn hash_file(path: &Path) -> Result<String> {
 
 /// `"sha256:" + hex` over every regular file under `path`.
 ///
-/// - Skip entries where `crate::ignore::is_ignored(rel)` is true.
+/// - Skip entries where `crate::drive::ignore::is_ignored(rel)` is true.
 /// - Sort by the relative path with `/` separators, compared as UTF-8 bytes.
 /// - For each file, feed `rel_path` UTF-8 bytes, `0x00`, `hash_file` hex
 ///   (ASCII), `0x00`.

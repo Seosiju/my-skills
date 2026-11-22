@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use my_skills::frontmatter::{Value, parse_frontmatter};
+use my_skills::check::frontmatter::{Value, parse_frontmatter};
 
 #[test]
 fn matches_delimiters_bom_and_python_splitlines() {

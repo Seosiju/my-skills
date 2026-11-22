@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::{Error, Result, paths, validate};
+use crate::{Error, Result, check::validate, platform::paths};
 
 /// `paths::data_root()/<skill>`. The name is checked with
 /// `validate::validate_name` first, which also rejects path traversal.

@@ -54,7 +54,7 @@ fn share_plan_json_lists_host_candidates_and_risks() {
             "source": plain(&source),
             "canonical": plain(&fixture.canonical("brand")),
             "canonical_status": "missing",
-            "content_hash": my_skills::hash::hash_directory(&source).unwrap(),
+            "content_hash": my_skills::drive::hash::hash_directory(&source).unwrap(),
             "risks": [],
             "choices": ["share-enable", "share-disable", "skip"],
             "recommended": "share-enable",
@@ -109,10 +109,13 @@ fn share_apply_imports_registers_and_adopts_source() {
     );
     assert_eq!(fs::read(source.join("SKILL.md")).unwrap(), contents);
     assert!(!fixture.host("codex").exists());
-    let state = my_skills::state::State::load(Some(&fixture.state())).unwrap();
+    let state = my_skills::drive::state::State::load(Some(&fixture.state())).unwrap();
     let record = state.get("example", "claude").unwrap();
     assert_eq!(record.source_type, "host");
-    assert_eq!(record.mode, my_skills::manifest::InstallMode::Copy);
+    assert_eq!(
+        record.mode,
+        my_skills::registry::manifest::InstallMode::Copy
+    );
     assert_eq!(record.destination, plain(&source));
     assert_eq!(record.installed_hash, record.source_hash);
     assert_eq!(record.source_url, plain(&source));
@@ -216,7 +219,7 @@ fn share_apply_records_manifest_audit_policy() {
         .args(["brand", "--enable"])
         .assert()
         .success();
-    let state = my_skills::state::State::load(Some(&fixture.state())).unwrap();
+    let state = my_skills::drive::state::State::load(Some(&fixture.state())).unwrap();
     let record = state.get("brand", "claude").unwrap();
     assert_eq!(record.audit_profile, "permissive");
     assert_eq!(record.audit_threshold, "none");
@@ -371,8 +374,8 @@ fn share_force_replaces_canonical_link_without_touching_its_target() {
         .assert()
         .success();
     assert_eq!(
-        my_skills::link::entry_kind(&canonical).unwrap(),
-        my_skills::link::EntryKind::Dir
+        my_skills::drive::link::entry_kind(&canonical).unwrap(),
+        my_skills::drive::link::EntryKind::Dir
     );
     assert_eq!(fs::read(outside.join("SKILL.md")).unwrap(), before);
     assert!(

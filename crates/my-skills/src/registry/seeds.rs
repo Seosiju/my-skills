@@ -8,11 +8,14 @@ use std::process::{Command, Stdio};
 use include_dir::File;
 use tempfile::NamedTempFile;
 
-use crate::catalog::display_path;
-use crate::link::{EntryKind, entry_kind};
-use crate::manifest::MANIFEST_FILE;
-use crate::manifest_edit::native_text;
-use crate::{Error, Result, hosts, manifest, paths, runtime, sharing};
+use crate::drive::link::{EntryKind, entry_kind};
+use crate::registry::catalog::display_path;
+use crate::registry::edit::native_text;
+use crate::registry::manifest::MANIFEST_FILE;
+use crate::{
+    Error, Result, drive::hosts, platform::paths, registry::manifest, registry::root,
+    registry::share,
+};
 
 const SEED_SKILLS: [(&str, bool); 3] = [
     ("cli-inventory", true),
@@ -222,9 +225,9 @@ impl Scaffold {
                 .map(|host| manifest::expand_path(host.default_user_path))
         };
         let skills = target.join("skills");
-        sharing::ensure_outside_hosts(target, host_paths())?;
-        sharing::ensure_outside_hosts(&skills, host_paths())?;
-        sharing::ensure_outside_hosts(&runtime::root_cache_path(), host_paths())?;
+        share::ensure_outside_hosts(target, host_paths())?;
+        share::ensure_outside_hosts(&skills, host_paths())?;
+        share::ensure_outside_hosts(&root::root_cache_path(), host_paths())?;
         fs::create_dir_all(target).map_err(|err| Error::io(target, err))?;
         fs::create_dir(&skills).map_err(|err| Error::io(&skills, err))?;
         let mut created = Vec::new();
@@ -254,10 +257,10 @@ impl Scaffold {
             }
             // The crate's single recursive delete refuses anything but a
             // real directory (spec §4 I2).
-            let _ = crate::install::remove_real_dir(&skills);
+            let _ = crate::drive::apply::remove_real_dir(&skills);
         }
         result?;
-        runtime::cache_repo_root(target)?;
+        root::cache_repo_root(target)?;
         Ok(())
     }
 }

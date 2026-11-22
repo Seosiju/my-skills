@@ -1,15 +1,15 @@
 //! Planning: what each (skill, host) pair needs. Integrator. Spec §6.2–§6.6,
 //! decisions D3 (reconcile with prune) and I3/I5/I7.
 //!
-//! Planning reads the filesystem but never writes it. `install::apply`
+//! Planning reads the filesystem but never writes it. `apply::apply`
 //! executes the plan.
 
 use std::path::PathBuf;
 
-use crate::hash::hash_directory;
-use crate::link::{self, EntryKind};
-use crate::manifest::{InstallMode, Manifest, Skill};
-use crate::state::{InstallRecord, State};
+use crate::drive::hash::hash_directory;
+use crate::drive::link::{self, EntryKind};
+use crate::drive::state::{InstallRecord, State};
+use crate::registry::manifest::{InstallMode, Manifest, Skill};
 use crate::{Error, Result};
 
 /// Read-only state of one connection (spec §6.2).

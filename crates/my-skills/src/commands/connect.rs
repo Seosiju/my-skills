@@ -11,16 +11,20 @@ use std::process::ExitCode;
 use serde_json::{Value, json};
 
 use super::config_error;
-use crate::audit::{AuditGateResult, audit_skills, format_gate, gate_json, policy_from_settings};
+use crate::check::audit::{
+    AuditGateResult, audit_skills, format_gate, gate_json, policy_from_settings,
+};
+use crate::check::validate::{compose_validation, validate_skill_for_host};
 use crate::cli::*;
-use crate::hosts::{self, get_host};
-use crate::install::{self, AuditMeta, Connection, Outcome};
-use crate::link::LinkKind;
-use crate::manifest::{CliOverrides, InstallMode, Manifest, Skill, expand_path, load_manifest};
-use crate::plan::{self, Action, PlanItem, SyncScope};
-use crate::runtime::{self, confirm_multi_host_write, resolve_hosts};
-use crate::state::State;
-use crate::validate::{compose_validation, validate_skill_for_host};
+use crate::drive::apply::{self, AuditMeta, Connection, Outcome};
+use crate::drive::hosts::{self, get_host};
+use crate::drive::link::LinkKind;
+use crate::drive::plan::{self, Action, PlanItem, SyncScope};
+use crate::drive::state::State;
+use crate::registry::manifest::{
+    CliOverrides, InstallMode, Manifest, Skill, expand_path, load_manifest,
+};
+use crate::registry::root::{self, confirm_multi_host_write, resolve_hosts};
 
 // ---------------------------------------------------------------- install
 
@@ -29,11 +33,11 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         install_mode: args.mode.map(Into::into),
         ..CliOverrides::default()
     };
-    let manifest = match runtime::load_manifest_from_cwd(&cli) {
+    let manifest = match root::load_manifest_from_cwd(&cli) {
         Ok(m) => m,
         Err(e) => return config_error(e),
     };
-    let (skills, hosts) = match runtime::select_requested(
+    let (skills, hosts) = match root::select_requested(
         &manifest,
         args.skill.as_deref(),
         args.all,
@@ -124,7 +128,7 @@ fn is_builtin_seed_default_install(
 // ---------------------------------------------------------------- sync
 
 pub fn sync(args: &SyncArgs) -> ExitCode {
-    let manifest = match runtime::load_manifest_from_cwd(&CliOverrides::default()) {
+    let manifest = match root::load_manifest_from_cwd(&CliOverrides::default()) {
         Ok(m) => m,
         Err(e) => return config_error(e),
     };
@@ -254,7 +258,7 @@ fn print_plan_results_noop(items: &[PlanItem]) {
 // ---------------------------------------------------------------- uninstall
 
 pub fn uninstall(args: &UninstallArgs) -> ExitCode {
-    let manifest = match runtime::load_manifest_from_cwd(&CliOverrides::default()) {
+    let manifest = match root::load_manifest_from_cwd(&CliOverrides::default()) {
         Ok(m) => m,
         Err(e) => return config_error(e),
     };
@@ -288,7 +292,7 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
     let mut failed = false;
     for item in &items {
         match item.action {
-            Action::Remove => match install::apply(item, &mut state, None) {
+            Action::Remove => match apply::apply(item, &mut state, None) {
                 Ok(_) => {
                     if let Err(e) = state.save() {
                         return config_error(e);
@@ -321,13 +325,13 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
 // ---------------------------------------------------------------- convert
 
 pub fn convert(args: &ConvertArgs) -> ExitCode {
-    let manifest = match runtime::load_manifest_from_cwd(&CliOverrides::default()) {
+    let manifest = match root::load_manifest_from_cwd(&CliOverrides::default()) {
         Ok(m) => m,
         Err(e) => return config_error(e),
     };
     // Convert acts on existing connections, so every registered skill is in
     // scope unless one is named.
-    let (skills, hosts) = match runtime::select_requested(
+    let (skills, hosts) = match root::select_requested(
         &manifest,
         args.skill.as_deref(),
         true,
@@ -360,7 +364,7 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
 // ---------------------------------------------------------------- bootstrap
 
 pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
-    let root = match runtime::resolve_root(None, false) {
+    let root = match root::resolve_root(None, false) {
         Ok(r) => r.root,
         Err(e) => return config_error(e),
     };
@@ -476,7 +480,7 @@ fn report_gate(gate: &AuditGateResult) -> Option<ExitCode> {
 }
 
 fn audit_meta_by_skill(gate: &AuditGateResult) -> BTreeMap<String, AuditMeta> {
-    let now = install::utc_now();
+    let now = apply::utc_now();
     gate.results
         .iter()
         .map(|r| {
@@ -505,7 +509,7 @@ fn apply_plan(
     let mut blocked = false;
     for item in items {
         if item.action.writes() {
-            match install::apply(item, state, audit.get(&item.skill)) {
+            match apply::apply(item, state, audit.get(&item.skill)) {
                 Ok(outcome) => {
                     if let Err(e) = state.save() {
                         blocked = true;

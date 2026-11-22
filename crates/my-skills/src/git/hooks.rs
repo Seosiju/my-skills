@@ -10,8 +10,8 @@ use std::{env, fmt};
 
 use serde::Serialize;
 
-use crate::manifest::{self, MANIFEST_FILE, Manifest};
-use crate::validate;
+use crate::check::validate;
+use crate::registry::manifest::{self, MANIFEST_FILE, Manifest};
 
 const NAMES: [&str; 4] = ["pre-commit", "post-merge", "post-rewrite", "post-checkout"];
 const MARKER: &str = "# managed-by: my-skills hooks ";

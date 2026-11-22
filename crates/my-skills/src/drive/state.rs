@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::link::LinkKind;
-use crate::manifest::InstallMode;
+use crate::drive::link::LinkKind;
+use crate::registry::manifest::InstallMode;
 use crate::{Error, Result};
 
 pub const SCHEMA_VERSION: i64 = 1;
@@ -86,7 +86,7 @@ struct StateFile<'a> {
 
 /// `paths::state_home()/my-skills/state.json`.
 pub fn default_state_path() -> PathBuf {
-    crate::paths::state_home()
+    crate::platform::paths::state_home()
         .join("my-skills")
         .join("state.json")
 }

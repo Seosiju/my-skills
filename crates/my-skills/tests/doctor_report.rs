@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use assert_cmd::prelude::*;
-use my_skills::hash::hash_directory;
+use my_skills::drive::hash::hash_directory;
 use serde_json::{Value, json};
 use support_g::{Fixture, MANIFEST, skill};
 
