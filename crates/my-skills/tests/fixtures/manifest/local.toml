@@ -1,0 +1,24 @@
+schema_version = 9
+skills_root = "local-skills"
+
+[defaults]
+install_mode = "link"
+collision = "replace"
+
+[audit]
+profile = "local-profile"
+disabled_rules = ["local-rule", 42, false, "other-rule"]
+
+[targets.claude]
+path = "~/local-target"
+
+[targets.local-only]
+path = "~/another-target"
+
+[skills.alpha]
+enabled = true
+hosts = ["codex", 42, "agy"]
+source_revision = "local-revision"
+
+[skills.beta]
+group = "local-group"
