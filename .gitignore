@@ -23,3 +23,6 @@ src/my_skills/_defaults/
 
 # macOS
 .DS_Store
+
+# Rust
+/target/

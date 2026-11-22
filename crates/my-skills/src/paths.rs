@@ -1,0 +1,53 @@
+//! Machine-level locations shared by every module (spec §7.1).
+//!
+//! Environment overrides are honored first so tests can run in a temporary
+//! HOME without touching the real host directories.
+
+use std::path::PathBuf;
+
+/// The user's home directory: `HOME` (all platforms, so tests can override),
+/// then `USERPROFILE` on Windows, then the OS answer.
+pub fn home_dir() -> PathBuf {
+    if let Some(home) = std::env::var_os("HOME").filter(|v| !v.is_empty()) {
+        return PathBuf::from(home);
+    }
+    #[cfg(windows)]
+    if let Some(profile) = std::env::var_os("USERPROFILE").filter(|v| !v.is_empty()) {
+        return PathBuf::from(profile);
+    }
+    dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn env_dir(var: &str) -> Option<PathBuf> {
+    std::env::var_os(var)
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+}
+
+/// `$XDG_STATE_HOME` or `~/.local/state`. v0.4.1 uses this on Windows too;
+/// spec Q3 decides whether v1 moves Windows elsewhere.
+pub fn state_home() -> PathBuf {
+    env_dir("XDG_STATE_HOME").unwrap_or_else(|| home_dir().join(".local").join("state"))
+}
+
+/// `$XDG_CONFIG_HOME` or `~/.config` (active-root cache, as in v0.4.1).
+pub fn config_home() -> PathBuf {
+    env_dir("XDG_CONFIG_HOME").unwrap_or_else(|| home_dir().join(".config"))
+}
+
+/// Base of per-skill data (spec §8.4). POSIX: `$XDG_DATA_HOME/my-skills` or
+/// `~/.local/share/my-skills`. Windows: `%LOCALAPPDATA%\my-skills\data`.
+pub fn data_root() -> PathBuf {
+    #[cfg(windows)]
+    {
+        let base =
+            env_dir("LOCALAPPDATA").unwrap_or_else(|| home_dir().join("AppData").join("Local"));
+        return base.join("my-skills").join("data");
+    }
+    #[cfg(not(windows))]
+    {
+        env_dir("XDG_DATA_HOME")
+            .unwrap_or_else(|| home_dir().join(".local").join("share"))
+            .join("my-skills")
+    }
+}

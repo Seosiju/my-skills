@@ -1,0 +1,43 @@
+[package]
+name = "my-skills"
+version = "1.0.0-alpha.0"
+description = "Personal skill drive: one canonical skill registry, linked into every agent host."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "my_skills"
+path = "src/lib.rs"
+
+[[bin]]
+name = "my-skills"
+path = "src/main.rs"
+
+# Parallel streams: add a dependency only in your own block below and keep
+# versions as caret requirements. The integrator resolves Cargo.lock on merge.
+[dependencies]
+# core (skeleton)
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+# stream A (hash)
+sha2 = "0.10"
+walkdir = "2"
+# stream B (manifest/state/data)
+toml = "0.8"
+dirs = "6"
+# stream D (validate/frontmatter)
+# stream E (audit)
+
+[target.'cfg(windows)'.dependencies]
+# stream C (link)
+junction = "1"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
