@@ -37,6 +37,11 @@ dirs = "6"
 # stream D (validate/frontmatter)
 # stream E (audit)
 regex = "1"
+# stream H (registry)
+cap-fs-ext = "4"
+cap-std = "4"
+include_dir = "0.7"
+tempfile = "3"
 
 [target.'cfg(windows)'.dependencies]
 # stream C (link)
@@ -45,4 +50,3 @@ junction = "1"
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
-tempfile = "3"
