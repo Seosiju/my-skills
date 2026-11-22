@@ -216,7 +216,7 @@ pub struct SkillsArgs {
     pub with_status: bool,
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Default, Args)]
 pub struct SyncArgs {
     pub skill: Option<String>,
     #[arg(long)]
