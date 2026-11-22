@@ -37,6 +37,8 @@ dirs = "6"
 # stream D (validate/frontmatter)
 # stream E (audit)
 regex = "1"
+# stream G (hooks and doctor)
+tempfile = "3"
 
 [target.'cfg(windows)'.dependencies]
 # stream C (link)
@@ -45,4 +47,3 @@ junction = "1"
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
-tempfile = "3"
