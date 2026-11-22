@@ -77,7 +77,6 @@ fn init_registry_does_not_restore_removed_skills_or_delete_local_data() {
 }
 
 #[test]
-#[ignore = "needs stream integrator: install CLI handler"]
 fn init_registry_install_dry_run_has_seed_actions() {
     let fixture = Fixture::new();
     init(&fixture).arg("--no-git").assert().success();
@@ -92,7 +91,6 @@ fn init_registry_install_dry_run_has_seed_actions() {
 }
 
 #[test]
-#[ignore = "needs stream integrator: install CLI handler and confirmation"]
 fn seed_default_install_requires_confirmation_for_custom_targets() {
     let fixture = Fixture::new();
     init(&fixture).arg("--no-git").assert().success();
@@ -107,7 +105,6 @@ fn seed_default_install_requires_confirmation_for_custom_targets() {
 }
 
 #[test]
-#[ignore = "needs stream integrator: install CLI handler and confirmation"]
 fn seed_default_install_requires_confirmation_for_non_default_options() {
     let fixture = Fixture::new();
     init(&fixture).arg("--no-git").assert().success();

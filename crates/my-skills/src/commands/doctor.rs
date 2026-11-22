@@ -569,6 +569,13 @@ impl Connections {
         if let Some(manifest) = manifest {
             for skill in manifest.skills.values() {
                 for target in manifest.targets.values().filter(|target| target.enabled) {
+                    // Count only pairs the drive wants or still has; a
+                    // disabled skill with no connection is not MISSING.
+                    if !plan::wants(manifest, skill, &target.name)
+                        && state.get(&skill.name, &target.name).is_none()
+                    {
+                        continue;
+                    }
                     match plan::status_of(manifest, skill, &target.name, &state) {
                         Ok(status) => *report.statuses.entry(status.label()).or_default() += 1,
                         Err(error) => report

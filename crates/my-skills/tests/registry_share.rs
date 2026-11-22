@@ -136,7 +136,6 @@ fn share_apply_imports_registers_and_adopts_source() {
 }
 
 #[test]
-#[ignore = "needs stream integrator: sync CLI handler"]
 fn share_apply_imports_registers_adopts_source_and_syncs() {
     let fixture = Fixture::repo();
     host_skill(&fixture, "example");

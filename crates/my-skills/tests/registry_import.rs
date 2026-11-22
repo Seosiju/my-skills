@@ -74,7 +74,6 @@ fn imported_skill_works_with_enable_and_skills_surfaces() {
 }
 
 #[test]
-#[ignore = "needs stream integrator: install CLI handler"]
 fn imported_skill_works_with_enable_skills_and_install_surfaces() {
     let fixture = Fixture::repo();
     let source = external(&fixture, "# Import\n");

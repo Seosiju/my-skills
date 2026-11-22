@@ -425,7 +425,8 @@ fn doctor_connection_summary_and_full_validation_find_different_problems() {
         report["connections"],
         json!({
             "link": 1, "copy": 1, "fallback": 1,
-            "statuses": {"FRESH": 1, "MISSING": 2},
+            // `disabled` is neither wanted nor connected, so it is not MISSING.
+            "statuses": {"FRESH": 1, "MISSING": 1},
             "warnings": [],
         })
     );
