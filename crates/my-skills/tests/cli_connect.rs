@@ -333,3 +333,99 @@ fn bootstrap_connects_enabled_skills() {
         .stdout(contains("Bootstrap complete"));
     assert!(is_link(&env.host("agy").join("alpha")));
 }
+
+// ---- regressions from the 2026-11-23 audit review (handoff §6) ----
+
+#[test]
+fn sync_check_reports_prune_drift() {
+    let env = Env::new();
+    env.cmd().args(["sync", "--yes"]).assert().success();
+    env.write_manifest(false);
+    env.cmd()
+        .args(["sync", "--check"])
+        .assert()
+        .code(1)
+        .stdout(contains("PRUNE"));
+    env.cmd().args(["sync", "--yes"]).assert().success();
+    env.cmd().args(["sync", "--check"]).assert().success();
+}
+
+#[test]
+fn convert_rolls_back_when_state_cannot_be_saved() {
+    let env = Env::new();
+    env.cmd()
+        .args(["install", "--mode", "copy", "--yes"])
+        .assert()
+        .success();
+    // A leftover temp file makes the state writer refuse to save.
+    let tmp = env.tmp.path().join("state/my-skills/state.json.tmp");
+    fs::write(&tmp, "busy").unwrap();
+    env.cmd()
+        .args(["convert", "--to", "link", "alpha", "--host", "claude"])
+        .assert()
+        .code(1)
+        .stdout(contains("FAILED: alpha -> claude"));
+    let copy = env.host("claude").join("alpha");
+    assert!(
+        copy.join("SKILL.md").is_file() && !is_link(&copy),
+        "copy restored"
+    );
+    fs::remove_file(&tmp).unwrap();
+    env.cmd()
+        .arg("status")
+        .assert()
+        .stdout(contains("claude   FRESH"));
+    env.cmd()
+        .args(["convert", "--to", "link", "alpha", "--host", "claude"])
+        .assert()
+        .success();
+    assert!(is_link(&copy));
+}
+
+#[test]
+fn convert_blocks_when_canonical_is_missing() {
+    let env = Env::new();
+    env.cmd()
+        .args(["install", "--mode", "copy", "--yes"])
+        .assert()
+        .success();
+    fs::remove_dir_all(env.root().join("skills/alpha")).unwrap();
+    env.cmd()
+        .args(["convert", "--to", "link", "alpha", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(contains("BLOCK_DRIFT").and(contains("canonical skill directory is missing")));
+}
+
+#[test]
+fn doctor_full_validation_includes_host_checks() {
+    let env = Env::new();
+    // Under the 1024-character standard limit, over the 768-character host limit.
+    env.write_skill("alpha", &"x".repeat(800));
+    let out = env
+        .cmd()
+        .args(["doctor", "--no-update-check", "--json"])
+        .output()
+        .unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let failures = report["full_validation"]["failures"].as_array().unwrap();
+    let alpha = failures.iter().find(|f| f["skill"] == "alpha").unwrap();
+    assert!(
+        alpha["errors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e.as_str().unwrap().contains("description exceeds 768")),
+        "{alpha}"
+    );
+}
+
+#[test]
+fn bootstrap_dry_run_shows_mode_override() {
+    let env = Env::new();
+    env.cmd()
+        .args(["bootstrap", "--dry-run", "--mode", "copy"])
+        .assert()
+        .success()
+        .stdout(contains("with install mode: copy"));
+}

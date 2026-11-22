@@ -420,6 +420,7 @@ pub fn plan_convert(
             };
             let source = manifest.skill_dir(&skill.name);
             let dest = PathBuf::from(&record.destination);
+            let expected = destination(manifest, host, &skill.name)?;
             let status = status_of(manifest, skill, host, state)?;
             let item = |action, reason: &str| {
                 PlanItem::new(
@@ -434,6 +435,15 @@ pub fn plan_convert(
             };
             let planned = if record.mode == to {
                 item(Action::Noop, "already in the requested mode")
+            } else if dest != expected {
+                // status_of judged the manifest's current path; converting a
+                // connection recorded elsewhere would act on a different entry.
+                item(
+                    Action::BlockDrift,
+                    "recorded destination differs from the manifest target; run sync first",
+                )
+            } else if !source.is_dir() {
+                item(Action::BlockDrift, "canonical skill directory is missing")
             } else {
                 match (to, status) {
                     (InstallMode::Link, Status::Fresh | Status::Stale) => {

@@ -608,11 +608,15 @@ impl FullValidation {
         };
         for skill in manifest.skills.values().filter(|skill| skill.enabled) {
             report.checked += 1;
-            let validation = validate::compose_validation(&manifest.skill_dir(&skill.name));
-            if !validation.ok() {
+            let errors = validate::gate_errors(
+                &manifest.skill_dir(&skill.name),
+                &skill.name,
+                Some(manifest),
+            );
+            if !errors.is_empty() {
                 report.failures.push(SkillFailure {
                     skill: skill.name.clone(),
-                    errors: validation.errors,
+                    errors,
                 });
             }
         }

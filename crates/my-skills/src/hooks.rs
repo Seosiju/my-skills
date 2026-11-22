@@ -11,7 +11,7 @@ use std::{env, fmt};
 use serde::Serialize;
 
 use crate::manifest::{self, MANIFEST_FILE, Manifest};
-use crate::{hosts, validate};
+use crate::validate;
 
 const NAMES: [&str; 4] = ["pre-commit", "post-merge", "post-rewrite", "post-checkout"];
 const MARKER: &str = "# managed-by: my-skills hooks ";
@@ -522,23 +522,5 @@ pub(crate) fn pre_commit(git: &Git<'_>) -> anyhow::Result<Vec<(String, String)>>
 }
 
 fn skill_errors(path: &Path, name: &str, manifest: Option<&Manifest>) -> Vec<String> {
-    let mut errors = validate::compose_validation(path).errors;
-    let skill = manifest.and_then(|manifest| manifest.skills.get(name));
-    for host in hosts::ALL {
-        let enabled = manifest
-            .and_then(|manifest| manifest.targets.get(host.name))
-            .map_or(host.default_enabled, |target| target.enabled);
-        if enabled
-            && skill.is_none_or(|skill| {
-                skill.hosts.is_empty() || skill.hosts.iter().any(|target| target == host.name)
-            })
-        {
-            for error in validate::validate_skill_for_host(path, host).errors {
-                if !errors.contains(&error) {
-                    errors.push(error);
-                }
-            }
-        }
-    }
-    errors
+    validate::gate_errors(path, name, manifest)
 }

@@ -132,14 +132,16 @@ fn convert_copy_to_link(
     };
     match created {
         Created::Link(kind) => {
+            // Spec §6.6 order: link, then state saved, then backup removed.
+            // If the record cannot be saved, undo the link and keep the copy
+            // so disk and state.json stay consistent (I6).
+            let committed = record_for(item, InstallMode::Link, Some(kind), None, audit)
+                .and_then(|record| commit_record(state, record));
+            if let Err(err) = committed {
+                restore(&backup, dest)?;
+                return Err(err);
+            }
             remove_real_dir(&backup)?;
-            state.put(record_for(
-                item,
-                InstallMode::Link,
-                Some(kind),
-                None,
-                audit,
-            )?);
             Ok(Outcome::Converted(Connection::Link(kind)))
         }
         Created::NeedsCopy { reason } => {
@@ -170,8 +172,33 @@ fn convert_link_to_copy(
         let _ = remove_real_dir(&staged);
         return Err(Error::io(dest, err));
     }
-    state.put(record_for(item, InstallMode::Copy, None, None, audit)?);
+    // Save before reporting success; on failure put the link back so disk
+    // and state.json agree (I6). The staged copy was the canonical content,
+    // so removing it loses nothing.
+    let committed = record_for(item, InstallMode::Copy, None, None, audit)
+        .and_then(|record| commit_record(state, record));
+    if let Err(err) = committed {
+        remove_real_dir(dest)?;
+        link::create_link(dest, &absolute(&item.source)?)?;
+        return Err(err);
+    }
     Ok(Outcome::Converted(Connection::Copy))
+}
+
+/// Put `record` and save state; on a failed save the previous record is
+/// restored in memory.
+fn commit_record(state: &mut State, record: InstallRecord) -> Result<()> {
+    let previous = state.get(&record.skill, &record.host).cloned();
+    let key = (record.skill.clone(), record.host.clone());
+    state.put(record);
+    if let Err(err) = state.save() {
+        match previous {
+            Some(previous) => state.put(previous),
+            None => state.remove(&key.0, &key.1),
+        }
+        return Err(err);
+    }
+    Ok(())
 }
 
 /// Remove a managed connection: links with `remove_link`, copies only after
@@ -191,7 +218,7 @@ fn remove_connection(dest: &Path) -> Result<()> {
 
 /// The only recursive delete in the crate. Refuses anything that is not a
 /// real directory, so it can never reach through a link (I2).
-fn remove_real_dir(path: &Path) -> Result<()> {
+pub(crate) fn remove_real_dir(path: &Path) -> Result<()> {
     match link::entry_kind(path)? {
         EntryKind::Missing => Ok(()),
         EntryKind::Dir => fs::remove_dir_all(path).map_err(|e| Error::io(path, e)),

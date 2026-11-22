@@ -218,6 +218,65 @@ pub fn compose_validation(path: &Path) -> ValidationResult {
     result
 }
 
+/// The drive's commit and health gate: standard validation plus the fixed
+/// security floor (`compose_validation`), the host checks for every enabled
+/// target the skill connects to, and the manifest's `[audit]` policy
+/// (profile, threshold, disabled rules). Used by the pre-commit hook and by
+/// `doctor`'s full validation so both apply the same rules (spec D2).
+/// `manifest = None` (unreadable manifest) falls back to built-in host
+/// defaults and the default audit policy.
+pub fn gate_errors(
+    path: &Path,
+    name: &str,
+    manifest: Option<&crate::manifest::Manifest>,
+) -> Vec<String> {
+    use crate::audit::{policy_from_settings, run_audit};
+    use crate::manifest::AuditSettings;
+
+    let mut errors = compose_validation(path).errors;
+    let skill = manifest.and_then(|m| m.skills.get(name));
+    for host in crate::hosts::ALL {
+        let enabled = manifest
+            .and_then(|m| m.targets.get(host.name))
+            .map_or(host.default_enabled, |target| target.enabled);
+        let listed =
+            skill.is_none_or(|s| s.hosts.is_empty() || s.hosts.iter().any(|h| h == host.name));
+        if enabled && listed {
+            for error in validate_skill_for_host(path, host).errors {
+                if !errors.contains(&error) {
+                    errors.push(error);
+                }
+            }
+        }
+    }
+
+    let settings = manifest.map_or_else(AuditSettings::default, |m| m.audit.clone());
+    match policy_from_settings(&settings) {
+        Ok(policy) if policy.enabled => match run_audit(path, &policy) {
+            Ok(result) => {
+                if let Some(threshold) = result.threshold {
+                    for finding in result.findings.iter().filter(|f| f.severity >= threshold) {
+                        let floor = format!("security: {}: {}", finding.file, finding.message);
+                        if !errors.contains(&floor) {
+                            errors.push(format!(
+                                "audit ({}): {}: {}: {}",
+                                finding.severity.label(),
+                                finding.rule_id,
+                                finding.file,
+                                finding.message
+                            ));
+                        }
+                    }
+                }
+            }
+            Err(err) => errors.push(format!("audit failed: {err}")),
+        },
+        Ok(_) => {}
+        Err(err) => errors.push(format!("audit policy: {err}")),
+    }
+    errors
+}
+
 #[cfg(test)]
 mod compose_tests {
     use super::*;

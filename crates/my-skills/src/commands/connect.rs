@@ -163,8 +163,23 @@ pub fn sync_manifest(manifest: &Manifest, args: &SyncArgs) -> ExitCode {
         Err(e) => return config_error(e),
     };
 
+    let scope = SyncScope {
+        skills: &skills,
+        hosts: &hosts,
+        include_orphans: args.skill.is_none(),
+        prune: !args.no_prune,
+    };
+    let items = match plan::plan_sync(manifest, &state, &scope, manifest.defaults.install_mode) {
+        Ok(items) => items,
+        Err(e) => return config_error(e),
+    };
+
     if args.check {
-        let mut drift = false;
+        // Status of every wanted pair (v0.4.1 output), plus what a real sync
+        // would prune (D3). Any planned write or block is drift (spec §6.4).
+        let mut drift = items
+            .iter()
+            .any(|i| i.action.writes() || i.action.is_block());
         for skill in &skills {
             if !skill.enabled {
                 continue;
@@ -180,19 +195,13 @@ pub fn sync_manifest(manifest: &Manifest, args: &SyncArgs) -> ExitCode {
                 }
             }
         }
+        for item in items.iter().filter(|i| i.action == Action::Remove) {
+            println!("{}", item.skill);
+            println!("  {:8} PRUNE ({})", item.host, item.reason);
+        }
         return exit(drift);
     }
 
-    let scope = SyncScope {
-        skills: &skills,
-        hosts: &hosts,
-        include_orphans: args.skill.is_none(),
-        prune: !args.no_prune,
-    };
-    let items = match plan::plan_sync(manifest, &state, &scope, manifest.defaults.install_mode) {
-        Ok(items) => items,
-        Err(e) => return config_error(e),
-    };
     let connecting: Vec<&Skill> = skills
         .iter()
         .copied()
@@ -367,6 +376,13 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
         if !args.skip_skill_install {
             preview.extend(["--yes".into(), "--dry-run".into()]);
             println!("  would run: {}", preview.join(" "));
+            if let Some(mode) = args.mode {
+                let mode: InstallMode = mode.into();
+                println!(
+                    "  with install mode: {} (from bootstrap --mode)",
+                    mode_label(mode)
+                );
+            }
         }
         println!("  then: my-skills hooks install");
         return ExitCode::SUCCESS;

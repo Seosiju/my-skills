@@ -252,9 +252,9 @@ impl Scaffold {
             for path in created {
                 let _ = fs::remove_file(path);
             }
-            if matches!(entry_kind(&skills), Ok(EntryKind::Dir)) {
-                let _ = fs::remove_dir_all(&skills);
-            }
+            // The crate's single recursive delete refuses anything but a
+            // real directory (spec §4 I2).
+            let _ = crate::install::remove_real_dir(&skills);
         }
         result?;
         runtime::cache_repo_root(target)?;
