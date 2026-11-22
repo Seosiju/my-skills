@@ -5,6 +5,7 @@
 > 브랜치: `dev`
 > 대상 저장소: github.com/Seosiju/my-skills (tool repo)
 > 함께 바뀌는 저장소: 사용자 개인 레지스트리 `my-agent-skills` (3단계에서만)
+> **진행 현황과 작업 인계: docs/2026-11-23-skill-drive-v1-status-and-handoff.md** (남은 작업은 그 문서 §7 기준)
 > 관련 문서: docs/2026-06-25-cross-agent-skill-registry-plan.md (copy/link 최초 결정),
 > docs/2026-07-09-cli-update-detection-and-command-plan.md (업데이트 명령)
 
