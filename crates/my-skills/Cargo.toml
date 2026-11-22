@@ -43,10 +43,23 @@ cap-fs-ext = "4"
 cap-std = "4"
 include_dir = "0.7"
 tempfile = "3"
+# stream I (self-update)
+flate2 = "1"
+fs4 = "1.1"
+semver = "1"
+url = "2"
 
 [target.'cfg(windows)'.dependencies]
 # stream C (link)
 junction = "1"
+# stream I (self-update)
+ureq = { version = "3.5", default-features = false, features = ["native-tls-no-default"] }
+zip = { version = "7.2", default-features = false, features = ["deflate-flate2"] }
+
+[target.'cfg(not(windows))'.dependencies]
+# stream I (self-update)
+tar = { version = "0.4.46", default-features = false }
+ureq = { version = "3.5", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
 assert_cmd = "2"

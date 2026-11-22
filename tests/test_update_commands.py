@@ -185,3 +185,90 @@ def test_update_runs_uv_install_and_verifies_stable_version(
     ]
     assert calls[1] == ["/bin/my-skills", "--version"]
     assert "Updated: my-skills 0.3.0" in out
+
+
+def _mock_stable_cutover(
+    monkeypatch: pytest.MonkeyPatch, current: str, tags: tuple[str, ...]
+) -> None:
+    latest_stable_ref = update_commands.latest_stable_ref
+
+    def run(
+        command: Sequence[str], _timeout: int | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        return _completed(
+            command, stdout="".join(f"abc123\trefs/tags/{tag}\n" for tag in tags)
+        )
+
+    def unexpected(*_args: object) -> None:
+        pytest.fail("migration must not look up uv or run the installer")
+
+    monkeypatch.setattr(update_commands, "read_install_info", lambda: _install_info(current))
+    monkeypatch.setattr(
+        update_commands, "latest_stable_ref", lambda: latest_stable_ref(run=run, which=_git_path)
+    )
+    monkeypatch.setattr(update_commands, "run_command", unexpected)
+    monkeypatch.setattr(shutil, "which", unexpected)
+
+
+@pytest.mark.parametrize("flags", [[], ["--dry-run"]])
+@pytest.mark.parametrize("release", ["v1.0.0", "v2.0.0"])
+def test_update_directs_python_users_to_binary_installers(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    flags: list[str],
+    release: str,
+) -> None:
+    _mock_stable_cutover(monkeypatch, "0.4.2", ("v0.4.2", release))
+
+    assert cli.main(["update", *flags]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
+        "Current: my-skills 0.4.2",
+        f"my-skills {release} is available. Install the Rust binary with:",
+        "  macOS/Linux: https://github.com/Seosiju/my-skills/blob/main/scripts/install.sh",
+        "  Windows:     https://github.com/Seosiju/my-skills/blob/main/scripts/install.ps1",
+        "  Migration spec: https://github.com/Seosiju/my-skills/blob/main/"
+        "docs/2026-11-23-skill-drive-rust-v1-spec.md",
+    ]
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize(
+    ("current", "code", "status"),
+    [("0.4.1", 1, "Update available"), ("0.4.2", 0, "Already up to date")],
+)
+def test_update_check_reports_compatible_python_release_before_migration_notice(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    current: str,
+    code: int,
+    status: str,
+) -> None:
+    _mock_stable_cutover(
+        monkeypatch, current, ("v0.4.1", "v0.4.2", "v0.4.3-rc.1", "v0.5.0", "v1.0.0")
+    )
+
+    assert cli.main(["update", "--check"]) == code
+
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
+        f"Current: my-skills {current}",
+        "Latest:  v0.4.2",
+        status,
+        "my-skills v1.0.0 is available.",
+    ]
+    assert captured.err == ""
+
+
+def test_update_check_does_not_suggest_migration_for_prerelease_only(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _mock_stable_cutover(monkeypatch, "0.4.2", ("v0.4.2", "v1.0.0-rc.1"))
+
+    assert cli.main(["update", "--check"]) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "Current: my-skills 0.4.2",
+        "Latest:  v0.4.2",
+        "Already up to date",
+    ]

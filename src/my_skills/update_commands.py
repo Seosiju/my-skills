@@ -5,7 +5,7 @@ import re
 import shutil
 import subprocess
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib import metadata
 from typing import Literal, cast
 
@@ -41,6 +41,7 @@ class RemoteRef:
     name: str
     version: tuple[int, int, int] | None
     commitish: str
+    compatible: RemoteRef | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +51,7 @@ class UpdateStatus:
     latest: RemoteRef | None
     state: UpdateState
     detail: str
+    migration: RemoteRef | None = None
 
 
 class UpdateCheckError(RuntimeError):
@@ -179,7 +181,20 @@ def latest_stable_ref(
 
     if not candidates:
         raise UpdateCheckError("no stable release tags found")
-    return max(candidates, key=lambda candidate: candidate.version or (0, 0, 0))
+    latest = max(candidates, key=_ref_version)
+    if _ref_version(latest)[0] < 1:
+        return latest
+    # Select the Python fallback from the same tag lookup as the migration release.
+    compatible = max(
+        (ref for ref in candidates if _ref_version(ref)[:2] == (0, 4)),
+        key=_ref_version,
+        default=None,
+    )
+    return replace(latest, compatible=compatible)
+
+
+def _ref_version(ref: RemoteRef) -> tuple[int, int, int]:
+    return ref.version or (0, 0, 0)
 
 
 def latest_main_ref(
@@ -243,7 +258,19 @@ def check_update(
     try:
         match channel:
             case "stable":
-                return _stable_status(current, stable_ref_reader())
+                latest = stable_ref_reader()
+                if _ref_version(latest)[0] < 1:
+                    return _stable_status(current, latest)
+                if latest.compatible is None:
+                    return UpdateStatus(
+                        current,
+                        "stable",
+                        None,
+                        "not-checked",
+                        "no compatible 0.4.x release tags found",
+                        migration=latest,
+                    )
+                return replace(_stable_status(current, latest.compatible), migration=latest)
             case "main":
                 return _main_status(current, main_ref_reader())
     except UpdateCheckError as exc:
