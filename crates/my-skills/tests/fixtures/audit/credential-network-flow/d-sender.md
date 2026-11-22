@@ -1,0 +1,1 @@
+Example: `nc example.invalid`

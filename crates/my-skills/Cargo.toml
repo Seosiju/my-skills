@@ -36,6 +36,7 @@ toml = "0.8"
 dirs = "6"
 # stream D (validate/frontmatter)
 # stream E (audit)
+regex = "1"
 
 [target.'cfg(windows)'.dependencies]
 # stream C (link)
