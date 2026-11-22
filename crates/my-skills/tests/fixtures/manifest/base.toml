@@ -1,0 +1,31 @@
+schema_version = " 2 "
+skills_root = "base-skills"
+
+[defaults]
+install_mode = "copy"
+collision = "skip"
+verify_after_install = false
+
+[audit]
+enabled = false
+profile = "base-profile"
+threshold = "high"
+disabled_rules = ["base-rule"]
+
+[targets.claude]
+enabled = false
+scope = "project"
+path = "~/base-target"
+
+[targets.custom]
+path = "~/${MY_SKILLS_STREAM_B_DIR}/custom"
+
+[skills.zeta]
+enabled = false
+
+[skills.alpha]
+enabled = false
+hosts = ["claude"]
+source_type = "synthetic"
+source_revision = "base-revision"
+group = "sample-group"
