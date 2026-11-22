@@ -267,15 +267,19 @@ fn write_hook(path: &Path, hook: HookEntry, script: &str) -> anyhow::Result<()> 
     Ok(())
 }
 
-pub(crate) fn uninstall(git: &Git<'_>) -> anyhow::Result<()> {
+pub(crate) fn uninstall(git: &Git<'_>, dry_run: bool) -> anyhow::Result<()> {
     let status = status(git)?;
     for hook in status.entries {
         let path = status.path.join(hook.name);
         if hook.status == HookState::Installed
             && inspect(&path, hook.name)?.status == HookState::Installed
         {
-            fs::remove_file(&path)?;
-            println!("removed: {}", path.display());
+            if dry_run {
+                println!("would remove: {}", path.display());
+            } else {
+                fs::remove_file(&path)?;
+                println!("removed: {}", path.display());
+            }
         }
     }
     Ok(())

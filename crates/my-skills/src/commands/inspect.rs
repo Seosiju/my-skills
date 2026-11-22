@@ -224,11 +224,25 @@ pub fn status(args: &StatusArgs) -> ExitCode {
 }
 
 pub fn set_root(args: &SetRootArgs) -> ExitCode {
+    let record = |path: &Path| {
+        if args.dry_run {
+            runtime::validate_repo_root(path)
+        } else {
+            runtime::cache_repo_root(path)
+        }
+    };
     let root = match &args.path {
-        Some(path) => runtime::cache_repo_root(Path::new(path)),
-        None => runtime::find_cwd_root(None).and_then(|p| runtime::cache_repo_root(&p)),
+        Some(path) => record(Path::new(path)),
+        None => runtime::find_cwd_root(None).and_then(|p| record(&p)),
     };
     match root {
+        Ok(root) if args.dry_run => {
+            println!(
+                "Dry run — would set active registry root to {}",
+                root.display()
+            );
+            ExitCode::SUCCESS
+        }
         Ok(root) => {
             println!("Active registry root set to {}", root.display());
             ExitCode::SUCCESS

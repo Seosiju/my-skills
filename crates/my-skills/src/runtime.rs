@@ -65,6 +65,18 @@ pub fn read_root_cache() -> Option<PathBuf> {
     is_root(&cached).then(|| resolve(&cached))
 }
 
+/// Validate `root` as a registry without recording it (`set-root --dry-run`).
+pub fn validate_repo_root(root: &Path) -> Result<PathBuf> {
+    let resolved = resolve(&manifest::expand_path(&root.to_string_lossy()));
+    if !is_root(&resolved) {
+        return Err(Error::Manifest(format!(
+            "{} does not contain {MANIFEST_FILE}",
+            root.display()
+        )));
+    }
+    Ok(resolved)
+}
+
 /// Validate and record `root` as the active registry.
 pub fn cache_repo_root(root: &Path) -> Result<PathBuf> {
     let resolved = resolve(&manifest::expand_path(&root.to_string_lossy()));

@@ -26,6 +26,21 @@ pub fn init_registry(args: &InitRegistryArgs) -> ExitCode {
         Err(err) => return super::config_error(err),
     };
     let with_defaults = !args.no_defaults;
+    if args.dry_run {
+        println!(
+            "Dry run — would create a private skill registry at {}",
+            display_path(&target)
+        );
+        println!(
+            "  seed skills: {}",
+            if with_defaults { "yes" } else { "no" }
+        );
+        println!(
+            "  git init and initial commit: {}",
+            if args.no_git { "no" } else { "yes" }
+        );
+        return ExitCode::SUCCESS;
+    }
     if let Err(err) = scaffold.create(&target, with_defaults) {
         return super::config_error(err);
     }
@@ -78,7 +93,7 @@ pub fn share(args: &ShareArgs) -> ExitCode {
         Ok(manifest) => manifest,
         Err(err) => return super::config_error(err),
     };
-    if args.plan {
+    if args.plan || args.dry_run {
         return match sharing::plan_share(&manifest, &args.from_host) {
             Ok(plan) => {
                 let output = if args.json {
@@ -151,14 +166,29 @@ pub fn share(args: &ShareArgs) -> ExitCode {
 }
 
 pub fn enable(args: &SkillNameArgs) -> ExitCode {
-    set_enabled(&args.skill, true)
+    set_enabled(&args.skill, true, args.dry_run)
 }
 
 pub fn disable(args: &SkillNameArgs) -> ExitCode {
-    set_enabled(&args.skill, false)
+    set_enabled(&args.skill, false, args.dry_run)
 }
 
-fn set_enabled(name: &str, enabled: bool) -> ExitCode {
+fn set_enabled(name: &str, enabled: bool, dry_run: bool) -> ExitCode {
+    if dry_run {
+        let manifest = match load() {
+            Ok(manifest) => manifest,
+            Err(err) => return super::config_error(err),
+        };
+        let Some(skill) = manifest.skills.get(name) else {
+            return super::config_error(format!("unknown skill: {name}"));
+        };
+        println!(
+            "Dry run — would mark {name} {} (currently {}); nothing written",
+            enabled_label(enabled),
+            enabled_label(skill.enabled)
+        );
+        return ExitCode::SUCCESS;
+    }
     let result = load().and_then(|manifest| {
         let path = manifest.root.join(MANIFEST_FILE);
         sharing::ensure_outside_hosts(&path, sharing::target_paths(&manifest))?;
@@ -183,6 +213,7 @@ pub fn import(args: &ImportArgs) -> ExitCode {
         args.enable,
         args.force,
         args.skip_audit,
+        args.dry_run,
         || {
             println!("WARN: audit skipped by explicit --skip-audit");
         },
@@ -190,6 +221,18 @@ pub fn import(args: &ImportArgs) -> ExitCode {
         Ok(result) => {
             let name = result.name;
             let canonical = display_path(&result.canonical);
+            if args.dry_run {
+                println!("Dry run — {name} passed validation and audit; nothing written");
+                if result.identical {
+                    println!("  canonical already matches: {canonical}");
+                } else if result.overwritten {
+                    println!("  would overwrite (--force): {canonical}");
+                } else {
+                    println!("  would import to: {canonical}");
+                }
+                println!("  would register as: {}", enabled_label(result.enabled));
+                return ExitCode::SUCCESS;
+            }
             if result.identical {
                 println!("up to date: {name} already matches the canonical skill");
             } else {

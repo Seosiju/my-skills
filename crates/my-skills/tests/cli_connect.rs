@@ -429,3 +429,20 @@ fn bootstrap_dry_run_shows_mode_override() {
         .success()
         .stdout(contains("with install mode: copy"));
 }
+
+#[test]
+fn hosts_a_skill_does_not_connect_to_do_not_validate_it() {
+    let env = Env::new();
+    // beta is claude-only; 800 characters breaks only the host limit (768).
+    env.write_skill("beta", &"x".repeat(800));
+    env.cmd()
+        .args(["install", "beta", "--host", "codex"])
+        .assert()
+        .success()
+        .stdout(contains("skipped: beta -> codex"));
+    env.cmd()
+        .args(["install", "beta", "--host", "claude"])
+        .assert()
+        .code(1)
+        .stdout(contains("[BLOCKED] beta: claude validation failed"));
+}

@@ -430,6 +430,10 @@ fn validate_selected(manifest: &Manifest, skills: &[&Skill], hosts_: &[String]) 
             }
         }
         for host in hosts_ {
+            // A host the skill does not connect to cannot reject it.
+            if !skill.hosts.is_empty() && !skill.hosts.iter().any(|h| h == host) {
+                continue;
+            }
             let Some(config) = get_host(host) else {
                 continue;
             };

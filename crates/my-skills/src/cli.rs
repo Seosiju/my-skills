@@ -145,11 +145,17 @@ pub struct InitRegistryArgs {
     pub no_defaults: bool,
     #[arg(long)]
     pub no_git: bool,
+    /// Show what would change; write nothing
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Args)]
 pub struct SetRootArgs {
     pub path: Option<String>,
+    /// Show what would change; write nothing
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Args)]
@@ -188,11 +194,17 @@ pub struct ShareArgs {
     pub force: bool,
     #[arg(long)]
     pub skip_audit: bool,
+    /// Same as --plan: show what would be shared; write nothing
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Args)]
 pub struct SkillNameArgs {
     pub skill: String,
+    /// Show what would change; write nothing
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Args)]
@@ -261,6 +273,9 @@ pub struct ImportArgs {
     pub enable: bool,
     #[arg(long)]
     pub skip_audit: bool,
+    /// Show what would change; write nothing
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Args)]
@@ -296,7 +311,7 @@ pub enum HooksAction {
     /// Write the managed hooks into the active registry
     Install(HooksInstallArgs),
     /// Remove the managed hooks (hooks without the marker are left alone)
-    Uninstall,
+    Uninstall(HooksUninstallArgs),
     /// Show which hooks are installed and whether my-skills is reachable
     Status,
     /// Hook entry points; called by the installed hook scripts
@@ -306,6 +321,12 @@ pub enum HooksAction {
 
 #[derive(Debug, Args)]
 pub struct HooksInstallArgs {
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct HooksUninstallArgs {
     #[arg(long)]
     pub dry_run: bool,
 }

@@ -15,7 +15,7 @@ pub fn run(args: &HooksArgs) -> ExitCode {
     };
     let result = hooks::Git::discover(&resolution.root).and_then(|git| match &args.action {
         HooksAction::Install(args) => hooks::install(&git, args.dry_run),
-        HooksAction::Uninstall => hooks::uninstall(&git),
+        HooksAction::Uninstall(args) => hooks::uninstall(&git, args.dry_run),
         HooksAction::Status => hooks::status(&git).map(|status| {
             println!("Hooks:");
             status.print();

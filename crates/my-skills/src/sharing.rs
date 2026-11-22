@@ -291,6 +291,7 @@ pub(crate) fn import(
     enable: bool,
     force: bool,
     skip_audit: bool,
+    dry_run: bool,
     on_audit_skip: impl FnOnce(),
 ) -> Operation<ImportOutcome> {
     let snapshot = Snapshot::new(manifest, source)?;
@@ -337,7 +338,11 @@ pub(crate) fn import(
         current,
         &enabled_hosts(manifest),
     )?;
-    snapshot.publish(manifest, &canonical, &old, &hash, &edit, || Ok(()))?;
+    // A dry run stops before anything persistent is written. The temporary
+    // staging copy and edit lock are released when they drop.
+    if !dry_run {
+        snapshot.publish(manifest, &canonical, &old, &hash, &edit, || Ok(()))?;
+    }
     Ok(ImportOutcome {
         name,
         canonical,
