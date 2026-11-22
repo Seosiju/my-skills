@@ -358,13 +358,14 @@ fn expand_os_path(path: &Path) -> PathBuf {
 fn absolute_path(path: &Path) -> PathBuf {
     let mut components = path.components();
     let path = if matches!(components.next(), Some(Component::Normal(name)) if name == "~") {
-        let mut home = paths::home_dir().into_os_string();
-        let rest = components.as_path();
-        if !rest.as_os_str().is_empty() {
-            home.push(std::path::MAIN_SEPARATOR_STR);
-            home.push(rest);
+        // Push component by component so the result uses the OS separator.
+        // Gluing "~/a/b" onto a Windows home as text leaves '/' inside the
+        // path, which a verbatim (\\?\) path treats as part of a name.
+        let mut home = paths::home_dir();
+        for component in components {
+            home.push(component);
         }
-        PathBuf::from(home)
+        home
     } else {
         path.to_owned()
     };
@@ -472,4 +473,21 @@ pub fn selected_skills<'m>(
         .into_iter()
         .map(|name| &manifest.skills[name])
         .collect())
+}
+
+#[cfg(test)]
+mod expand_path_separator_tests {
+    use super::*;
+
+    #[test]
+    fn tilde_paths_use_only_the_os_separator() {
+        let expanded = expand_path("~/.gemini/config/skills");
+        assert!(expanded.ends_with(Path::new(".gemini").join("config").join("skills")));
+        #[cfg(windows)]
+        assert!(
+            !expanded.to_string_lossy().contains('/'),
+            "mixed separators break verbatim paths: {}",
+            expanded.display()
+        );
+    }
 }
