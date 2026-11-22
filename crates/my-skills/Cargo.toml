@@ -37,12 +37,25 @@ dirs = "6"
 # stream D (validate/frontmatter)
 # stream E (audit)
 regex = "1"
+# stream I (self-update)
+flate2 = "1"
+fs4 = "1.1"
+semver = "1"
+tempfile = "3"
+url = "2"
 
 [target.'cfg(windows)'.dependencies]
 # stream C (link)
 junction = "1"
+# stream I (self-update)
+ureq = { version = "3.5", default-features = false, features = ["native-tls-no-default"] }
+zip = { version = "7.2", default-features = false, features = ["deflate-flate2"] }
+
+[target.'cfg(not(windows))'.dependencies]
+# stream I (self-update)
+tar = { version = "0.4.46", default-features = false }
+ureq = { version = "3.5", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
-tempfile = "3"
