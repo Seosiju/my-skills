@@ -619,7 +619,6 @@ fn state_failed_save_preserves_existing_state_and_cleans_owned_temp() {
 }
 
 #[test]
-#[ignore = "needs stream D: validate_name"]
 fn data_path_is_shared_and_create_is_opt_in() {
     with_temp_home("data_path_is_shared_and_create_is_opt_in", |root| {
         #[cfg(windows)]
@@ -635,7 +634,6 @@ fn data_path_is_shared_and_create_is_opt_in() {
 }
 
 #[test]
-#[ignore = "needs stream D: validate_name"]
 fn data_path_rejects_invalid_names_before_creating_directories() {
     with_temp_home(
         "data_path_rejects_invalid_names_before_creating_directories",

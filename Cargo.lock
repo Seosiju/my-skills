@@ -388,6 +388,7 @@ dependencies = [
  "dirs",
  "junction",
  "predicates",
+ "regex",
  "serde",
  "serde_json",
  "sha2",
