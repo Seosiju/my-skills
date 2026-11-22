@@ -1,11 +1,22 @@
-//! Skill security audit. Stream E. Mirrors v0.4.1 `audit/` including
-//! `builtin_rules.yaml`. Stream E may add private submodules here
-//! (analyzers, rules, markdown, dataflow, ...).
+//! Skill security audit, including the v0.4.1 built-in rules.
 
-use std::path::{Path, PathBuf};
+mod analyzers;
+mod bundle;
+mod commands;
+mod formatting;
+mod markdown;
+mod patterns;
+mod rules;
+mod static_checks;
+mod structure;
 
-use crate::Result;
+use std::path::{Component, Path, PathBuf};
+
 use crate::manifest::AuditSettings;
+use crate::{Error, Result};
+
+pub use bundle::cross_skill_findings;
+pub use formatting::{finding_json, format_gate, gate_json, result_json};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Severity {
@@ -25,6 +36,21 @@ impl Severity {
             Severity::Medium => "medium",
             Severity::High => "high",
             Severity::Critical => "critical",
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self> {
+        match value
+            .trim_matches(|ch: char| ch.is_whitespace() || matches!(ch, '\u{1c}'..='\u{1f}'))
+            .to_uppercase()
+            .as_str()
+        {
+            "INFO" => Ok(Self::Info),
+            "LOW" => Ok(Self::Low),
+            "MEDIUM" => Ok(Self::Medium),
+            "HIGH" => Ok(Self::High),
+            "CRITICAL" => Ok(Self::Critical),
+            _ => Err(Error::Manifest(format!("unknown audit severity: {value}"))),
         }
     }
 }
@@ -57,7 +83,7 @@ impl AuditResult {
     /// Byte-identical to v0.4.1 `AuditResult.result_hash` (sorted-key compact
     /// JSON list of findings, `"sha256:" + hex`).
     pub fn result_hash(&self) -> String {
-        todo!("stream E")
+        formatting::result_hash(&self.findings)
     }
 }
 
@@ -67,6 +93,31 @@ pub struct AuditPolicy {
     pub profile: String,
     pub threshold: Option<Severity>,
     pub disabled_rules: Vec<String>,
+}
+
+impl Default for AuditPolicy {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            profile: "default".into(),
+            threshold: None,
+            disabled_rules: Vec::new(),
+        }
+    }
+}
+
+impl AuditPolicy {
+    pub fn effective_threshold(&self) -> Option<Severity> {
+        self.threshold.or(match self.profile.as_str() {
+            "strict" => Some(Severity::High),
+            "permissive" => None,
+            _ => Some(Severity::Critical),
+        })
+    }
+
+    fn is_disabled(&self, id: &str) -> bool {
+        self.disabled_rules.iter().any(|rule| rule == id)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,13 +133,50 @@ impl AuditGateResult {
 }
 
 /// v0.4.1 `policy_from_config`, including the profile's effective threshold.
-pub fn policy_from_settings(_settings: &AuditSettings) -> Result<AuditPolicy> {
-    todo!("stream E")
+pub fn policy_from_settings(settings: &AuditSettings) -> Result<AuditPolicy> {
+    let mut disabled_rules = settings.disabled_rules.clone();
+    disabled_rules.sort_unstable();
+    disabled_rules.dedup();
+    Ok(AuditPolicy {
+        enabled: settings.enabled,
+        profile: settings.profile.clone(),
+        threshold: settings
+            .threshold
+            .as_deref()
+            .map(Severity::parse)
+            .transpose()?,
+        disabled_rules,
+    })
 }
 
 /// v0.4.1 `run_audit` for one skill directory.
-pub fn run_audit(_skill_dir: &Path, _policy: &AuditPolicy) -> Result<AuditResult> {
-    todo!("stream E")
+pub fn run_audit(skill_dir: &Path, policy: &AuditPolicy) -> Result<AuditResult> {
+    // pathlib removes redundant separators and "." components without
+    // resolving ".." or links.
+    let mut root: PathBuf = skill_dir
+        .components()
+        .filter(|component| *component != Component::CurDir)
+        .collect();
+    if root.as_os_str().is_empty() {
+        root.push(".");
+    }
+    let skill = match root.components().next_back() {
+        Some(Component::Normal(name)) => name.to_string_lossy().into_owned(),
+        Some(Component::ParentDir) => "..".into(),
+        _ => String::new(),
+    };
+    let mut result = AuditResult {
+        skill,
+        root,
+        findings: Vec::new(),
+        profile: policy.profile.clone(),
+        threshold: None,
+    };
+    if policy.enabled {
+        result.findings = analyzers::scan(&result.root, policy);
+        result.threshold = policy.effective_threshold();
+    }
+    Ok(result)
 }
 
 /// v0.4.1 `audit_skills`: skipped when `skip` or the policy is disabled.
