@@ -10,7 +10,7 @@ use my_skills::registry::manifest::AuditSettings;
 use serde_json::{Value, json};
 use tempfile::tempdir;
 
-const GOLDEN: &str = include_str!("../../../tests/golden/audit/golden.json");
+const GOLDEN: &str = include_str!("golden/audit/golden.json");
 
 fn golden() -> Value {
     serde_json::from_str(GOLDEN).unwrap()
@@ -85,6 +85,8 @@ fn bundles_match_python_and_all_builtin_rules_are_exercised() {
     }
     assert_eq!(
         include_str!("../src/check/audit/builtin_rules.yaml"),
+        // Transitional: compares against the Python copy. Remove with the
+        // Python package (handoff §7 D).
         include_str!("../../../src/my_skills/audit/builtin_rules.yaml")
     );
 }
@@ -189,7 +191,7 @@ fn severity_parsing_matches_python_and_disabled_audit_clears_threshold() {
     settings.disabled_rules = vec!["secret".into(), "secret".into()];
     let policy = policy_from_settings(&settings).unwrap();
     assert_eq!(policy.disabled_rules, ["secret"]);
-    let path = fixture(&json!("tests/fixtures/secret-skill"));
+    let path = fixture(&json!("crates/my-skills/tests/fixtures/shared/secret-skill"));
     let disabled = run_audit(&path, &policy).unwrap();
     assert!(disabled.findings.is_empty());
     assert!(!disabled.blocked());

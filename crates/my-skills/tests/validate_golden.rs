@@ -20,7 +20,7 @@ fn matches_python_validation_for_every_fixture_and_builtin_host() {
         serde_json::from_str(include_str!("golden/validate/validation.json")).unwrap();
     let worktree = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let fixtures = worktree.join("crates/my-skills/tests/fixtures/validate");
-    let shared = worktree.join("tests/fixtures");
+    let shared = worktree.join("crates/my-skills/tests/fixtures/shared");
     let temp = tempfile::tempdir().unwrap();
     let expected_hosts: BTreeSet<_> = ALL
         .iter()

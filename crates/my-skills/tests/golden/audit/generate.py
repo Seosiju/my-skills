@@ -14,7 +14,7 @@ from my_skills.audit.formatting import finding_json, format_gate, gate_json, res
 from my_skills.audit.gate import audit_skills
 from my_skills.audit.models import severity_from_text
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[5]
 FIXTURES = Path("crates/my-skills/tests/fixtures/audit")
 OUTPUT = Path(__file__).with_name("golden.json").resolve()
 
@@ -100,7 +100,7 @@ def unicode_hash_case():
 def generate():
     paths = sorted(
         path.parent
-        for base in (Path("tests/fixtures"), FIXTURES)
+        for base in (Path("crates/my-skills/tests/fixtures/shared"), FIXTURES)
         for path in base.glob("*/SKILL.md")
     )
     scans = [scan_case(path) for path in paths]

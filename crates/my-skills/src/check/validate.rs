@@ -283,10 +283,9 @@ mod compose_tests {
 
     fn fixture(name: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
             .join("tests")
             .join("fixtures")
+            .join("shared")
             .join(name)
     }
 

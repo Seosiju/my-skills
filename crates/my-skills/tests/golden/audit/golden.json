@@ -1108,7 +1108,7 @@
       }
     },
     {
-      "path": "tests/fixtures/abs-path-warning",
+      "path": "crates/my-skills/tests/fixtures/shared/abs-path-warning",
       "findings": [
         {
           "rule_id": "abs-user-path",
@@ -1122,28 +1122,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "abs-path-warning",
-          "path": "tests/fixtures/abs-path-warning",
+          "path": "crates/my-skills/tests/fixtures/shared/abs-path-warning",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "abs-path-warning",
-          "path": "tests/fixtures/abs-path-warning",
+          "path": "crates/my-skills/tests/fixtures/shared/abs-path-warning",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "abs-path-warning",
-          "path": "tests/fixtures/abs-path-warning",
+          "path": "crates/my-skills/tests/fixtures/shared/abs-path-warning",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "abs-path-warning",
-          "path": "tests/fixtures/abs-path-warning",
+          "path": "crates/my-skills/tests/fixtures/shared/abs-path-warning",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1151,34 +1151,34 @@
       }
     },
     {
-      "path": "tests/fixtures/bad-name",
+      "path": "crates/my-skills/tests/fixtures/shared/bad-name",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "bad-name",
-          "path": "tests/fixtures/bad-name",
+          "path": "crates/my-skills/tests/fixtures/shared/bad-name",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "bad-name",
-          "path": "tests/fixtures/bad-name",
+          "path": "crates/my-skills/tests/fixtures/shared/bad-name",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "bad-name",
-          "path": "tests/fixtures/bad-name",
+          "path": "crates/my-skills/tests/fixtures/shared/bad-name",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "bad-name",
-          "path": "tests/fixtures/bad-name",
+          "path": "crates/my-skills/tests/fixtures/shared/bad-name",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1186,34 +1186,34 @@
       }
     },
     {
-      "path": "tests/fixtures/good-skill",
+      "path": "crates/my-skills/tests/fixtures/shared/good-skill",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "good-skill",
-          "path": "tests/fixtures/good-skill",
+          "path": "crates/my-skills/tests/fixtures/shared/good-skill",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "good-skill",
-          "path": "tests/fixtures/good-skill",
+          "path": "crates/my-skills/tests/fixtures/shared/good-skill",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "good-skill",
-          "path": "tests/fixtures/good-skill",
+          "path": "crates/my-skills/tests/fixtures/shared/good-skill",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "good-skill",
-          "path": "tests/fixtures/good-skill",
+          "path": "crates/my-skills/tests/fixtures/shared/good-skill",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1221,34 +1221,34 @@
       }
     },
     {
-      "path": "tests/fixtures/malformed-frontmatter",
+      "path": "crates/my-skills/tests/fixtures/shared/malformed-frontmatter",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "malformed-frontmatter",
-          "path": "tests/fixtures/malformed-frontmatter",
+          "path": "crates/my-skills/tests/fixtures/shared/malformed-frontmatter",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "malformed-frontmatter",
-          "path": "tests/fixtures/malformed-frontmatter",
+          "path": "crates/my-skills/tests/fixtures/shared/malformed-frontmatter",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "malformed-frontmatter",
-          "path": "tests/fixtures/malformed-frontmatter",
+          "path": "crates/my-skills/tests/fixtures/shared/malformed-frontmatter",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "malformed-frontmatter",
-          "path": "tests/fixtures/malformed-frontmatter",
+          "path": "crates/my-skills/tests/fixtures/shared/malformed-frontmatter",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1256,34 +1256,34 @@
       }
     },
     {
-      "path": "tests/fixtures/missing-description",
+      "path": "crates/my-skills/tests/fixtures/shared/missing-description",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "missing-description",
-          "path": "tests/fixtures/missing-description",
+          "path": "crates/my-skills/tests/fixtures/shared/missing-description",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "missing-description",
-          "path": "tests/fixtures/missing-description",
+          "path": "crates/my-skills/tests/fixtures/shared/missing-description",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "missing-description",
-          "path": "tests/fixtures/missing-description",
+          "path": "crates/my-skills/tests/fixtures/shared/missing-description",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "missing-description",
-          "path": "tests/fixtures/missing-description",
+          "path": "crates/my-skills/tests/fixtures/shared/missing-description",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1291,34 +1291,34 @@
       }
     },
     {
-      "path": "tests/fixtures/missing-name",
+      "path": "crates/my-skills/tests/fixtures/shared/missing-name",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "missing-name",
-          "path": "tests/fixtures/missing-name",
+          "path": "crates/my-skills/tests/fixtures/shared/missing-name",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "missing-name",
-          "path": "tests/fixtures/missing-name",
+          "path": "crates/my-skills/tests/fixtures/shared/missing-name",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "missing-name",
-          "path": "tests/fixtures/missing-name",
+          "path": "crates/my-skills/tests/fixtures/shared/missing-name",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "missing-name",
-          "path": "tests/fixtures/missing-name",
+          "path": "crates/my-skills/tests/fixtures/shared/missing-name",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1326,34 +1326,34 @@
       }
     },
     {
-      "path": "tests/fixtures/missing-reference",
+      "path": "crates/my-skills/tests/fixtures/shared/missing-reference",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "missing-reference",
-          "path": "tests/fixtures/missing-reference",
+          "path": "crates/my-skills/tests/fixtures/shared/missing-reference",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "missing-reference",
-          "path": "tests/fixtures/missing-reference",
+          "path": "crates/my-skills/tests/fixtures/shared/missing-reference",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "missing-reference",
-          "path": "tests/fixtures/missing-reference",
+          "path": "crates/my-skills/tests/fixtures/shared/missing-reference",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "missing-reference",
-          "path": "tests/fixtures/missing-reference",
+          "path": "crates/my-skills/tests/fixtures/shared/missing-reference",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1361,34 +1361,34 @@
       }
     },
     {
-      "path": "tests/fixtures/name-mismatch",
+      "path": "crates/my-skills/tests/fixtures/shared/name-mismatch",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "name-mismatch",
-          "path": "tests/fixtures/name-mismatch",
+          "path": "crates/my-skills/tests/fixtures/shared/name-mismatch",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "name-mismatch",
-          "path": "tests/fixtures/name-mismatch",
+          "path": "crates/my-skills/tests/fixtures/shared/name-mismatch",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "name-mismatch",
-          "path": "tests/fixtures/name-mismatch",
+          "path": "crates/my-skills/tests/fixtures/shared/name-mismatch",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "name-mismatch",
-          "path": "tests/fixtures/name-mismatch",
+          "path": "crates/my-skills/tests/fixtures/shared/name-mismatch",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1396,34 +1396,34 @@
       }
     },
     {
-      "path": "tests/fixtures/no-frontmatter",
+      "path": "crates/my-skills/tests/fixtures/shared/no-frontmatter",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "no-frontmatter",
-          "path": "tests/fixtures/no-frontmatter",
+          "path": "crates/my-skills/tests/fixtures/shared/no-frontmatter",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "no-frontmatter",
-          "path": "tests/fixtures/no-frontmatter",
+          "path": "crates/my-skills/tests/fixtures/shared/no-frontmatter",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "no-frontmatter",
-          "path": "tests/fixtures/no-frontmatter",
+          "path": "crates/my-skills/tests/fixtures/shared/no-frontmatter",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "no-frontmatter",
-          "path": "tests/fixtures/no-frontmatter",
+          "path": "crates/my-skills/tests/fixtures/shared/no-frontmatter",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1431,7 +1431,7 @@
       }
     },
     {
-      "path": "tests/fixtures/secret-skill",
+      "path": "crates/my-skills/tests/fixtures/shared/secret-skill",
       "findings": [
         {
           "rule_id": "aws-key",
@@ -1452,28 +1452,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "secret-skill",
-          "path": "tests/fixtures/secret-skill",
+          "path": "crates/my-skills/tests/fixtures/shared/secret-skill",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "default": {
           "skill": "secret-skill",
-          "path": "tests/fixtures/secret-skill",
+          "path": "crates/my-skills/tests/fixtures/shared/secret-skill",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "strict": {
           "skill": "secret-skill",
-          "path": "tests/fixtures/secret-skill",
+          "path": "crates/my-skills/tests/fixtures/shared/secret-skill",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "secret-skill",
-          "path": "tests/fixtures/secret-skill",
+          "path": "crates/my-skills/tests/fixtures/shared/secret-skill",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1481,34 +1481,34 @@
       }
     },
     {
-      "path": "tests/fixtures/unterminated-frontmatter",
+      "path": "crates/my-skills/tests/fixtures/shared/unterminated-frontmatter",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "unterminated-frontmatter",
-          "path": "tests/fixtures/unterminated-frontmatter",
+          "path": "crates/my-skills/tests/fixtures/shared/unterminated-frontmatter",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "unterminated-frontmatter",
-          "path": "tests/fixtures/unterminated-frontmatter",
+          "path": "crates/my-skills/tests/fixtures/shared/unterminated-frontmatter",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "unterminated-frontmatter",
-          "path": "tests/fixtures/unterminated-frontmatter",
+          "path": "crates/my-skills/tests/fixtures/shared/unterminated-frontmatter",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "unterminated-frontmatter",
-          "path": "tests/fixtures/unterminated-frontmatter",
+          "path": "crates/my-skills/tests/fixtures/shared/unterminated-frontmatter",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false

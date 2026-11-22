@@ -9,7 +9,7 @@ from my_skills.validation import validate_skill, validate_skill_for_host
 
 HERE = Path(__file__).resolve().parent
 RUST_FIXTURES = HERE.parent.parent / "fixtures" / "validate"
-PYTHON_FIXTURES = HERE.parents[4] / "tests" / "fixtures"
+PYTHON_FIXTURES = HERE.parents[1] / "fixtures" / "shared"
 SHARED_FIXTURES = (
     "bad-name",
     "good-skill",
