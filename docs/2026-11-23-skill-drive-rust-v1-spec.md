@@ -456,7 +456,7 @@ skills/                    seed 원본 (Rust는 빌드할 때 binary에 포함)
 
 ## 12. Windows 작업 지시서 (Windows PC에서 실행)
 
-이 절은 Windows PC에서 에이전트에게 그대로 넘기는 작업 지시다.
+이 절은 Windows PC에서 확인할 항목의 목록이다. **실행 절차는 `docs/2026-11-23-skill-drive-windows-runbook.md`를 따른다.**
 
 **전제:** `dev` 브랜치와 1단계 결과물이 원격에 push돼 있다. Windows PC에 Git for Windows와 Rust toolchain(MSVC)이 있다.
 

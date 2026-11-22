@@ -269,8 +269,11 @@ Windows 전용 코드(`cfg(windows)`)는 CI에서만 컴파일된다.
 
 ### Windows PC에서 이어갈 때 (H)
 
-스펙 §12 "Windows 작업 지시서"를 그대로 넘긴다. 결과는 스펙 §12 "Windows 확인 결과"의 "실기기" 항목에 적고 `dev`에 커밋한다.
-F 전이라면 그 PC에서 `cargo build --release`로 만든 binary를 쓴다.
+**`docs/2026-11-23-skill-drive-windows-runbook.md`를 그대로 넘긴다.**
+사전 점검, 빌드, 실제 데이터를 건드리지 않는 확인, 실제 연결(dry-run 후 승인), 결과 기록 양식을 순서대로 담았다.
+스펙 §12는 확인할 항목의 목록이고, 실행 절차는 이 runbook을 따른다.
+- 레지스트리 manifest에는 아직 `install_mode = "copy"`가 명시돼 있다. 그래서 Windows에서는 `my-skills.local.toml`로 link를 지정한다(runbook 4.2).
+- hook은 PATH의 `my-skills`를 먼저 찾는다. Python 0.4.x가 앞에 있으면 hook이 잘못 동작한다(runbook 3.5, 4.1). 맥 전환(G)에도 같은 주의가 필요하다.
 
 ---
 
