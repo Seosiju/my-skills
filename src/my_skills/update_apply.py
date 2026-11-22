@@ -12,6 +12,8 @@ VersionRunner = Callable[
     [Sequence[str], int | None],
     subprocess.CompletedProcess[str],
 ]
+V1_FILES = "https://github.com/Seosiju/my-skills/blob/main"
+V1_SPEC = "docs/2026-11-23-skill-drive-rust-v1-spec.md"
 
 
 class UpdateArgs(Protocol):
@@ -120,10 +122,19 @@ def _verify_main_commit(status: update_commands.UpdateStatus) -> bool:
 def cmd_update(args: UpdateArgs) -> int:
     status = update_commands.check_update(args.channel)
     print(f"Current: my-skills {status.current.version}")
+    if status.migration is not None and not args.check:
+        print(f"my-skills {status.migration.name} is available. Install the Rust binary with:")
+        print(f"  macOS/Linux: {V1_FILES}/scripts/install.sh")
+        print(f"  Windows:     {V1_FILES}/scripts/install.ps1")
+        print(f"  Migration spec: {V1_FILES}/{V1_SPEC}")
+        return 0
     _print_target(status)
 
     if args.check:
-        return _check_exit_code(status)
+        code = _check_exit_code(status)
+        if status.migration is not None:
+            print(f"my-skills {status.migration.name} is available.")
+        return code
     if status.state == "not-checked" or status.latest is None:
         print(f"error: could not resolve update target ({status.detail})", file=sys.stderr)
         return 2
