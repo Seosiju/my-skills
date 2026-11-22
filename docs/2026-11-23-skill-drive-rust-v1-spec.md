@@ -1,12 +1,17 @@
 # Skill Drive 구조 전환 및 Rust v1 재작성 스펙
 
 > 작성일: 2026-11-23
-> 상태: 검토 대기 (구현 전 확정 필요)
+> 상태: 확정 (Q1, Q3, Q5~Q7은 구현 중 결정)
 > 브랜치: `dev`
 > 대상 저장소: github.com/Seosiju/my-skills (tool repo)
 > 함께 바뀌는 저장소: 사용자 개인 레지스트리 `my-agent-skills` (3단계에서만)
 > 관련 문서: docs/2026-06-25-cross-agent-skill-registry-plan.md (copy/link 최초 결정),
 > docs/2026-07-09-cli-update-detection-and-command-plan.md (업데이트 명령)
+
+**제품 정의:** my-skills는 **개인 스킬 드라이브**다. 스킬 원본은 registry 한 곳에만 있고,
+모든 기기의 모든 에이전트가 같은 스킬을 본다. 어디서 고쳐도 원본이 고쳐지고, 지우거나 끄면
+모든 곳에서 사라진다. 각 에이전트의 스킬 폴더에는 설치본이 아니라 원본을 가리키는 바로가기(link)만 둔다.
+이 문서의 모든 결정은 이 정의를 기준으로 판단한다.
 
 ## 0. 용어
 
@@ -174,6 +179,8 @@ junction(관리자 권한 불필요)과 경고를 남기는 copy 대체 동작�
 - 원하는 상태인데 연결이 없으면 생성한다. 원하는 상태가 아닌데 managed 연결이 있으면 해제한다.
 - 해제할 때도 I2, I3, I5, I7을 지킨다. 특히 **비활성 target은 건드리지 않는다**. 실제로 hermes 기록 5건이 그대로 보존돼야 한다.
 - 출력과 `--dry-run`에 생성·해제 목록을 보여 준다. `--no-prune`을 주면 해제를 건너뛴다.
+- **해제가 기본이다 (Q4 결정).** 드라이브에서 지운 파일이 모든 기기에서 사라지는 것과 같다.
+  link 해제는 원본을 건드리지 않으므로, 실수로 꺼도 다시 enable하고 sync하면 돌아온다.
 
 ### D4. registry는 기본 브랜치 하나로 쓴다
 
@@ -267,11 +274,12 @@ Windows에서는 `\\?\` 접두어를 제거하고 비교한다.
 - 각 파일은 POSIX sh이고, 첫 줄 아래에 `# managed-by: my-skills hooks v1` 표식을 둔다.
   Git for Windows도 hook을 자체 sh로 실행하므로 같은 파일이 동작한다.
 - 표식이 없는 기존 hook이 있으면 덮어쓰지 않고 막는다. 기존 hook에서 호출할 한 줄을 안내한다.
-- pre-commit 동작:
-  1. staged 변경에 포함된 `skills/<name>/`를 모은다.
-  2. 그 스킬과 manifest에 대해 `validate`와 `audit`를 실행한다.
-  3. 하나라도 실패하면 종료 코드 1로 커밋을 막는다.
-  4. manifest가 바뀌었으면 manifest 검증도 실행한다.
+- pre-commit 동작 (Q2 결정: 이번 커밋에서 바뀐 스킬만, staged 내용 기준):
+  1. staged 변경에 포함된 `skills/<name>/`를 모은다. 삭제만 된 스킬은 제외한다.
+  2. **staged 버전**을 임시 폴더로 꺼낸다(`git checkout-index` 등). 작업 폴더 파일이 아니라 실제로 커밋될 내용을 검사한다.
+  3. 꺼낸 스킬에 대해 `validate`와 `audit`를 실행한다. manifest가 staged 변경에 있으면 manifest 검증도 실행한다.
+  4. 하나라도 실패하면 종료 코드 1로 커밋을 막는다. 메시지에는 스킬 이름과 실패 항목을 적는다.
+  5. 바뀌지 않은 스킬의 문제(예전 `--no-verify` 커밋, CLI 업데이트로 엄격해진 규칙)는 `doctor`의 전체 검사가 알린다.
 - post-* 동작: `my-skills sync --yes --quiet` 결과가 실패여도 종료 코드 0을 돌려준다. 이 hook들은 git 작업을 되돌리지 못한다.
 - hook 안에서 `my-skills`를 PATH에서 찾지 못하면, 설치 당시의 절대 경로로 다시 찾는다. 설치할 때 그 경로를 hook에 적어 둔다.
 - `hooks status`는 hook 설치 여부와 표식 버전, PATH에서 실행할 수 있는지를 출력한다. `doctor`에도 포함한다.
@@ -467,9 +475,9 @@ skills/                    seed 원본 (Rust는 빌드할 때 binary에 포함)
 | ID | 질문 | 제안 |
 |---|---|---|
 | Q1 | Windows에서 세 host의 실제 스킬 경로와 junction 발견 여부 | §12에서 확인 |
-| Q2 | pre-commit 검사 범위: staged 스킬만 볼지, 전체를 볼지 | staged 스킬과 manifest만. 시간이 짧고 실패 원인이 분명함 |
+| Q2 | pre-commit 검사 범위 | **결정(2026-11-23)**: 이번 커밋에서 바뀐 스킬과 manifest만, staged 내용 기준. 전체 검사는 `doctor` (§6.7) |
 | Q3 | Windows state 경로를 `%LOCALAPPDATA%`로 옮길지 | Windows에 0.4.1 설치 기록이 없으면 v1부터 `%LOCALAPPDATA%\my-skills\state`로 옮기고, 있으면 유지 |
-| Q4 | sync의 해제를 기본으로 할지 | 기본으로 함(`--no-prune`으로 끔). 드라이브 모델에 맞음 |
+| Q4 | sync의 해제를 기본으로 할지 | **결정(2026-11-23)**: 기본으로 해제. `--no-prune`으로 끔 (D3) |
 | Q5 | binary 코드 서명 | 1차는 서명 없이 설치 스크립트(curl/PowerShell)로 배포. 브라우저로 받으면 경고가 뜰 수 있음을 문서에 적음 |
 | Q6 | audit 규칙 YAML을 그대로 둘지 | Rust 구현 시점에 YAML crate 상태를 보고 결정 |
 | Q7 | Python 0.4.x에 Rust로 옮기라는 안내를 넣을지 | `v1.0.0`을 배포할 때 0.4.x 마지막 패치에 `doctor` 안내 한 줄을 추가 |
