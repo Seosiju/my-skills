@@ -191,7 +191,9 @@ fn severity_parsing_matches_python_and_disabled_audit_clears_threshold() {
     settings.disabled_rules = vec!["secret".into(), "secret".into()];
     let policy = policy_from_settings(&settings).unwrap();
     assert_eq!(policy.disabled_rules, ["secret"]);
-    let path = fixture(&json!("crates/my-skills/tests/fixtures/shared/secret-skill"));
+    let path = fixture(&json!(
+        "crates/my-skills/tests/fixtures/shared/secret-skill"
+    ));
     let disabled = run_audit(&path, &policy).unwrap();
     assert!(disabled.findings.is_empty());
     assert!(!disabled.blocked());
