@@ -37,17 +37,18 @@ pub fn config_home() -> PathBuf {
 
 /// Base of per-skill data (spec §8.4). POSIX: `$XDG_DATA_HOME/my-skills` or
 /// `~/.local/share/my-skills`. Windows: `%LOCALAPPDATA%\my-skills\data`.
+#[cfg(windows)]
 pub fn data_root() -> PathBuf {
-    #[cfg(windows)]
-    {
-        let base =
-            env_dir("LOCALAPPDATA").unwrap_or_else(|| home_dir().join("AppData").join("Local"));
-        return base.join("my-skills").join("data");
-    }
-    #[cfg(not(windows))]
-    {
-        env_dir("XDG_DATA_HOME")
-            .unwrap_or_else(|| home_dir().join(".local").join("share"))
-            .join("my-skills")
-    }
+    env_dir("LOCALAPPDATA")
+        .unwrap_or_else(|| home_dir().join("AppData").join("Local"))
+        .join("my-skills")
+        .join("data")
+}
+
+/// See the Windows variant above for the layout.
+#[cfg(not(windows))]
+pub fn data_root() -> PathBuf {
+    env_dir("XDG_DATA_HOME")
+        .unwrap_or_else(|| home_dir().join(".local").join("share"))
+        .join("my-skills")
 }

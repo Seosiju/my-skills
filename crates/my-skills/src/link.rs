@@ -430,7 +430,6 @@ mod tests {
 
     #[cfg(unix)]
     mod unix {
-        use super::super::*;
         use super::*;
 
         #[test]
@@ -479,7 +478,6 @@ mod tests {
 
     #[cfg(windows)]
     mod windows {
-        use super::super::*;
         use super::*;
 
         #[test]
