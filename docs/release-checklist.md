@@ -111,3 +111,31 @@ If a release is bad:
 - Ship a new patch tag after the fix is verified.
 - If the problem can expose secrets or overwrite user data, follow
   `SECURITY.md` and use a GitHub security advisory.
+
+## 6. Rust v1 Release
+
+1. Confirm that CI passes on `main` or `dev` for Ubuntu, macOS, and Windows.
+2. Run **Release Rust** with `workflow_dispatch` before tagging. This builds and
+   packages all four targets and uploads the `rust-release` workflow artifact.
+3. Download the workflow artifact. Run `sha256sum --check SHA256SUMS` on Linux
+   or `shasum -a 256 -c SHA256SUMS` on macOS. Confirm each archive contains
+   `my-skills` (or `my-skills.exe`), `LICENSE`, and `README.md`. Confirm
+   `my-skills --version` matches the planned tag on each matching platform and
+   smoke-test the installers with temporary install directories.
+4. Push the approved `v1.*` tag when ready to release. The tag-triggered run
+   attaches all four archives and `SHA256SUMS` to the GitHub Release. Tags ending
+   in `-alpha.N`, `-beta.N`, or `-rc.N` publish as prereleases.
+
+From a tool repo checkout, run `sh scripts/install.sh` on macOS or Linux or
+`powershell -File scripts/install.ps1` on Windows. The installers use the
+latest stable GitHub Release by default. Set `MY_SKILLS_VERSION` to the exact
+tag to install a specific release, including a prerelease. Use an explicit
+Rust tag while the latest stable release still serves Python 0.4.x.
+
+For installer smoke tests, set `MY_SKILLS_RELEASE_BASE_URL` to the asset
+directory itself, such as a `file://` URL for an unpacked `rust-release`
+workflow artifact. The override takes precedence over release tag selection.
+Set `MY_SKILLS_INSTALL_DIR` to a temporary directory. Regular installs default
+to `$HOME/.local/bin` on Unix and `$env:LOCALAPPDATA\Programs\my-skills\bin`
+on Windows. Pass `-AddToPath` on Windows to add the directory to the user and
+current PowerShell session PATH.
