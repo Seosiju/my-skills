@@ -5,12 +5,12 @@ Contract: `crates/my-skills/src/lib.rs` and the module you own.
 
 | Stream | Brief | Owner | Branch | Worktree |
 |---|---|---|---|---|
-| A hash | `stream-a-hash.md` | Codex | `dev-stream-a` | `~/git/my-skills-worktrees/stream-a` |
-| B manifest/state/data | `stream-b-manifest-state.md` | Codex | `dev-stream-b` | `~/git/my-skills-worktrees/stream-b` |
+| A hash | `stream-a-hash.md` | Codex | `dev-stream-a` | `<worktrees>/stream-a` |
+| B manifest/state/data | `stream-b-manifest-state.md` | Codex | `dev-stream-b` | `<worktrees>/stream-b` |
 | C link | (integrator) | Claude | `dev` | main checkout |
-| D frontmatter/validate | `stream-d-validate.md` | Codex | `dev-stream-d` | `~/git/my-skills-worktrees/stream-d` |
-| E audit | `stream-e-audit.md` | Codex | `dev-stream-e` | `~/git/my-skills-worktrees/stream-e` |
-| F CI/release | `stream-f-ci-release.md` | Codex | `dev-stream-f` | `~/git/my-skills-worktrees/stream-f` |
+| D frontmatter/validate | `stream-d-validate.md` | Codex | `dev-stream-d` | `<worktrees>/stream-d` |
+| E audit | `stream-e-audit.md` | Codex | `dev-stream-e` | `<worktrees>/stream-e` |
+| F CI/release | `stream-f-ci-release.md` | Codex | `dev-stream-f` | `<worktrees>/stream-f` |
 
 ## Rules for every stream
 
@@ -21,7 +21,7 @@ Contract: `crates/my-skills/src/lib.rs` and the module you own.
    skeleton declares. You may add private items, private submodules, and new
    public items inside your own module. If a contract change is really needed,
    work around it inside your module and record the request in your report.
-3. **Never touch real user state.** Do not read or write `~/git/my-agent-skills`,
+3. **Never touch real user state.** Do not read or write the user's registry,
    `~/.claude/skills`, `~/.agents/skills`, `~/.gemini`, `~/.hermes`,
    `~/.local/state/my-skills`, `~/.local/share/my-skills`, or `~/.config/my-skills`.
    Tests use `tempfile` and set `HOME`, `XDG_STATE_HOME`, `XDG_DATA_HOME`,

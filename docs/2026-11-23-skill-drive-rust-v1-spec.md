@@ -20,7 +20,7 @@
 |---|---|
 | **tool repo** | 이 저장소. 범용 CLI `my-skills`의 소스·seed·문서·테스트 |
 | **CLI** | 설치되어 `PATH`에서 실행되는 `my-skills` 실행 파일 |
-| **registry** | 사용자의 스킬 원본 저장소. 이 사용자의 경우 `~/git/my-agent-skills` |
+| **registry** | 사용자의 스킬 원본 저장소 (private git 저장소) |
 | **canonical** | registry의 `skills/<name>/`. 스킬의 유일한 원본 |
 | **host** | 스킬을 읽는 에이전트. Claude Code(`claude`), Codex(`codex`), Antigravity CLI(`agy`), Hermes(`hermes`, 비활성) |
 | **host directory** | host가 스킬을 발견하는 폴더. 예: `~/.claude/skills` |
@@ -35,7 +35,7 @@
 현재(v0.4.1, Python)는 canonical을 host directory에 **복사**하고, canonical을 고칠 때마다
 `my-skills sync`로 다시 복사한다. 이 사용자의 실제 상태(2026-11-23):
 
-- 연결 43건이 모두 copy (claude 13, codex 15, agy 15). 그 밖에 비활성 host인 hermes 기록 5건이 남아 있다.
+- 모든 연결이 copy다. 비활성화한 host(hermes)의 기록도 남아 있다.
 - registry 수정 절차(`my-agent-skills/AGENTS.md`)는 "원본 수정 → 검증 → **동기화** → 일치 확인 → 커밋·push" 5단계다.
 - registry에는 git hook이 없다. 검증은 에이전트가 절차를 직접 따르는 방식에만 의존한다.
 - 사용자는 **macOS와 Windows 두 컴퓨터**에서 **Claude·Codex·agy 세 에이전트를 모두** 쓴다.
@@ -85,7 +85,7 @@
 ```mermaid
 flowchart LR
   GH[("GitHub<br/>my-agent-skills")]
-  REG["registry (원본)<br/>~/git/my-agent-skills"]
+  REG["registry (원본)<br/>private git 저장소"]
   CL["Claude Code"]
   CX["Codex"]
   AG["agy"]
@@ -178,7 +178,7 @@ junction(관리자 권한 불필요)과 경고를 남기는 copy 대체 동작�
 
 - 원하는 상태: skill이 활성이고, target이 활성이고, host가 `skill.hosts`에 포함된 경우(`hosts`가 비어 있으면 모든 host).
 - 원하는 상태인데 연결이 없으면 생성한다. 원하는 상태가 아닌데 managed 연결이 있으면 해제한다.
-- 해제할 때도 I2, I3, I5, I7을 지킨다. 특히 **비활성 target은 건드리지 않는다**. 실제로 hermes 기록 5건이 그대로 보존돼야 한다.
+- 해제할 때도 I2, I3, I5, I7을 지킨다. 특히 **비활성 target은 건드리지 않는다**. 실제로 비활성화한 hermes의 기록과 설치본이 그대로 보존돼야 한다.
 - 출력과 `--dry-run`에 생성·해제 목록을 보여 준다. `--no-prune`을 주면 해제를 건너뛴다.
 - **해제가 기본이다 (Q4 결정).** 드라이브에서 지운 파일이 모든 기기에서 사라지는 것과 같다.
   link 해제는 원본을 건드리지 않으므로, 실수로 꺼도 다시 enable하고 sync하면 돌아온다.
@@ -269,7 +269,7 @@ Windows에서는 `\\?\` 접두어를 제거하고 비교한다.
   - link 생성이 실패하면 backup을 되돌린다(I6).
 - link를 copy로 바꾸는 조건: FRESH. staging에 복사한 뒤 링크와 교체한다.
 - DRIFTED, CONFLICT, BROKEN, UNMANAGED는 막고, 해결 방법을 안내한다.
-- 이 사용자의 3단계 전환(43건)에 이 명령을 쓴다.
+- 기존 copy 연결을 link로 바꾸는 전환에 이 명령을 쓴다.
 
 ### 6.7 `hooks install | uninstall | status` (신규)
 
@@ -385,7 +385,7 @@ Rust 테스트가 같은 값을 내는지 확인한다.
 | **1. Rust core** | manifest·state·hash·validate·status·doctor·install·uninstall·sync(reconcile)·convert, link 모듈(unix와 windows 코드 모두) | §4 불변식 테스트와 hash golden 테스트가 3개 OS CI에서 통과. 이 맥의 임시 HOME 환경에서 실제 동작 확인 | macOS (Windows 코드는 CI로 컴파일·테스트) |
 | **1W. Windows 실기기** | junction 동작, 세 host 발견 확인, 경로 실측 | §12 체크리스트 통과 | Windows PC |
 | **2. 기능 동등** | hooks·audit(규칙 포함)·import·share·enable/disable·init-registry·set-root·data-path·skills·bootstrap·update, 릴리스 파이프라인 | 0.4.1 명령 전체를 같은 동작으로 갖춤. black-box 테스트 통과. GitHub Releases에 OS별 binary 게시 | macOS + CI |
-| **3. 전환** | 이 맥: binary 설치, `convert --to link`로 43건 전환, manifest `install_mode` 수정, `hooks install`, AGENTS.md·`instructions/global.md` 절차 갱신. Windows: clone, bootstrap, hooks | 두 기기 세 host에서 FRESH. agy `/skills`로 발견 확인. hermes 기록 5건 보존 | 각 기기 |
+| **3. 전환** | 이 맥: binary 설치, `convert --to link`로 기존 copy 연결 전환, manifest `install_mode` 수정, `hooks install`, AGENTS.md·`instructions/global.md` 절차 갱신. Windows: clone, bootstrap, hooks | 두 기기 세 host에서 FRESH. agy `/skills`로 발견 확인. 비활성 host(hermes) 기록 보존 | 각 기기 |
 | **4. 자동 pull** | launchd(macOS)와 작업 스케줄러(Windows)로 주기적 `git pull --ff-only` 실행. 작업 트리가 깨끗하지 않으면 건너뜀 | 별도 스펙 | 각 기기 |
 
 릴리스 번호:
@@ -447,9 +447,9 @@ skills/                    seed 원본 (Rust는 빌드할 때 binary에 포함)
 
 ## 11. macOS 실기기 체크리스트 (3단계)
 
-- [ ] `my-skills doctor`: Registry가 `~/git/my-agent-skills`, link 생성 가능, hooks 설치됨
-- [ ] `my-skills convert --to link --host all --dry-run`: 대상이 43건이고 막힌 항목이 없음
-- [ ] 전환 뒤 `my-skills status`: 세 host 모두 FRESH (link), hermes 기록 5건 보존
+- [ ] `my-skills doctor`: Registry가 사용자 레지스트리를 가리킴, link 생성 가능, hooks 설치됨
+- [ ] `my-skills convert --to link --host all --dry-run`: 대상이 활성 host의 기존 copy 연결 전체이고 막힌 항목이 없음
+- [ ] 전환 뒤 `my-skills status`: 세 host 모두 FRESH (link), 비활성 host(hermes) 기록 보존
 - [ ] canonical에서 SKILL.md 한 줄을 수정했을 때 sync 없이 Claude, Codex, agy에 반영됨 (agy는 `/skills`로 확인)
 - [ ] 검증에 실패하는 SKILL.md를 커밋하면 pre-commit이 막음
 - [ ] 다른 기기에서 새 스킬을 push한 뒤 pull하면 post-merge가 연결을 만듦

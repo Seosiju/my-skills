@@ -5,9 +5,9 @@ file adds what changed for phase 2.
 
 | Stream | Brief | Branch | Worktree |
 |---|---|---|---|
-| G hooks + doctor | `stream-g-hooks-doctor.md` | `dev-stream-g` | `~/git/my-skills-worktrees/stream-g` |
-| H registry commands | `stream-h-registry.md` | `dev-stream-h` | `~/git/my-skills-worktrees/stream-h` |
-| I update | `stream-i-update.md` | `dev-stream-i` | `~/git/my-skills-worktrees/stream-i` |
+| G hooks + doctor | `stream-g-hooks-doctor.md` | `dev-stream-g` | `<worktrees>/stream-g` |
+| H registry commands | `stream-h-registry.md` | `dev-stream-h` | `<worktrees>/stream-h` |
+| I update | `stream-i-update.md` | `dev-stream-i` | `<worktrees>/stream-i` |
 | integrator | install, sync, uninstall, convert, bootstrap, validate, audit, status, set-root, data-path | `dev` | main checkout |
 
 ## What is already there

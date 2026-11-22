@@ -1,14 +1,16 @@
 # Skill Drive v1: 진행 현황과 작업 인계
 
-> 기준 시점: 2026-11-23 02:17 (KST), `dev` = `f75a88d`
-> 상태: Rust v1 기능 구현 완료. 실제 사용자 환경은 아직 바뀌지 않음
+> 기준 시점: 2026-11-23 03:25 (KST). `dev`의 감사 반영 커밋 `b79dbf5`와 이 문서 커밋까지 포함
+> 상태: Rust v1 기능 구현과 감사 지적 수정 완료. 실제 사용자 환경은 아직 바뀌지 않음
 > 설계 문서: `docs/2026-11-23-skill-drive-rust-v1-spec.md` (이하 "스펙")
 > 작업 지시서와 보고서: `docs/tasks/2026-11-23-rust-v1/`
 
-이 문서는 병렬로 진행한 작업 전체(Codex stream A~I와 통합 담당 Claude)를 하나로
-모은 기록이다. 무엇이 어떻게 진행됐는지, 지금 어디에 있는지, 다음에 무엇을
-어떤 순서로 해야 하는지를 적는다. 모든 수치와 상태는 기준 시점에 명령으로 다시
-확인한 값이다. 확인 방법은 §9에 있다.
+이 문서는 병렬로 진행한 작업을 하나로 모은 기록이다. 포함한 작업은 Codex stream A~I, 통합 담당 Claude, 독립 감사 세션(agy)이다.
+무엇이 어떻게 진행됐는지, 지금 어디에 있는지, 다음에 무엇을 어떤 순서로 해야 하는지를 적는다.
+수치와 상태는 기준 시점에 명령으로 다시 확인한 값이고, 확인 방법은 §9에 있다.
+
+공개 저장소이므로 사용자 기기의 경로 구조, 실제 연결 수, 전역 안내 파일의 줄 번호는 적지 않는다.
+기기별 값은 전환할 때 `doctor`와 dry-run 출력으로 직접 확인한다.
 
 ---
 
@@ -16,14 +18,15 @@
 
 | 항목 | 상태 |
 |---|---|
-| 목표 | **개인 스킬 드라이브**: 원본 한 곳, 모든 기기와 에이전트는 바로가기(link)로 연결 (스펙 제품 정의) |
-| Rust v1 구현 | 19개 명령 모두 연결됨. 구현되지 않은 명령 없음 |
-| 테스트 | Rust 188개, Python 308개 모두 통과 |
-| CI (`dev`) | Ubuntu, macOS, Windows, Python 모두 통과 (run `45048640883`) |
-| 릴리스 | **없음**. 태그와 GitHub Release를 하나도 만들지 않았다. 릴리스 파이프라인은 한 번도 실행되지 않았다 |
-| `main` | v0.4.1 그대로. `dev`는 `main`보다 38개 커밋(병합 제외) 앞서 있다 |
-| **실제 사용자 환경** | **아직 바뀌지 않았다**: 설치된 CLI는 Python `my-skills 0.4.1`(`~/.local/bin/my-skills`). 연결은 모두 copy로 48건(claude 13, codex 15, agy 15, hermes 5). 레지스트리 `install_mode = "copy"`, git hook 0개 |
-| Windows | CI에서 junction 테스트 4개 통과. 실기기에서 세 에이전트가 발견하는지는 **아직 확인하지 않았다** |
+| 목표 | **개인 스킬 드라이브**: 원본은 한 곳에 두고, 모든 기기와 에이전트는 바로가기(link)로 연결한다 (스펙 제품 정의) |
+| Rust v1 구현 | 19개 명령 모두 연결됨 |
+| 테스트 | Rust 202개(테스트 파일 21개), Python 308개 모두 통과 |
+| CI (`dev`) | Ubuntu, macOS, Windows, Python. 최신 결과는 §9 명령으로 확인 |
+| 릴리스 | **없음**. 태그와 GitHub Release를 하나도 만들지 않았고, 릴리스 workflow도 실행되지 않았다 |
+| `main` | v0.4.1 그대로. `dev`가 앞서 있다(병합 커밋 제외 40개 이상) |
+| **실제 사용자 환경** | **바뀌지 않았다**. 설치된 CLI는 Python `my-skills 0.4.1`, 모든 연결은 copy, 레지스트리 `install_mode = "copy"`, git hook 없음 |
+| 감사 세션의 사전 점검 | 빌드한 v1 binary를 실제 레지스트리에 읽기 전용으로 실행: 모든 연결이 FRESH였고, `convert --to link --host all --dry-run`은 막힌 항목 없이 활성 host의 copy 연결 전체를 CONVERT로 계획했다. 비활성 host(hermes) 기록은 대상에서 빠졌다 |
+| Windows | CI에서 junction 테스트 4개 통과. 실기기에서 세 에이전트가 junction 스킬을 발견하는지는 **아직 확인하지 않았다** |
 
 ---
 
@@ -35,42 +38,48 @@ flowchart LR
   P1 --> I1["통합<br/>planner·installer"]
   I1 --> P2["2단계 병렬<br/>G·H·I + 명령 연결"]
   P2 --> I2["통합<br/>CI 수정"]
+  I2 --> R["독립 감사<br/>agy 세션"]
+  R --> F["감사 반영<br/>결함 수정"]
 ```
 
 | 시각 | 일 | 커밋 |
 |---|---|---|
 | 01:04~01:09 | 스펙 작성. Q2(pre-commit은 바뀐 스킬만, staged 기준)와 Q4(sync 해제를 기본으로)를 결정 | `7ae23f6`, `19d299c` |
 | 01:13~01:16 | Rust 뼈대, 모듈 계약, 공통 YAML 라이브러리(`yaml-rust2`), 1단계 지시서 | `fed00db`, `03f5cca`, `df032fb` |
-| 01:16~01:32 | **1단계 병렬**: Codex 5개(A, B, D, E, F), 각자 worktree. 같은 시간에 통합 담당이 C(link)와 planner·installer 작성 | `4f3a936`, `6057643` 외 |
-| 01:32~01:35 | 다섯 브랜치 병합(충돌 없음), 드라이브 통합 테스트 12개 | `b337d23` |
-| 01:35~01:41 | 첫 CI 실패(clippy) 수정, 실행 환경(runtime)과 CLI 플래그를 v0.4.1과 맞춤, 2단계 뼈대 | `61f59b6`, `86d3dba` |
-| 01:43~02:04 | **2단계 병렬**: Codex 3개(G, H, I). 같은 시간에 통합 담당이 명령 10개를 연결하고 스펙 갱신 | `3167f71`, `1f602a4` 외 |
-| 02:04~02:17 | 세 브랜치 병합(`Cargo.toml` 주석 충돌만 있음), 두 기기 흐름 실행 확인, CI 실패 3회 수정 | `01a725c`~`f75a88d` |
+| 01:16~01:32 | **1단계 병렬**: Codex 5개(A, B, D, E, F), 작업마다 worktree 하나. 같은 시간에 통합 담당이 C(link)와 planner·installer 작성 | `4f3a936`, `6057643` 외 |
+| 01:32~01:35 | 다섯 브랜치 병합(충돌 없음), 드라이브 통합 테스트 12개 추가 | `b337d23` |
+| 01:35~01:41 | 첫 CI 실패(clippy) 수정, 실행 환경과 CLI 플래그를 v0.4.1과 맞춤, 2단계 뼈대 | `61f59b6`, `86d3dba` |
+| 01:43~02:04 | **2단계 병렬**: Codex 3개(G, H, I). 같은 시간에 통합 담당이 명령 10개 연결 | `3167f71`, `1f602a4` 외 |
+| 02:04~02:17 | 세 브랜치 병합, 두 기기 흐름 실행 확인, CI 실패 3회 수정 | `01a725c`~`f75a88d` |
+| 02:3x | 첫 인계 문서 | `124b817` |
+| 03:15 | **독립 감사**(agy 세션): 인계 문서에도 없던 코드 결함 6건, 빠진 문서, 공개 문서의 개인 운영 정보, 위생 테스트 공백 보고 | 보고서는 그 세션에 있음 |
+| 03:15~03:25 | 감사 항목을 하나씩 재확인(모두 사실). 높음 3건과 작은 결함 수정, 위생 테스트 Rust 이식, 이 문서 개정, 공개 문서 일반화 | `b79dbf5`, 이 문서 |
 
-Codex 설정과 사용량:
-- 1단계는 `gpt-6.2-sol` `xhigh` 5개로 진행했고, 5시간 한도의 약 51%포인트를 썼다(99% → 48%).
-- 2단계는 `gpt-6.2-sol` `high` 3개로 진행했고, 약 47%포인트를 썼다(48% → 1%).
-- 02:04 기준으로 남은 한도는 **1%** 다.
+Codex 운영:
+- 1단계: `gpt-6.2-sol` `xhigh` 5개. 5시간 한도의 약 51%포인트를 썼다(99% → 48%).
+- 2단계: `gpt-6.2-sol` `high` 3개. 약 47%포인트를 썼다(48% → 1%).
+- 감사 이후에는 Codex를 쓰지 않았다.
 
 ---
 
 ## 3. 작업 단위별 결과
 
-모든 브랜치는 `dev`에 병합됐다(`dev-stream-*`, 병합되지 않은 커밋 0개).
+모든 `dev-stream-*` 브랜치는 `dev`에 병합됐다(병합되지 않은 커밋 0개).
 각 단위의 상세 내용은 `docs/tasks/2026-11-23-rust-v1/reports/stream-<x>.md`에 있다.
 
 | 단위 | 담당 | 산출물 | v0.4.1과 의도적으로 다른 점 | 남은 문제 |
 |---|---|---|---|---|
 | A hash | Codex | `hash.rs`, golden 11건 | symlink를 따라가지 않음. 경로 I/O 오류를 반환함 | 없음 |
-| B manifest/state/data | Codex | `manifest.rs`, `state.rs`, `data.rs` | `install_mode` 기본값을 link로, 값은 link/copy만 허용 | 중단된 저장이 `.tmp` 파일을 남기면 다음 저장이 막힘(이전 상태는 보존됨) |
+| B manifest/state/data | Codex | `manifest.rs`, `state.rs`, `data.rs` | `install_mode` 기본값을 link로, 값은 link/copy만 허용 | 남은 `.tmp` 파일이 다음 저장을 막음(이전 상태는 보존됨) |
 | C link | Claude | `link.rs` (Unix symlink, Windows junction → symlink → copy 대체) | 새로 만든 기능 | 실기기 미확인 |
 | D validate | Codex | `frontmatter.rs`, `validate.rs`, 비교 340건 | PyYAML 1.1의 yes/no·8진수·날짜·중복 키를 PyYAML과 같게 처리 | YAML 문법의 드문 경계에서 오류 문구가 다를 수 있음 |
-| E audit | Codex | `audit/` (규칙 15개 전부), golden 30건 | Python 전용 정규식 일부를 같은 결과가 나오게 다시 씀 | Unicode 데이터 버전 차이(16.0과 15.1)가 일부 규칙에 영향을 줄 수 있음 |
-| F CI/릴리스 | Codex | CI 3개 OS, `release-rust.yml`, `install.sh`, `install.ps1` | 새로 만든 기능 | **릴리스 workflow와 설치 스크립트가 GitHub에서 한 번도 실행되지 않았음** |
-| G hooks/doctor | Codex | `hooks.rs`, `commands/{hooks,doctor}.rs` | doctor에 link 가능 여부, git 상태, hook, 연결 집계, 전체 검증을 추가 | `hooks uninstall --dry-run` 없음 (계약 변경 요청) |
-| H registry | Codex | init-registry, skills, share, import, enable, disable, seed 포함 | 새 레지스트리는 `install_mode = "link"`로 생성 | share·import·init-registry·enable·disable에 `--dry-run` 없음 (계약 변경 요청). 중단된 편집이 `.edit-lock`을 남길 수 있음 |
-| I update | Codex | Release 기반 자체 업데이트, Python 0.4.x guard | Rust의 main 채널은 prerelease를 포함한 최신 Release를 뜻함 | Windows에서 `.old` 파일이 남을 수 있음. **Python guard는 stable 채널만 막음** (§6) |
-| 통합 | Claude | `plan.rs`, `install.rs`, `runtime.rs`, `cli.rs`, `commands/{connect,inspect}.rs`, 통합·black-box 테스트 | sync가 등록된 스킬 전체를 대상으로 함(해제를 위해). `--all`은 "비활성 스킬도 연결"이라는 v0.4.1 의미로 유지 | — |
+| E audit | Codex | `audit/` (규칙 15개 전부), golden 30건 | Python 전용 정규식 일부를 같은 결과가 나오게 다시 씀 | Unicode 데이터 버전 차이(16.0과 15.1) |
+| F CI/릴리스 | Codex | CI 3개 OS, `release-rust.yml`, `install.sh`, `install.ps1` | 새로 만든 기능 | **한 번도 실행되지 않음**. 태그와 `Cargo.toml` 버전을 비교하는 검사가 없음(§7 F) |
+| G hooks/doctor | Codex | `hooks.rs`, `commands/{hooks,doctor}.rs` | doctor에 link 가능 여부, git 상태, hook, 연결 집계, 전체 검증 추가 | `hooks uninstall --dry-run` 없음(§7 B) |
+| H registry | Codex | init-registry, skills, share, import, enable, disable, seed 포함 | 새 레지스트리는 `install_mode = "link"`로 생성 | `--dry-run` 없음(§7 B). 남은 `.edit-lock`. 새 레지스트리 README 템플릿이 `uv tool install`을 안내함(§7 E) |
+| I update | Codex | Release 기반 자체 업데이트, Python 0.4.x guard | Rust의 main 채널은 prerelease를 포함한 최신 Release를 뜻함 | Windows에서 `.old` 파일이 남을 수 있음. **Python guard는 stable 채널만 막고, 0.4.x `doctor`는 이전 안내를 출력하지 않음**(§7 C) |
+| 통합 | Claude | `plan.rs`, `install.rs`, `runtime.rs`, `cli.rs`, `commands/{connect,inspect}.rs`, 통합·black-box 테스트 | sync는 등록된 스킬 전체를 대상으로 함(해제를 위해). `--all`은 v0.4.1 의미 유지 | §6 참고 |
+| 감사 | agy | 독립 재검증과 결함 보고 | — | 지적 사항은 §6에서 반영 여부와 함께 정리 |
 
 ---
 
@@ -82,16 +91,18 @@ Codex 설정과 사용량:
 |---|---|---|
 | v0.4.1과 같은 동작 | Python이 만든 golden 데이터와 비교 (hash, state, validate, audit, manifest 편집) | 일치 |
 | 안전 불변식 I1~I8 | 임시 파일시스템 테스트 | 통과 |
-| 드라이브 동작 | `tests/drive_reconcile.rs`, `tests/cli_connect.rs` | 통과 |
+| 드라이브 동작 | `drive_reconcile.rs`, `cli_connect.rs` | 통과 |
 | 두 기기 흐름 | 임시 HOME 두 개로 실제 binary 실행 | 새 레지스트리는 link로 생성됨. bootstrap하면 link로 연결됨. 깨진 스킬 커밋은 차단됨. A에서 추가한 스킬은 B에서 pull만 하면 자동 연결되고, A에서 끈 스킬은 B에서 pull만 하면 자동 해제됨 |
+| 실제 레지스트리 호환 | 감사 세션이 읽기 전용으로 실행(`MY_SKILLS_ROOT`, 임시 `XDG_CONFIG_HOME`) | 전부 FRESH, validate·audit 전부 OK, convert dry-run 막힌 항목 0 |
 | Windows 빌드와 junction | GitHub Actions `windows-latest` | 통과 |
+| 감사 지적 수정 | 수정마다 회귀 테스트 추가(`cli_connect.rs`에 5개, `gate_policy.rs`, `public_hygiene.rs`) | 통과 |
 
 ### 확인하지 않은 것
 
-- 세 에이전트(Claude, Codex, agy)가 **실제 Windows에서** junction 스킬을 발견하는지 (스펙 §12)
-- 릴리스 workflow, 설치 스크립트, `update`의 실제 다운로드 (Release가 아직 없음)
+- 세 에이전트가 **실제 Windows에서** junction 스킬을 발견하는지 (스펙 §12)
+- 릴리스 workflow, 설치 스크립트, `update`의 실제 다운로드
 - Git Bash에서의 hook 실행 (Windows)
-- 실제 레지스트리 43건 전환 (아직 하지 않음)
+- 실제 레지스트리의 전환(쓰기)
 
 ### CI가 잡아 고친 문제
 
@@ -115,41 +126,57 @@ Codex 설정과 사용량:
 | pre-commit은 바뀐 스킬만, staged 내용 기준 | 사용자 (Q2) | §6.7 |
 | Rust로 재작성, Python 0.4.x는 동결 | 사용자 | D5 |
 | 두 기기(macOS·Windows) 모두 세 에이전트 사용, Windows 작업은 Windows PC에서 | 사용자 | §12 |
-| 레지스트리(`my-agent-skills`)와 CLI(`my-skills`)를 분리 유지 | 사용자 | §3.1 |
+| 레지스트리와 CLI(`my-skills`)를 분리 유지 | 사용자 | §3.1 |
 | sync 대상은 등록된 스킬 전체, `--all`은 v0.4.1 의미 유지 | 구현 중 | D3 |
 | YAML 라이브러리는 `yaml-rust2` | 구현 중 | `Cargo.toml` 주석 |
 | v1.0.0 전에 Python 0.4.2를 먼저 배포 | 구현 중 | Q8 |
-| Codex 모델: astra는 사용 보류(사용량 소모가 큼) | 사용자 | 이 문서 |
+| `main`은 v1.0.0 때까지 병합하지 않음. 0.4.2는 `release/v0.4.2`에서 배포 | 구현 중 (사용자 확인) | §7 C, I |
+| Codex는 `sol` `high`를 기본으로, astra는 보류(사용량 소모가 큼) | 사용자 | §8 |
+| 공개 문서의 개인 운영 정보는 새 커밋으로 일반화하고 이력은 그대로 둠 | 사용자 | 이 문서 머리말 |
+| pre-commit과 doctor는 같은 검사(`validate::gate_errors`)를 씀: host 검사와 manifest `[audit]` 정책 포함 | 감사 반영 | §6 |
 
 ---
 
-## 6. 알려진 문제와 이전 보고의 오류
+## 6. 알려진 문제, 이전 보고의 오류, 감사 반영
 
-### 놓쳤거나 잘못 보고한 것 (통합 담당)
+### 6.1 감사에서 나온 코드 결함과 처리
 
-1. **에이전트가 실제로 읽는 문서가 아직 copy·동기화 방식을 설명한다.** 이전 남은 일 목록에서는 "README와 seed"만 적었다. 실제로 고쳐야 할 곳은 아래 표의 전체다. 레지스트리의 `my-skills` 스킬은 tool repo의 seed와 다른 별도 사본이라, seed를 고쳐도 에이전트가 보는 내용은 바뀌지 않는다.
+| 심각도 | 결함 | 처리 |
+|---|---|---|
+| 높음 | `sync --check`가 비활성 스킬과 등록 해제된 스킬을 건너뛰어, 해제해야 할 link가 있어도 종료 코드 0을 돌려줌 | **수정** (`b79dbf5`). 전체 reconcile 계획 기준으로 판정하고 `PRUNE` 줄을 출력 |
+| 높음 | `convert`가 state 저장 전에 backup을 삭제. 원본이 없는 copy도 CONVERT로 계획. 기록된 경로와 manifest 경로의 기준이 다름 | **수정**. link → state 저장 → backup 삭제 순서이고, 저장에 실패하면 되돌림. 원본이 없거나 경로가 다르면 BLOCK_DRIFT. backup은 원본과 같은 내용이라 사용자 데이터 유실은 아니었음 |
+| 높음 | pre-commit이 manifest `[audit]` 정책을 무시. doctor 전체 검사는 host 검사를 안 함 | **수정**. `validate::gate_errors`로 통일 |
+| 중간 | 릴리스 태그와 `Cargo.toml` 버전을 비교하지 않음. 지금 `1.0.0-alpha.0`이라, 그대로 `alpha.1` 태그를 붙이면 `update`가 항상 실패함 | **§7 F에 추가** (버전 올리기, CI 검사, `workflow_dispatch` 시험 실행) |
+| 중간 | 새 레지스트리 README 템플릿이 `uv tool install`을 안내. `SEED_REVISION = "0.4.1"` | **§7 E에 추가** |
+| 중간 | `seeds.rs`의 직접 재귀 삭제 | **수정**. `install::remove_real_dir`로 일원화 |
+| 중간 | Python 0.4.2 `doctor`가 v1 이전 안내를 출력하지 않음 | **§7 C에 추가** |
+| 낮음 | bootstrap dry-run 미리보기에 `--mode`가 빠짐 | **수정** |
+| 낮음 | v0.4.1에서 물려받은 동작. 기록의 `source_type`이 항상 `"canonical"`. install 검증이 스킬의 `hosts`에 없는 host도 검사함. copy 갱신(`Update`)도 state 저장 전에 backup을 지움(내용은 옛 원본이라 유실은 없음) | **보류**. 동작은 v0.4.1과 같다. §7 B에서 함께 정리할지 결정 |
 
-   | 위치 | 내용 |
-   |---|---|
-   | `~/git/my-agent-skills/skills/my-skills/SKILL.md:18` | host 폴더는 "build outputs", `install`·`sync`가 복사한다고 설명 |
-   | `~/git/my-agent-skills/AGENTS.md:3, 9, 11, 35` | "agy는 복사 설치를 유지한다", 동기화 단계 |
-   | `~/git/my-agent-skills/instructions/global.md:3, 9` | 동기화 단계가 있는 완료 절차 |
-   | `~/.claude/CLAUDE.md:28, 34`, `~/.codex/AGENTS.md:20, 26`, `~/.gemini/GEMINI.md:106, 112` | 같은 절차가 배포된 전역 안내 세 곳 |
-   | tool repo `README.md:73-74, 330`, `README.ko.md:16, 22, 74, 78` | copy가 기본이라는 설명 |
-   | tool repo `skills/my-skills/SKILL.md:15` | seed. Python 0.4.x 패키지에도 들어가므로 0.4.2 태그 이후에 고친다 |
+### 6.2 이전 보고의 오류 (통합 담당)
 
-2. **Python guard는 stable 채널만 막는다** (`src/my_skills/update_commands.py`). `update --channel main`을 쓰는 0.4.x 사용자는 `main`의 최신 커밋을 받는다. 그래서 `main`이 Rust로 바뀌면 update가 깨진다. 0.4.2를 배포하기 전에 main 채널도 막아야 한다.
-3. **`dev`를 `main`에 병합하자고 제안했다가 철회했다.** README의 설치 명령(`uv tool install git+https://github.com/Seosiju/my-skills.git`, 태그 없음)이 `main`을 설치하기 때문에, 병합하면 공개 사용자에게 미완성 코드가 전달된다.
-4. **"맥 전환에 alpha가 먼저 필요하다"는 말은 사실이 아니었다.** 필수 조건이 아니라 제 선호였다. 이 맥에서 직접 빌드한 binary로도 전환할 수 있다.
-5. **단계 번호가 섞였다.** 스펙 §9의 "3단계(전환)"와 제 로드맵의 "④"가 같은 일을 가리켰다. 이 문서부터는 §7의 문자(A~K)로만 부른다.
-6. **CLI 계약이 스펙과 어긋난다.** 스펙 §6은 "모든 쓰기 명령은 `--dry-run`을 지원한다"고 했지만, 뼈대 CLI는 v0.4.1 플래그만 따랐다. G와 H가 이 차이를 보고했다.
-7. **작업 운영상의 실수.** 모델 목록을 확인하지 않고 `sol`을 썼다. 다섯 개 모두 `xhigh`로 돌렸다. 작업 크기를 고르게 나누지 못했다(A가 너무 작았다). 뼈대 CLI 플래그가 v0.4.1과 달라서 2단계 전에 고쳐야 했다. 이 맥의 Rust가 CI보다 오래된 버전이라 CI에서만 걸리는 lint가 세 번 나왔다.
+1. **에이전트가 실제로 읽는 문서를 수정 목록에서 빠뜨렸다.** 처음에는 "README와 seed"만 적었다. 고쳐야 할 전체 목록은 §7 E와 G에 있다. 레지스트리 안의 `my-skills` 스킬은 tool repo의 seed와 별개의 사본이라, seed를 고쳐도 에이전트가 보는 내용은 바뀌지 않는다.
+2. **"공개 저장소에 개인 정보는 들어가지 않았다"고 말했다.** 사용자 이름과 이메일만 검색한 결과였다. 실제로는 개인 경로 구조, 실제 연결 수, 전역 안내 파일 줄 번호가 공개 문서에 들어가 있었다. 사용자 결정에 따라 새 커밋으로 일반화했다(스펙, 작업 지시서, 이 문서). `2026-07-04` 문서는 이 작업 전부터 있던 것이라 그대로 두었다.
+3. **Python guard가 stable 채널만 막는다는 것을 늦게 발견했다.**
+4. **`dev`를 `main`에 병합하자고 제안했다가 철회했다.** README의 설치 명령이 태그 없이 `main`을 설치하기 때문이다.
+5. **"맥 전환에는 alpha가 먼저 필요하다"고 했지만 필수 조건이 아니었다.** 직접 빌드한 binary로도 전환할 수 있다.
+6. **단계 번호를 섞어 썼다.** 이 문서부터는 §7의 문자(A~K)로만 부른다.
+7. **CLI 계약이 스펙 §6의 "모든 쓰기 명령은 `--dry-run`"과 어긋났다.**
+8. **작업 운영상의 실수.** 모델 목록을 확인하지 않았다. 다섯 개 모두 `xhigh`로 돌렸다. 작업 크기를 고르게 나누지 못했다. 뼈대 CLI 플래그가 v0.4.1과 달랐다. 이 맥의 Rust가 CI보다 오래된 버전이었다.
+9. **인계 문서에 "재귀 삭제는 한 곳뿐"이라고 적었지만 사실이 아니었다.** 지금은 수정해서 사실이 됐다.
 
-### 그 밖의 알려진 문제
+### 6.3 그 밖의 알려진 문제
 
-- 구조: Rust 모듈 21개가 한 층에 나열돼 있어 기능별로 묶이지 않았다. Rust 테스트 일부가 Python 쪽 폴더(`tests/golden/audit/`, `tests/fixtures/`, `src/my_skills/audit/builtin_rules.yaml`)에 기대고 있다. §7 A에서 정리한다.
+- **구조**: Rust 모듈 21개가 한 층에 나열돼 있어 기능별로 묶이지 않았다(§7 A).
+- **Python 쪽 폴더에 기대는 Rust 코드**(§7 A, D에서 끊어야 함):
+  - `src/validate.rs`의 compose 테스트 → 루트 `tests/fixtures`
+  - `tests/validate_golden.rs` → 루트 `tests/fixtures`
+  - `tests/audit_parity.rs` → 루트 `tests/golden/audit`, `tests/fixtures`, `src/my_skills/audit/builtin_rules.yaml`
+  - `tests/registry_init.rs` → 루트 `tests`
+  - `src/seeds.rs` → 루트 `skills/` (루트로 옮길 때 경로 조정)
+  - `tests/public_hygiene.rs` → 저장소 루트 경로
 - 스펙의 열린 질문 Q1(Windows 경로 실측), Q3(Windows state 경로), Q5(코드 서명), Q7(0.4.x 안내)은 아직 결정하지 않았다.
-- `~/conductor/workspaces/my-skills-v1/*` worktree 5개는 이 작업과 무관하다. 다른 도구가 남긴 것이고 `prunable` 상태다.
+- 이 작업과 무관한 다른 도구의 worktree가 `git worktree list`에 `prunable`로 남아 있다.
 
 ---
 
@@ -159,17 +186,17 @@ Codex 설정과 사용량:
 
 | ID | 할 일 | 반드시 먼저 끝나야 하는 것 | 승인 |
 |---|---|---|---|
-| A | Rust를 기능별로 재배치(`registry/`, `drive/`, `check/`, `git/`, `update/`, `platform/`)하고 테스트 데이터를 crate 안으로 옮김 | — | 필요 없음 |
-| B | 쓰기 명령의 `--dry-run` 보완 (`hooks uninstall`, `share`, `import`, `init-registry`, `enable`, `disable`) | — | 필요 없음 |
-| C | Python 0.4.2: `main`에서 `release/v0.4.2`를 만들고 guard를 반영(**main 채널 포함**), 버전과 CHANGELOG → 태그 → `main`에 병합 | — | **필요 (태그, `main` 변경)** |
-| D | `dev`에서 Python 제거, Rust를 루트 `src/`, `tests/`로 이동, CI에서 Python 작업 제거 | C | 필요 없음 |
-| E | tool repo README와 seed를 link 방식으로 수정 | D | 필요 없음 |
-| F | `v1.0.0-alpha.1` pre-release (`dev`에 태그) | — (A·D 뒤가 깔끔하지만 필수는 아님) | **필요 (태그)** |
-| G | **맥 전환**: binary 설치 → `convert --to link` dry-run → 승인 → 전환. 레지스트리 `install_mode` 수정, `hooks install`, §6의 문서 전체 수정(전역 안내 세 곳 포함) | binary 하나 (F 또는 직접 빌드) | **필요 (dry-run 확인 후)** |
+| A | Rust를 기능별로 재배치(`registry/`, `drive/`, `check/`, `git/`, `update/`, `platform/`)하고 §6.3의 Python 폴더 의존을 끊음 | — | 필요 없음 |
+| B | 쓰기 명령에 `--dry-run` 추가(`hooks uninstall`, `share`, `import`, `init-registry`, `enable`, `disable`, 그리고 `set-root` 포함 여부 결정). §6.1의 보류 항목 결정 | — | 필요 없음 |
+| C | Python 0.4.2: `main`에서 `release/v0.4.2`를 만들고 guard를 반영. **main 채널 guard와 `doctor`의 v1 이전 안내** 추가, 버전과 CHANGELOG → 태그 → `main`에 병합 | — | **필요 (태그, `main` 변경)** |
+| D | `dev`에서 Python 제거, Rust를 루트 `src/`, `tests/`로 이동, CI에서 Python 작업 제거, 위생 테스트 경로 조정 | C | 필요 없음 |
+| E | tool repo 문서: `README.md`, `README.ko.md`, `AGENTS.md`("host directory = install output", `uv` 명령), seed `skills/my-skills/SKILL.md`, `seeds.rs`의 README 템플릿과 `SEED_REVISION`, `docs/release-checklist.md`의 Python 절차 | D | 필요 없음 |
+| F | `v1.0.0-alpha.1` pre-release: `Cargo.toml` 버전을 `1.0.0-alpha.1`로 올림 → 태그와 버전을 비교하는 CI 단계 추가 → `workflow_dispatch`로 시험 실행(binary, `--version`, 설치 스크립트) → 태그 | — (A·D 뒤가 깔끔하지만 필수는 아님) | **필요 (태그)** |
+| G | **맥 전환**: binary 설치 → `convert --to link` dry-run → 승인 → 전환. 레지스트리 `install_mode` 수정, `hooks install`. 에이전트가 읽는 문서 수정: 레지스트리의 `skills/my-skills/SKILL.md`, `AGENTS.md`(동기화 단계, agy 복사 설치 문구, 그룹 비활성화 시 uninstall 안내), `instructions/global.md`, `README.md`, 그리고 Claude·Codex·agy 전역 안내의 "동기화" 절차 | binary 하나 (F 또는 직접 빌드) | **필요 (dry-run과 문서 diff 확인 후)** |
 | H | Windows 실기기: 설치 → clone → `bootstrap` → `hooks install` → 스펙 §12 체크리스트 | binary 하나 (F 또는 그 PC에서 빌드) | 사용자가 Windows PC에서 진행 |
-| I | v1.0.0: `dev`를 `main`에 병합하고 README를 binary 설치로 바꾼 뒤 태그 | C, G, H | **필요** |
+| I | v1.0.0: `dev`를 `main`에 병합, README를 binary 설치 방식으로, 태그 | C, G, H | **필요** |
 | J | 자동 pull (macOS launchd, Windows 작업 스케줄러) | I | 스펙 작성 후 승인 |
-| K | worktree 정리 (`~/git/my-skills-worktrees/*` 8개, 브랜치 `dev-stream-*`) | — | 확인 후 진행 |
+| K | worktree 정리 (`dev-stream-*` 8개와 그 브랜치. 디스크 약 12GB) | — | 확인 후 진행 |
 
 ### 권장 순서
 
@@ -184,7 +211,7 @@ flowchart LR
 ```
 
 - 맥 전환을 서둘러야 하면 G를 A 바로 다음으로 당길 수 있다. 이때는 직접 빌드한 binary를 쓰고, 나중에 F의 binary로 한 번 더 교체한다.
-- G는 실제 스킬 폴더 43건과 전역 안내를 바꾼다. dry-run과 바뀔 문서의 diff를 먼저 보여 주고 승인을 받는다.
+- G는 실제 스킬 폴더와 전역 안내를 바꾼다. dry-run과 바뀔 문서의 diff를 먼저 보여 주고 승인을 받는다.
 - 태그(C, F, I)는 공개 저장소에 영구적으로 남는다. 실패하면 태그를 옮기거나 지우지 않고 번호를 올린다(예: `alpha.2`).
 
 ---
@@ -194,15 +221,15 @@ flowchart LR
 ### 시작 전에 확인할 것
 
 ```bash
-cd ~/git/my-skills && git switch dev && git pull
+cd <tool repo> && git switch dev && git pull
 git status -sb                       # dev...origin/dev, clean
 gh run list --branch dev --limit 1   # 마지막 CI 결과
-my-skills --version                  # 지금은 Python 0.4.1 (전환 전까지)
+my-skills --version                  # 전환 전까지는 Python 0.4.1
 ```
 
-### 빌드와 검사 (이 맥)
+### 빌드와 검사 (macOS, Homebrew Rust)
 
-`~/.cargo/bin`에 있는 rustup proxy 때문에 `cargo fmt`와 `cargo clippy`는 이 맥에서 실패한다. 도구를 직접 부른다.
+`~/.cargo/bin`의 rustup proxy 때문에 `cargo fmt`와 `cargo clippy`가 실패한다. 도구를 직접 부른다.
 
 ```bash
 cargo build && cargo test
@@ -211,37 +238,38 @@ rustfmt --edition 2024 $(git ls-files 'crates/*.rs')
 uv run pytest            # Python 0.4.x (D 전까지)
 ```
 
-이 맥은 Rust 1.96이고 CI는 1.100이다. 이 맥에서 깨끗해도 CI의 lint가 더 엄격할 수 있다. push 후 반드시 CI를 확인한다. Windows 전용 코드(`cfg(windows)`)는 CI에서만 컴파일된다.
+이 맥의 Rust는 1.96이고 CI는 1.100이라 CI의 lint가 더 엄격하다. push한 뒤 반드시 CI를 확인한다.
+Windows 전용 코드(`cfg(windows)`)는 CI에서만 컴파일된다.
 
 ### 규칙
 
-- 실제 사용자 상태를 테스트에 쓰지 않는다: `~/git/my-agent-skills`, host 스킬 폴더, `~/.local/state/my-skills` 등. 테스트는 임시 `HOME`, `XDG_*`, `MY_SKILLS_ROOT`로 격리한다.
-- 안전 불변식(스펙 §4)을 깨는 변경은 하지 않는다. 특히 재귀 삭제는 `install.rs`의 `remove_real_dir` 하나만 쓴다.
-- 공개 저장소이므로 개인 경로, 계정, 실제 스킬 이름을 커밋하지 않는다.
+- 테스트에 실제 사용자 상태를 쓰지 않는다. 레지스트리, host 스킬 폴더, `~/.local/state/my-skills` 등이 해당한다. 임시 `HOME`, `XDG_*`, `MY_SKILLS_ROOT`로 격리한다.
+- 안전 불변식(스펙 §4)을 깨지 않는다. 재귀 삭제는 `install::remove_real_dir` 하나만 쓴다.
+- 공개 저장소에는 개인 경로, 계정, 실제 스킬 이름, 기기별 수치를 커밋하지 않는다. `public_hygiene.rs`가 일부를 검사한다.
 - 태그, `main` 변경, 실제 사용자 환경 변경은 §7의 승인 지점에서만 한다.
 
 ### Codex에 병렬로 맡길 때
 
-- Herdr pane에서 `codex --yolo -m gpt-6.2-sol -c 'model_reasoning_effort="high"'`로 실행한다. astra는 보류 중이다.
-- 작업당 worktree 하나(`~/git/my-skills-worktrees/stream-<x>`), 브랜치 `dev-stream-<x>`.
-- 지시서는 `docs/tasks/2026-11-23-rust-v1/README.md`의 규칙 1~10과 `phase2-README.md`를 기준으로 쓴다.
-- 작업 크기를 비슷하게 나눈다. 정답을 비교할 기준(golden, 테스트)이 있는 작업은 `high`로 충분하다.
-- 5시간 사용량을 확인한 뒤 시작한다(02:04 기준 1%).
+- Herdr pane에서 `codex --yolo -m gpt-6.2-sol -c 'model_reasoning_effort="high"'`로 실행한다. astra는 보류.
+- 작업마다 worktree 하나(`<worktrees>/stream-<x>`)와 브랜치 `dev-stream-<x>`를 쓴다.
+- 지시서는 `docs/tasks/2026-11-23-rust-v1/README.md`의 규칙 1~10과 `phase2-README.md`를 따른다.
+- 작업 크기를 비슷하게 나눈다. 비교할 정답(golden, 테스트)이 있는 작업은 `high`로 충분하다.
+- 시작 전에 5시간 사용량을 확인한다.
 
 ### Windows PC에서 이어갈 때 (H)
 
-스펙 §12 "Windows 작업 지시서"를 그대로 넘긴다. 결과는 스펙 §12 "Windows 확인 결과"의 "실기기" 항목에 적고 `dev`에 커밋한다. F 전이라면 그 PC에서 `cargo build --release`로 만든 binary를 쓴다.
+스펙 §12 "Windows 작업 지시서"를 그대로 넘긴다. 결과는 스펙 §12 "Windows 확인 결과"의 "실기기" 항목에 적고 `dev`에 커밋한다.
+F 전이라면 그 PC에서 `cargo build --release`로 만든 binary를 쓴다.
 
 ---
 
 ## 9. 이 문서의 수치를 다시 확인하는 방법
 
 ```bash
-git log --oneline --no-merges main..dev | wc -l          # 38
-cargo test -q 2>&1 | grep "test result" | awk '{p+=$4;f+=$6} END{print p,f}'   # 188 0
+git log --oneline --no-merges main..dev | wc -l
+cargo test -q 2>&1 | grep "test result" | awk '{p+=$4;f+=$6} END{print p,f}'   # 202 0 이상
 uv run pytest -q | tail -1                                # 308 passed
-gh run list --branch dev --limit 1                        # success
+gh run list --branch dev --limit 1                        # 최신 CI
 git ls-remote --tags origin                               # v0.4.1이 최신, v1 태그 없음
-python3 -c "import json,collections;d=json.load(open('$HOME/.local/state/my-skills/state.json'));print(collections.Counter((r['host'],r['mode']) for r in d['installs']))"
-grep -n install_mode ~/git/my-agent-skills/my-skills.toml   # "copy"
+my-skills doctor                                          # 실제 환경: 버전, 레지스트리, 연결 집계
 ```
