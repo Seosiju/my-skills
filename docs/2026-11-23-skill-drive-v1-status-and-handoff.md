@@ -1,7 +1,7 @@
 # Skill Drive v1: 진행 현황과 작업 인계
 
-> 기준 시점: 2026-11-23 03:25 (KST). `dev`의 감사 반영 커밋 `b79dbf5`와 이 문서 커밋까지 포함
-> 상태: Rust v1 기능 구현과 감사 지적 수정 완료. 실제 사용자 환경은 아직 바뀌지 않음
+> 기준 시점: 2026-11-23 (KST). `dev` = `1104b30` 이후 (감사 반영 `b79dbf5`, §7 B `ee2ad94`, §7 A `b1113e8`·`2368f93`)
+> 상태: Rust v1 기능 구현, 감사 지적 수정, §7 A·B 완료. 실제 사용자 환경은 아직 바뀌지 않음
 > 설계 문서: `docs/2026-11-23-skill-drive-rust-v1-spec.md` (이하 "스펙")
 > 작업 지시서와 보고서: `docs/tasks/2026-11-23-rust-v1/`
 
@@ -20,7 +20,7 @@
 |---|---|
 | 목표 | **개인 스킬 드라이브**: 원본은 한 곳에 두고, 모든 기기와 에이전트는 바로가기(link)로 연결한다 (스펙 제품 정의) |
 | Rust v1 구현 | 19개 명령 모두 연결됨 |
-| 테스트 | Rust 202개(테스트 파일 21개), Python 308개 모두 통과 |
+| 테스트 | Rust 209개, Python 308개 모두 통과 |
 | CI (`dev`) | Ubuntu, macOS, Windows, Python. 최신 결과는 §9 명령으로 확인 |
 | 릴리스 | **없음**. 태그와 GitHub Release를 하나도 만들지 않았고, 릴리스 workflow도 실행되지 않았다 |
 | `main` | v0.4.1 그대로. `dev`가 앞서 있다(병합 커밋 제외 40개 이상) |
@@ -53,7 +53,8 @@ flowchart LR
 | 02:04~02:17 | 세 브랜치 병합, 두 기기 흐름 실행 확인, CI 실패 3회 수정 | `01a725c`~`f75a88d` |
 | 02:3x | 첫 인계 문서 | `124b817` |
 | 03:15 | **독립 감사**(agy 세션): 인계 문서에도 없던 코드 결함 6건, 빠진 문서, 공개 문서의 개인 운영 정보, 위생 테스트 공백 보고 | 보고서는 그 세션에 있음 |
-| 03:15~03:25 | 감사 항목을 하나씩 재확인(모두 사실). 높음 3건과 작은 결함 수정, 위생 테스트 Rust 이식, 이 문서 개정, 공개 문서 일반화 | `b79dbf5`, 이 문서 |
+| 03:15~03:25 | 감사 항목을 하나씩 재확인(모두 사실). 높음 3건과 작은 결함 수정, 위생 테스트 Rust 이식, 이 문서 개정, 공개 문서 일반화 | `b79dbf5`, `f98fca5` |
+| 이후 | §7 B: 남은 쓰기 명령에 `--dry-run` 추가. §7 A: 모듈을 기능별로 재배치하고 테스트 데이터를 crate 안으로 이동 | `ee2ad94`, `b1113e8`, `2368f93` |
 
 Codex 운영:
 - 1단계: `gpt-6.2-sol` `xhigh` 5개. 5시간 한도의 약 51%포인트를 썼다(99% → 48%).
@@ -66,6 +67,7 @@ Codex 운영:
 
 모든 `dev-stream-*` 브랜치는 `dev`에 병합됐다(병합되지 않은 커밋 0개).
 각 단위의 상세 내용은 `docs/tasks/2026-11-23-rust-v1/reports/stream-<x>.md`에 있다.
+아래 표와 보고서의 파일 이름은 §7 A의 재배치 이전 이름이다. 지금 위치는 §6.3의 대응표를 따른다.
 
 | 단위 | 담당 | 산출물 | v0.4.1과 의도적으로 다른 점 | 남은 문제 |
 |---|---|---|---|---|
@@ -151,7 +153,8 @@ Codex 운영:
 | 중간 | `seeds.rs`의 직접 재귀 삭제 | **수정**. `install::remove_real_dir`로 일원화 |
 | 중간 | Python 0.4.2 `doctor`가 v1 이전 안내를 출력하지 않음 | **§7 C에 추가** |
 | 낮음 | bootstrap dry-run 미리보기에 `--mode`가 빠짐 | **수정** |
-| 낮음 | v0.4.1에서 물려받은 동작. 기록의 `source_type`이 항상 `"canonical"`. install 검증이 스킬의 `hosts`에 없는 host도 검사함. copy 갱신(`Update`)도 state 저장 전에 backup을 지움(내용은 옛 원본이라 유실은 없음) | **보류**. 동작은 v0.4.1과 같다. §7 B에서 함께 정리할지 결정 |
+| 낮음 | install 검증이 스킬의 `hosts`에 없는 host도 검사함 (v0.4.1에서 물려받음) | **수정** (`ee2ad94`) |
+| 낮음 | 기록의 `source_type`이 항상 `"canonical"`. copy 갱신(`Update`)도 state 저장 전에 backup을 지움(내용은 옛 원본이라 유실 없음) | **그대로 둠**. v0.4.1과 같은 동작이고 데이터 유실이 없다 |
 
 ### 6.2 이전 보고의 오류 (통합 담당)
 
@@ -163,18 +166,26 @@ Codex 운영:
 6. **단계 번호를 섞어 썼다.** 이 문서부터는 §7의 문자(A~K)로만 부른다.
 7. **CLI 계약이 스펙 §6의 "모든 쓰기 명령은 `--dry-run`"과 어긋났다.**
 8. **작업 운영상의 실수.** 모델 목록을 확인하지 않았다. 다섯 개 모두 `xhigh`로 돌렸다. 작업 크기를 고르게 나누지 못했다. 뼈대 CLI 플래그가 v0.4.1과 달랐다. 이 맥의 Rust가 CI보다 오래된 버전이었다.
-9. **인계 문서에 "재귀 삭제는 한 곳뿐"이라고 적었지만 사실이 아니었다.** 지금은 수정해서 사실이 됐다.
+9. **인계 문서에 "재귀 삭제는 한 곳뿐"이라고 적었지만 사실이 아니었다.** 지금은 수정해서 사실이 됐다(`drive::apply::remove_real_dir`).
 
-### 6.3 그 밖의 알려진 문제
+### 6.3 그 밖의 알려진 문제와 구조
 
-- **구조**: Rust 모듈 21개가 한 층에 나열돼 있어 기능별로 묶이지 않았다(§7 A).
-- **Python 쪽 폴더에 기대는 Rust 코드**(§7 A, D에서 끊어야 함):
-  - `src/validate.rs`의 compose 테스트 → 루트 `tests/fixtures`
-  - `tests/validate_golden.rs` → 루트 `tests/fixtures`
-  - `tests/audit_parity.rs` → 루트 `tests/golden/audit`, `tests/fixtures`, `src/my_skills/audit/builtin_rules.yaml`
-  - `tests/registry_init.rs` → 루트 `tests`
-  - `src/seeds.rs` → 루트 `skills/` (루트로 옮길 때 경로 조정)
-  - `tests/public_hygiene.rs` → 저장소 루트 경로
+- **구조 (§7 A에서 정리)**: 모듈 위치가 바뀌었다(`crates/my-skills/src/` 기준).
+
+  | 이전 | 지금 |
+  |---|---|
+  | `runtime.rs`, `manifest.rs`, `manifest_edit.rs`, `catalog.rs`, `seeds.rs`, `sharing.rs` | `registry/root.rs`, `registry/manifest.rs`, `registry/edit.rs`, `registry/catalog.rs`, `registry/seeds.rs`, `registry/share.rs` |
+  | `hosts.rs`, `link.rs`, `plan.rs`, `install.rs`, `state.rs`, `hash.rs`, `ignore.rs` | `drive/hosts.rs`, `drive/link.rs`, `drive/plan.rs`, `drive/apply.rs`, `drive/state.rs`, `drive/hash.rs`, `drive/ignore.rs` |
+  | `frontmatter.rs`, `validate.rs`, `audit/` | `check/frontmatter.rs`, `check/validate.rs`, `check/audit/` |
+  | `hooks.rs` | `git/hooks.rs` |
+  | `self_update.rs` | `update.rs` |
+  | `paths.rs`, `data.rs` | `platform/paths.rs`, `platform/data.rs` |
+
+- **Rust가 Python 쪽에 기대는 곳**: 테스트 데이터는 모두 crate 안으로 옮겼다(`tests/fixtures/shared`, `tests/golden/audit`). 남은 곳은 다음과 같다.
+  - `tests/audit_parity.rs`: Rust와 Python의 `builtin_rules.yaml`이 같은지 비교한다. 이전 기간에만 필요한 의도된 비교라 §7 D에서 Python과 함께 지운다.
+  - `tests/golden/*/generate.py`: Python v0.4.1로 golden 데이터를 다시 만드는 도구다. §7 D 이후에는 기록으로만 남는다.
+  - 저장소 루트 기준 경로를 쓰는 곳: `src/registry/seeds.rs`(seed 원본 `skills/`), `tests/public_hygiene.rs`, `tests/registry_init.rs`, `tests/validate_golden.rs`, `tests/audit_parity.rs`. crate를 루트로 옮길 때(§7 D) 경로를 조정한다.
+- **import의 dry-run**: 검증과 audit를 위해 레지스트리 안에 임시 staging 폴더와 편집 잠금을 잠깐 만들었다가 지운다. 영구적인 쓰기는 하지 않는다.
 - 스펙의 열린 질문 Q1(Windows 경로 실측), Q3(Windows state 경로), Q5(코드 서명), Q7(0.4.x 안내)은 아직 결정하지 않았다.
 - 이 작업과 무관한 다른 도구의 worktree가 `git worktree list`에 `prunable`로 남아 있다.
 
@@ -186,10 +197,10 @@ Codex 운영:
 
 | ID | 할 일 | 반드시 먼저 끝나야 하는 것 | 승인 |
 |---|---|---|---|
-| A | Rust를 기능별로 재배치(`registry/`, `drive/`, `check/`, `git/`, `update/`, `platform/`)하고 §6.3의 Python 폴더 의존을 끊음 | — | 필요 없음 |
-| B | 쓰기 명령에 `--dry-run` 추가(`hooks uninstall`, `share`, `import`, `init-registry`, `enable`, `disable`, 그리고 `set-root` 포함 여부 결정). §6.1의 보류 항목 결정 | — | 필요 없음 |
+| A | ~~Rust를 기능별로 재배치하고 Python 폴더 의존을 끊음~~ **완료** (`b1113e8`, `2368f93`) | — | — |
+| B | ~~쓰기 명령에 `--dry-run` 추가, §6.1 보류 항목 결정~~ **완료** (`ee2ad94`). `set-root`도 포함했다. `share --dry-run`은 `--plan`과 같다 | — | — |
 | C | Python 0.4.2: `main`에서 `release/v0.4.2`를 만들고 guard를 반영. **main 채널 guard와 `doctor`의 v1 이전 안내** 추가, 버전과 CHANGELOG → 태그 → `main`에 병합 | — | **필요 (태그, `main` 변경)** |
-| D | `dev`에서 Python 제거, Rust를 루트 `src/`, `tests/`로 이동, CI에서 Python 작업 제거, 위생 테스트 경로 조정 | C | 필요 없음 |
+| D | `dev`에서 Python 제거, Rust를 루트 `src/`, `tests/`로 이동, CI에서 Python 작업 제거, §6.3의 루트 기준 경로 조정, `builtin_rules.yaml` 비교 테스트 삭제 | C | 필요 없음 |
 | E | tool repo 문서: `README.md`, `README.ko.md`, `AGENTS.md`("host directory = install output", `uv` 명령), seed `skills/my-skills/SKILL.md`, `seeds.rs`의 README 템플릿과 `SEED_REVISION`, `docs/release-checklist.md`의 Python 절차 | D | 필요 없음 |
 | F | `v1.0.0-alpha.1` pre-release: `Cargo.toml` 버전을 `1.0.0-alpha.1`로 올림 → 태그와 버전을 비교하는 CI 단계 추가 → `workflow_dispatch`로 시험 실행(binary, `--version`, 설치 스크립트) → 태그 | — (A·D 뒤가 깔끔하지만 필수는 아님) | **필요 (태그)** |
 | G | **맥 전환**: binary 설치 → `convert --to link` dry-run → 승인 → 전환. 레지스트리 `install_mode` 수정, `hooks install`. 에이전트가 읽는 문서 수정: 레지스트리의 `skills/my-skills/SKILL.md`, `AGENTS.md`(동기화 단계, agy 복사 설치 문구, 그룹 비활성화 시 uninstall 안내), `instructions/global.md`, `README.md`, 그리고 Claude·Codex·agy 전역 안내의 "동기화" 절차 | binary 하나 (F 또는 직접 빌드) | **필요 (dry-run과 문서 diff 확인 후)** |
@@ -202,7 +213,7 @@ Codex 운영:
 
 ```mermaid
 flowchart LR
-  AB["A · B"] --> C["C"] --> DE["D · E"] --> F["F"]
+  AB["A · B (완료)"] --> C["C"] --> DE["D · E"] --> F["F"]
   F --> G["G 맥"]
   F --> H["H Windows"]
   G --> I["I v1.0.0"]
@@ -210,7 +221,7 @@ flowchart LR
   I --> J["J"]
 ```
 
-- 맥 전환을 서둘러야 하면 G를 A 바로 다음으로 당길 수 있다. 이때는 직접 빌드한 binary를 쓰고, 나중에 F의 binary로 한 번 더 교체한다.
+- A·B가 끝났으므로 다음은 C다. 맥 전환을 서둘러야 하면 G를 C보다 먼저 할 수 있다. 이때는 직접 빌드한 binary를 쓰고, 나중에 F의 binary로 한 번 더 교체한다.
 - G는 실제 스킬 폴더와 전역 안내를 바꾼다. dry-run과 바뀔 문서의 diff를 먼저 보여 주고 승인을 받는다.
 - 태그(C, F, I)는 공개 저장소에 영구적으로 남는다. 실패하면 태그를 옮기거나 지우지 않고 번호를 올린다(예: `alpha.2`).
 
@@ -244,7 +255,7 @@ Windows 전용 코드(`cfg(windows)`)는 CI에서만 컴파일된다.
 ### 규칙
 
 - 테스트에 실제 사용자 상태를 쓰지 않는다. 레지스트리, host 스킬 폴더, `~/.local/state/my-skills` 등이 해당한다. 임시 `HOME`, `XDG_*`, `MY_SKILLS_ROOT`로 격리한다.
-- 안전 불변식(스펙 §4)을 깨지 않는다. 재귀 삭제는 `install::remove_real_dir` 하나만 쓴다.
+- 안전 불변식(스펙 §4)을 깨지 않는다. 재귀 삭제는 `drive::apply::remove_real_dir` 하나만 쓴다.
 - 공개 저장소에는 개인 경로, 계정, 실제 스킬 이름, 기기별 수치를 커밋하지 않는다. `public_hygiene.rs`가 일부를 검사한다.
 - 태그, `main` 변경, 실제 사용자 환경 변경은 §7의 승인 지점에서만 한다.
 
@@ -267,7 +278,7 @@ F 전이라면 그 PC에서 `cargo build --release`로 만든 binary를 쓴다.
 
 ```bash
 git log --oneline --no-merges main..dev | wc -l
-cargo test -q 2>&1 | grep "test result" | awk '{p+=$4;f+=$6} END{print p,f}'   # 202 0 이상
+cargo test -q 2>&1 | grep "test result" | awk '{p+=$4;f+=$6} END{print p,f}'   # 209 0 이상
 uv run pytest -q | tail -1                                # 308 passed
 gh run list --branch dev --limit 1                        # 최신 CI
 git ls-remote --tags origin                               # v0.4.1이 최신, v1 태그 없음
