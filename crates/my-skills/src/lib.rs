@@ -26,9 +26,11 @@ pub mod frontmatter;
 pub mod hash;
 pub mod hosts;
 pub mod ignore;
+pub mod install;
 pub mod link;
 pub mod manifest;
 pub mod paths;
+pub mod plan;
 pub mod state;
 pub mod validate;
 
