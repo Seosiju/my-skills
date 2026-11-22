@@ -413,7 +413,7 @@ fn export_index(git: &Git<'_>, snapshot: &Path, scope: &Path) -> anyhow::Result<
         let mut separator = [0];
         reader.read_exact(&mut separator)?;
         anyhow::ensure!(
-            written == size && separator == [b'\n'],
+            written == size && separator == *b"\n",
             "incomplete staged blob"
         );
         Ok(())
