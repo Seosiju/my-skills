@@ -78,7 +78,7 @@
   ],
   "scans": [
     {
-      "path": "crates/my-skills/tests/fixtures/audit/abs-user-path",
+      "path": "tests/fixtures/audit/abs-user-path",
       "findings": [
         {
           "rule_id": "abs-user-path",
@@ -92,28 +92,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "abs-user-path",
-          "path": "crates/my-skills/tests/fixtures/audit/abs-user-path",
+          "path": "tests/fixtures/audit/abs-user-path",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "abs-user-path",
-          "path": "crates/my-skills/tests/fixtures/audit/abs-user-path",
+          "path": "tests/fixtures/audit/abs-user-path",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "abs-user-path",
-          "path": "crates/my-skills/tests/fixtures/audit/abs-user-path",
+          "path": "tests/fixtures/audit/abs-user-path",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "abs-user-path",
-          "path": "crates/my-skills/tests/fixtures/audit/abs-user-path",
+          "path": "tests/fixtures/audit/abs-user-path",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -121,7 +121,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/audit/aws-key",
+      "path": "tests/fixtures/audit/aws-key",
       "findings": [
         {
           "rule_id": "aws-key",
@@ -135,28 +135,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "aws-key",
-          "path": "crates/my-skills/tests/fixtures/audit/aws-key",
+          "path": "tests/fixtures/audit/aws-key",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "default": {
           "skill": "aws-key",
-          "path": "crates/my-skills/tests/fixtures/audit/aws-key",
+          "path": "tests/fixtures/audit/aws-key",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "strict": {
           "skill": "aws-key",
-          "path": "crates/my-skills/tests/fixtures/audit/aws-key",
+          "path": "tests/fixtures/audit/aws-key",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "aws-key",
-          "path": "crates/my-skills/tests/fixtures/audit/aws-key",
+          "path": "tests/fixtures/audit/aws-key",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -164,7 +164,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/audit/bidi-unicode",
+      "path": "tests/fixtures/audit/bidi-unicode",
       "findings": [
         {
           "rule_id": "bidi-unicode",
@@ -178,28 +178,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "bidi-unicode",
-          "path": "crates/my-skills/tests/fixtures/audit/bidi-unicode",
+          "path": "tests/fixtures/audit/bidi-unicode",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "default": {
           "skill": "bidi-unicode",
-          "path": "crates/my-skills/tests/fixtures/audit/bidi-unicode",
+          "path": "tests/fixtures/audit/bidi-unicode",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "strict": {
           "skill": "bidi-unicode",
-          "path": "crates/my-skills/tests/fixtures/audit/bidi-unicode",
+          "path": "tests/fixtures/audit/bidi-unicode",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "bidi-unicode",
-          "path": "crates/my-skills/tests/fixtures/audit/bidi-unicode",
+          "path": "tests/fixtures/audit/bidi-unicode",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -207,34 +207,34 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/audit/clean-skill",
+      "path": "tests/fixtures/audit/clean-skill",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "clean-skill",
-          "path": "crates/my-skills/tests/fixtures/audit/clean-skill",
+          "path": "tests/fixtures/audit/clean-skill",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "clean-skill",
-          "path": "crates/my-skills/tests/fixtures/audit/clean-skill",
+          "path": "tests/fixtures/audit/clean-skill",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "clean-skill",
-          "path": "crates/my-skills/tests/fixtures/audit/clean-skill",
+          "path": "tests/fixtures/audit/clean-skill",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "clean-skill",
-          "path": "crates/my-skills/tests/fixtures/audit/clean-skill",
+          "path": "tests/fixtures/audit/clean-skill",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -242,7 +242,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/audit/credential-network-flow",
+      "path": "tests/fixtures/audit/credential-network-flow",
       "findings": [
         {
           "rule_id": "network-sender",
@@ -288,28 +288,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "credential-network-flow",
-          "path": "crates/my-skills/tests/fixtures/audit/credential-network-flow",
+          "path": "tests/fixtures/audit/credential-network-flow",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "default": {
           "skill": "credential-network-flow",
-          "path": "crates/my-skills/tests/fixtures/audit/credential-network-flow",
+          "path": "tests/fixtures/audit/credential-network-flow",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "strict": {
           "skill": "credential-network-flow",
-          "path": "crates/my-skills/tests/fixtures/audit/credential-network-flow",
+          "path": "tests/fixtures/audit/credential-network-flow",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "credential-network-flow",
-          "path": "crates/my-skills/tests/fixtures/audit/credential-network-flow",
+          "path": "tests/fixtures/audit/credential-network-flow",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -317,7 +317,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/audit/credential-reader",
+      "path": "tests/fixtures/audit/credential-reader",
       "findings": [
         {
           "rule_id": "credential-reader",
@@ -332,28 +332,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "credential-reader",
-          "path": "crates/my-skills/tests/fixtures/audit/credential-reader",
+          "path": "tests/fixtures/audit/credential-reader",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "credential-reader",
-          "path": "crates/my-skills/tests/fixtures/audit/credential-reader",
+          "path": "tests/fixtures/audit/credential-reader",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "credential-reader",
-          "path": "crates/my-skills/tests/fixtures/audit/credential-reader",
+          "path": "tests/fixtures/audit/credential-reader",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "credential-reader",
-          "path": "crates/my-skills/tests/fixtures/audit/credential-reader",
+          "path": "tests/fixtures/audit/credential-reader",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -361,7 +361,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/audit/destructive-command",
+      "path": "tests/fixtures/audit/destructive-command",
       "findings": [
         {
           "rule_id": "destructive-command",
@@ -375,28 +375,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "destructive-command",
-          "path": "crates/my-skills/tests/fixtures/audit/destructive-command",
+          "path": "tests/fixtures/audit/destructive-command",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "destructive-command",
-          "path": "crates/my-skills/tests/fixtures/audit/destructive-command",
+          "path": "tests/fixtures/audit/destructive-command",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "destructive-command",
-          "path": "crates/my-skills/tests/fixtures/audit/destructive-command",
+          "path": "tests/fixtures/audit/destructive-command",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "destructive-command",
-          "path": "crates/my-skills/tests/fixtures/audit/destructive-command",
+          "path": "tests/fixtures/audit/destructive-command",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -404,7 +404,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/audit/encoding",
+      "path": "tests/fixtures/audit/encoding",
       "findings": [
         {
           "rule_id": "nul-byte",
@@ -425,28 +425,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "encoding",
-          "path": "crates/my-skills/tests/fixtures/audit/encoding",
+          "path": "tests/fixtures/audit/encoding",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "default": {
           "skill": "encoding",
-          "path": "crates/my-skills/tests/fixtures/audit/encoding",
+          "path": "tests/fixtures/audit/encoding",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "strict": {
           "skill": "encoding",
-          "path": "crates/my-skills/tests/fixtures/audit/encoding",
+          "path": "tests/fixtures/audit/encoding",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "encoding",
-          "path": "crates/my-skills/tests/fixtures/audit/encoding",
+          "path": "tests/fixtures/audit/encoding",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -454,7 +454,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/audit/markdown-remote-image",
+      "path": "tests/fixtures/audit/markdown-remote-image",
       "findings": [
         {
           "rule_id": "markdown-remote-image",
@@ -477,28 +477,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "markdown-remote-image",
-          "path": "crates/my-skills/tests/fixtures/audit/markdown-remote-image",
+          "path": "tests/fixtures/audit/markdown-remote-image",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "markdown-remote-image",
-          "path": "crates/my-skills/tests/fixtures/audit/markdown-remote-image",
+          "path": "tests/fixtures/audit/markdown-remote-image",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "markdown-remote-image",
-          "path": "crates/my-skills/tests/fixtures/audit/markdown-remote-image",
+          "path": "tests/fixtures/audit/markdown-remote-image",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "markdown-remote-image",
-          "path": "crates/my-skills/tests/fixtures/audit/markdown-remote-image",
+          "path": "tests/fixtures/audit/markdown-remote-image",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -506,7 +506,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/audit/network-sender",
+      "path": "tests/fixtures/audit/network-sender",
       "findings": [
         {
           "rule_id": "network-sender",
@@ -521,28 +521,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "network-sender",
-          "path": "crates/my-skills/tests/fixtures/audit/network-sender",
+          "path": "tests/fixtures/audit/network-sender",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "network-sender",
-          "path": "crates/my-skills/tests/fixtures/audit/network-sender",
+          "path": "tests/fixtures/audit/network-sender",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "network-sender",
-          "path": "crates/my-skills/tests/fixtures/audit/network-sender",
+          "path": "tests/fixtures/audit/network-sender",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "network-sender",
-          "path": "crates/my-skills/tests/fixtures/audit/network-sender",
+          "path": "tests/fixtures/audit/network-sender",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -550,7 +550,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/audit/newline-dataflow",
+      "path": "tests/fixtures/audit/newline-dataflow",
       "findings": [
         {
           "rule_id": "credential-reader",
@@ -573,28 +573,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "newline-dataflow",
-          "path": "crates/my-skills/tests/fixtures/audit/newline-dataflow",
+          "path": "tests/fixtures/audit/newline-dataflow",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "newline-dataflow",
-          "path": "crates/my-skills/tests/fixtures/audit/newline-dataflow",
+          "path": "tests/fixtures/audit/newline-dataflow",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "newline-dataflow",
-          "path": "crates/my-skills/tests/fixtures/audit/newline-dataflow",
+          "path": "tests/fixtures/audit/newline-dataflow",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "newline-dataflow",
-          "path": "crates/my-skills/tests/fixtures/audit/newline-dataflow",
+          "path": "tests/fixtures/audit/newline-dataflow",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -602,7 +602,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/audit/nul-byte",
+      "path": "tests/fixtures/audit/nul-byte",
       "findings": [
         {
           "rule_id": "nul-byte",
@@ -616,28 +616,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "nul-byte",
-          "path": "crates/my-skills/tests/fixtures/audit/nul-byte",
+          "path": "tests/fixtures/audit/nul-byte",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "default": {
           "skill": "nul-byte",
-          "path": "crates/my-skills/tests/fixtures/audit/nul-byte",
+          "path": "tests/fixtures/audit/nul-byte",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "strict": {
           "skill": "nul-byte",
-          "path": "crates/my-skills/tests/fixtures/audit/nul-byte",
+          "path": "tests/fixtures/audit/nul-byte",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "nul-byte",
-          "path": "crates/my-skills/tests/fixtures/audit/nul-byte",
+          "path": "tests/fixtures/audit/nul-byte",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -645,7 +645,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/audit/output-suppression",
+      "path": "tests/fixtures/audit/output-suppression",
       "findings": [
         {
           "rule_id": "output-suppression",
@@ -659,28 +659,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "output-suppression",
-          "path": "crates/my-skills/tests/fixtures/audit/output-suppression",
+          "path": "tests/fixtures/audit/output-suppression",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "output-suppression",
-          "path": "crates/my-skills/tests/fixtures/audit/output-suppression",
+          "path": "tests/fixtures/audit/output-suppression",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "output-suppression",
-          "path": "crates/my-skills/tests/fixtures/audit/output-suppression",
+          "path": "tests/fixtures/audit/output-suppression",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "output-suppression",
-          "path": "crates/my-skills/tests/fixtures/audit/output-suppression",
+          "path": "tests/fixtures/audit/output-suppression",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -688,7 +688,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/audit/path-traversal",
+      "path": "tests/fixtures/audit/path-traversal",
       "findings": [
         {
           "rule_id": "path-traversal",
@@ -709,28 +709,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "path-traversal",
-          "path": "crates/my-skills/tests/fixtures/audit/path-traversal",
+          "path": "tests/fixtures/audit/path-traversal",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "default": {
           "skill": "path-traversal",
-          "path": "crates/my-skills/tests/fixtures/audit/path-traversal",
+          "path": "tests/fixtures/audit/path-traversal",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "strict": {
           "skill": "path-traversal",
-          "path": "crates/my-skills/tests/fixtures/audit/path-traversal",
+          "path": "tests/fixtures/audit/path-traversal",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "path-traversal",
-          "path": "crates/my-skills/tests/fixtures/audit/path-traversal",
+          "path": "tests/fixtures/audit/path-traversal",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -738,7 +738,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/audit/private-key",
+      "path": "tests/fixtures/audit/private-key",
       "findings": [
         {
           "rule_id": "private-key",
@@ -752,28 +752,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "private-key",
-          "path": "crates/my-skills/tests/fixtures/audit/private-key",
+          "path": "tests/fixtures/audit/private-key",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "default": {
           "skill": "private-key",
-          "path": "crates/my-skills/tests/fixtures/audit/private-key",
+          "path": "tests/fixtures/audit/private-key",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "strict": {
           "skill": "private-key",
-          "path": "crates/my-skills/tests/fixtures/audit/private-key",
+          "path": "tests/fixtures/audit/private-key",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "private-key",
-          "path": "crates/my-skills/tests/fixtures/audit/private-key",
+          "path": "tests/fixtures/audit/private-key",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -781,7 +781,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/audit/prompt-injection",
+      "path": "tests/fixtures/audit/prompt-injection",
       "findings": [
         {
           "rule_id": "prompt-injection",
@@ -795,28 +795,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "prompt-injection",
-          "path": "crates/my-skills/tests/fixtures/audit/prompt-injection",
+          "path": "tests/fixtures/audit/prompt-injection",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "default": {
           "skill": "prompt-injection",
-          "path": "crates/my-skills/tests/fixtures/audit/prompt-injection",
+          "path": "tests/fixtures/audit/prompt-injection",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "strict": {
           "skill": "prompt-injection",
-          "path": "crates/my-skills/tests/fixtures/audit/prompt-injection",
+          "path": "tests/fixtures/audit/prompt-injection",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "prompt-injection",
-          "path": "crates/my-skills/tests/fixtures/audit/prompt-injection",
+          "path": "tests/fixtures/audit/prompt-injection",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -824,7 +824,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/audit/regex-parity",
+      "path": "tests/fixtures/audit/regex-parity",
       "findings": [
         {
           "rule_id": "prompt-injection",
@@ -993,28 +993,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "regex-parity",
-          "path": "crates/my-skills/tests/fixtures/audit/regex-parity",
+          "path": "tests/fixtures/audit/regex-parity",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "default": {
           "skill": "regex-parity",
-          "path": "crates/my-skills/tests/fixtures/audit/regex-parity",
+          "path": "tests/fixtures/audit/regex-parity",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "strict": {
           "skill": "regex-parity",
-          "path": "crates/my-skills/tests/fixtures/audit/regex-parity",
+          "path": "tests/fixtures/audit/regex-parity",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "regex-parity",
-          "path": "crates/my-skills/tests/fixtures/audit/regex-parity",
+          "path": "tests/fixtures/audit/regex-parity",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1022,7 +1022,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/audit/secret",
+      "path": "tests/fixtures/audit/secret",
       "findings": [
         {
           "rule_id": "secret",
@@ -1036,28 +1036,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "secret",
-          "path": "crates/my-skills/tests/fixtures/audit/secret",
+          "path": "tests/fixtures/audit/secret",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "default": {
           "skill": "secret",
-          "path": "crates/my-skills/tests/fixtures/audit/secret",
+          "path": "tests/fixtures/audit/secret",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "strict": {
           "skill": "secret",
-          "path": "crates/my-skills/tests/fixtures/audit/secret",
+          "path": "tests/fixtures/audit/secret",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "secret",
-          "path": "crates/my-skills/tests/fixtures/audit/secret",
+          "path": "tests/fixtures/audit/secret",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1065,7 +1065,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/audit/suspicious-fetch",
+      "path": "tests/fixtures/audit/suspicious-fetch",
       "findings": [
         {
           "rule_id": "suspicious-fetch",
@@ -1079,28 +1079,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "suspicious-fetch",
-          "path": "crates/my-skills/tests/fixtures/audit/suspicious-fetch",
+          "path": "tests/fixtures/audit/suspicious-fetch",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "suspicious-fetch",
-          "path": "crates/my-skills/tests/fixtures/audit/suspicious-fetch",
+          "path": "tests/fixtures/audit/suspicious-fetch",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "suspicious-fetch",
-          "path": "crates/my-skills/tests/fixtures/audit/suspicious-fetch",
+          "path": "tests/fixtures/audit/suspicious-fetch",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "suspicious-fetch",
-          "path": "crates/my-skills/tests/fixtures/audit/suspicious-fetch",
+          "path": "tests/fixtures/audit/suspicious-fetch",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1108,7 +1108,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/shared/abs-path-warning",
+      "path": "tests/fixtures/shared/abs-path-warning",
       "findings": [
         {
           "rule_id": "abs-user-path",
@@ -1122,28 +1122,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "abs-path-warning",
-          "path": "crates/my-skills/tests/fixtures/shared/abs-path-warning",
+          "path": "tests/fixtures/shared/abs-path-warning",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "abs-path-warning",
-          "path": "crates/my-skills/tests/fixtures/shared/abs-path-warning",
+          "path": "tests/fixtures/shared/abs-path-warning",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "abs-path-warning",
-          "path": "crates/my-skills/tests/fixtures/shared/abs-path-warning",
+          "path": "tests/fixtures/shared/abs-path-warning",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "abs-path-warning",
-          "path": "crates/my-skills/tests/fixtures/shared/abs-path-warning",
+          "path": "tests/fixtures/shared/abs-path-warning",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1151,34 +1151,34 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/shared/bad-name",
+      "path": "tests/fixtures/shared/bad-name",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "bad-name",
-          "path": "crates/my-skills/tests/fixtures/shared/bad-name",
+          "path": "tests/fixtures/shared/bad-name",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "bad-name",
-          "path": "crates/my-skills/tests/fixtures/shared/bad-name",
+          "path": "tests/fixtures/shared/bad-name",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "bad-name",
-          "path": "crates/my-skills/tests/fixtures/shared/bad-name",
+          "path": "tests/fixtures/shared/bad-name",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "bad-name",
-          "path": "crates/my-skills/tests/fixtures/shared/bad-name",
+          "path": "tests/fixtures/shared/bad-name",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1186,34 +1186,34 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/shared/good-skill",
+      "path": "tests/fixtures/shared/good-skill",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "good-skill",
-          "path": "crates/my-skills/tests/fixtures/shared/good-skill",
+          "path": "tests/fixtures/shared/good-skill",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "good-skill",
-          "path": "crates/my-skills/tests/fixtures/shared/good-skill",
+          "path": "tests/fixtures/shared/good-skill",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "good-skill",
-          "path": "crates/my-skills/tests/fixtures/shared/good-skill",
+          "path": "tests/fixtures/shared/good-skill",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "good-skill",
-          "path": "crates/my-skills/tests/fixtures/shared/good-skill",
+          "path": "tests/fixtures/shared/good-skill",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1221,34 +1221,34 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/shared/malformed-frontmatter",
+      "path": "tests/fixtures/shared/malformed-frontmatter",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "malformed-frontmatter",
-          "path": "crates/my-skills/tests/fixtures/shared/malformed-frontmatter",
+          "path": "tests/fixtures/shared/malformed-frontmatter",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "malformed-frontmatter",
-          "path": "crates/my-skills/tests/fixtures/shared/malformed-frontmatter",
+          "path": "tests/fixtures/shared/malformed-frontmatter",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "malformed-frontmatter",
-          "path": "crates/my-skills/tests/fixtures/shared/malformed-frontmatter",
+          "path": "tests/fixtures/shared/malformed-frontmatter",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "malformed-frontmatter",
-          "path": "crates/my-skills/tests/fixtures/shared/malformed-frontmatter",
+          "path": "tests/fixtures/shared/malformed-frontmatter",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1256,34 +1256,34 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/shared/missing-description",
+      "path": "tests/fixtures/shared/missing-description",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "missing-description",
-          "path": "crates/my-skills/tests/fixtures/shared/missing-description",
+          "path": "tests/fixtures/shared/missing-description",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "missing-description",
-          "path": "crates/my-skills/tests/fixtures/shared/missing-description",
+          "path": "tests/fixtures/shared/missing-description",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "missing-description",
-          "path": "crates/my-skills/tests/fixtures/shared/missing-description",
+          "path": "tests/fixtures/shared/missing-description",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "missing-description",
-          "path": "crates/my-skills/tests/fixtures/shared/missing-description",
+          "path": "tests/fixtures/shared/missing-description",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1291,34 +1291,34 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/shared/missing-name",
+      "path": "tests/fixtures/shared/missing-name",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "missing-name",
-          "path": "crates/my-skills/tests/fixtures/shared/missing-name",
+          "path": "tests/fixtures/shared/missing-name",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "missing-name",
-          "path": "crates/my-skills/tests/fixtures/shared/missing-name",
+          "path": "tests/fixtures/shared/missing-name",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "missing-name",
-          "path": "crates/my-skills/tests/fixtures/shared/missing-name",
+          "path": "tests/fixtures/shared/missing-name",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "missing-name",
-          "path": "crates/my-skills/tests/fixtures/shared/missing-name",
+          "path": "tests/fixtures/shared/missing-name",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1326,34 +1326,34 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/shared/missing-reference",
+      "path": "tests/fixtures/shared/missing-reference",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "missing-reference",
-          "path": "crates/my-skills/tests/fixtures/shared/missing-reference",
+          "path": "tests/fixtures/shared/missing-reference",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "missing-reference",
-          "path": "crates/my-skills/tests/fixtures/shared/missing-reference",
+          "path": "tests/fixtures/shared/missing-reference",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "missing-reference",
-          "path": "crates/my-skills/tests/fixtures/shared/missing-reference",
+          "path": "tests/fixtures/shared/missing-reference",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "missing-reference",
-          "path": "crates/my-skills/tests/fixtures/shared/missing-reference",
+          "path": "tests/fixtures/shared/missing-reference",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1361,34 +1361,34 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/shared/name-mismatch",
+      "path": "tests/fixtures/shared/name-mismatch",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "name-mismatch",
-          "path": "crates/my-skills/tests/fixtures/shared/name-mismatch",
+          "path": "tests/fixtures/shared/name-mismatch",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "name-mismatch",
-          "path": "crates/my-skills/tests/fixtures/shared/name-mismatch",
+          "path": "tests/fixtures/shared/name-mismatch",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "name-mismatch",
-          "path": "crates/my-skills/tests/fixtures/shared/name-mismatch",
+          "path": "tests/fixtures/shared/name-mismatch",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "name-mismatch",
-          "path": "crates/my-skills/tests/fixtures/shared/name-mismatch",
+          "path": "tests/fixtures/shared/name-mismatch",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1396,34 +1396,34 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/shared/no-frontmatter",
+      "path": "tests/fixtures/shared/no-frontmatter",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "no-frontmatter",
-          "path": "crates/my-skills/tests/fixtures/shared/no-frontmatter",
+          "path": "tests/fixtures/shared/no-frontmatter",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "no-frontmatter",
-          "path": "crates/my-skills/tests/fixtures/shared/no-frontmatter",
+          "path": "tests/fixtures/shared/no-frontmatter",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "no-frontmatter",
-          "path": "crates/my-skills/tests/fixtures/shared/no-frontmatter",
+          "path": "tests/fixtures/shared/no-frontmatter",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "no-frontmatter",
-          "path": "crates/my-skills/tests/fixtures/shared/no-frontmatter",
+          "path": "tests/fixtures/shared/no-frontmatter",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1431,7 +1431,7 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/shared/secret-skill",
+      "path": "tests/fixtures/shared/secret-skill",
       "findings": [
         {
           "rule_id": "aws-key",
@@ -1452,28 +1452,28 @@
       "profiles": {
         "implicit-default": {
           "skill": "secret-skill",
-          "path": "crates/my-skills/tests/fixtures/shared/secret-skill",
+          "path": "tests/fixtures/shared/secret-skill",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "default": {
           "skill": "secret-skill",
-          "path": "crates/my-skills/tests/fixtures/shared/secret-skill",
+          "path": "tests/fixtures/shared/secret-skill",
           "profile": "default",
           "threshold": "critical",
           "blocked": true
         },
         "strict": {
           "skill": "secret-skill",
-          "path": "crates/my-skills/tests/fixtures/shared/secret-skill",
+          "path": "tests/fixtures/shared/secret-skill",
           "profile": "strict",
           "threshold": "high",
           "blocked": true
         },
         "permissive": {
           "skill": "secret-skill",
-          "path": "crates/my-skills/tests/fixtures/shared/secret-skill",
+          "path": "tests/fixtures/shared/secret-skill",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1481,34 +1481,34 @@
       }
     },
     {
-      "path": "crates/my-skills/tests/fixtures/shared/unterminated-frontmatter",
+      "path": "tests/fixtures/shared/unterminated-frontmatter",
       "findings": [],
       "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "profiles": {
         "implicit-default": {
           "skill": "unterminated-frontmatter",
-          "path": "crates/my-skills/tests/fixtures/shared/unterminated-frontmatter",
+          "path": "tests/fixtures/shared/unterminated-frontmatter",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "default": {
           "skill": "unterminated-frontmatter",
-          "path": "crates/my-skills/tests/fixtures/shared/unterminated-frontmatter",
+          "path": "tests/fixtures/shared/unterminated-frontmatter",
           "profile": "default",
           "threshold": "critical",
           "blocked": false
         },
         "strict": {
           "skill": "unterminated-frontmatter",
-          "path": "crates/my-skills/tests/fixtures/shared/unterminated-frontmatter",
+          "path": "tests/fixtures/shared/unterminated-frontmatter",
           "profile": "strict",
           "threshold": "high",
           "blocked": false
         },
         "permissive": {
           "skill": "unterminated-frontmatter",
-          "path": "crates/my-skills/tests/fixtures/shared/unterminated-frontmatter",
+          "path": "tests/fixtures/shared/unterminated-frontmatter",
           "profile": "permissive",
           "threshold": "none",
           "blocked": false
@@ -1519,14 +1519,14 @@
   "bundles": [
     {
       "paths": [
-        "crates/my-skills/tests/fixtures/audit/credential-network-flow"
+        "tests/fixtures/audit/credential-network-flow"
       ],
       "findings": []
     },
     {
       "paths": [
-        "crates/my-skills/tests/fixtures/audit/credential-reader",
-        "crates/my-skills/tests/fixtures/audit/network-sender"
+        "tests/fixtures/audit/credential-reader",
+        "tests/fixtures/audit/network-sender"
       ],
       "findings": [
         {
@@ -1540,10 +1540,10 @@
     },
     {
       "paths": [
-        "crates/my-skills/tests/fixtures/audit/regex-parity",
-        "crates/my-skills/tests/fixtures/audit/credential-reader",
-        "crates/my-skills/tests/fixtures/audit/network-sender",
-        "crates/my-skills/tests/fixtures/audit/credential-reader"
+        "tests/fixtures/audit/regex-parity",
+        "tests/fixtures/audit/credential-reader",
+        "tests/fixtures/audit/network-sender",
+        "tests/fixtures/audit/credential-reader"
       ],
       "findings": [
         {
@@ -1559,8 +1559,8 @@
   "gates": [
     {
       "paths": [
-        "crates/my-skills/tests/fixtures/audit/credential-reader",
-        "crates/my-skills/tests/fixtures/audit/clean-skill"
+        "tests/fixtures/audit/credential-reader",
+        "tests/fixtures/audit/clean-skill"
       ],
       "settings": {
         "profile": "strict",
@@ -1577,7 +1577,7 @@
         "skills": [
           {
             "skill": "credential-reader",
-            "path": "crates/my-skills/tests/fixtures/audit/credential-reader",
+            "path": "tests/fixtures/audit/credential-reader",
             "profile": "strict",
             "threshold": "high",
             "blocked": true,
@@ -1595,7 +1595,7 @@
           },
           {
             "skill": "clean-skill",
-            "path": "crates/my-skills/tests/fixtures/audit/clean-skill",
+            "path": "tests/fixtures/audit/clean-skill",
             "profile": "strict",
             "threshold": "high",
             "blocked": false,
@@ -1607,7 +1607,7 @@
     },
     {
       "paths": [
-        "crates/my-skills/tests/fixtures/audit/path-traversal"
+        "tests/fixtures/audit/path-traversal"
       ],
       "settings": {
         "profile": "permissive",
@@ -1624,7 +1624,7 @@
         "skills": [
           {
             "skill": "path-traversal",
-            "path": "crates/my-skills/tests/fixtures/audit/path-traversal",
+            "path": "tests/fixtures/audit/path-traversal",
             "profile": "permissive",
             "threshold": "none",
             "blocked": false,
@@ -1651,7 +1651,7 @@
     },
     {
       "paths": [
-        "crates/my-skills/tests/fixtures/audit/credential-reader"
+        "tests/fixtures/audit/credential-reader"
       ],
       "settings": {
         "profile": "default",
@@ -1668,7 +1668,7 @@
         "skills": [
           {
             "skill": "credential-reader",
-            "path": "crates/my-skills/tests/fixtures/audit/credential-reader",
+            "path": "tests/fixtures/audit/credential-reader",
             "profile": "default",
             "threshold": "medium",
             "blocked": true,
@@ -1689,7 +1689,7 @@
     },
     {
       "paths": [
-        "crates/my-skills/tests/fixtures/audit/credential-network-flow"
+        "tests/fixtures/audit/credential-network-flow"
       ],
       "settings": {
         "profile": "default",
@@ -1708,7 +1708,7 @@
         "skills": [
           {
             "skill": "credential-network-flow",
-            "path": "crates/my-skills/tests/fixtures/audit/credential-network-flow",
+            "path": "tests/fixtures/audit/credential-network-flow",
             "profile": "default",
             "threshold": "critical",
             "blocked": true,
@@ -1728,7 +1728,7 @@
     },
     {
       "paths": [
-        "crates/my-skills/tests/fixtures/audit/credential-network-flow"
+        "tests/fixtures/audit/credential-network-flow"
       ],
       "settings": {
         "profile": "default",
@@ -1748,7 +1748,7 @@
         "skills": [
           {
             "skill": "credential-network-flow",
-            "path": "crates/my-skills/tests/fixtures/audit/credential-network-flow",
+            "path": "tests/fixtures/audit/credential-network-flow",
             "profile": "default",
             "threshold": "critical",
             "blocked": false,
@@ -1777,7 +1777,7 @@
     },
     {
       "paths": [
-        "crates/my-skills/tests/fixtures/audit/path-traversal"
+        "tests/fixtures/audit/path-traversal"
       ],
       "settings": {
         "profile": "default",
@@ -1796,7 +1796,7 @@
     },
     {
       "paths": [
-        "crates/my-skills/tests/fixtures/audit/path-traversal"
+        "tests/fixtures/audit/path-traversal"
       ],
       "settings": {
         "profile": "default",
