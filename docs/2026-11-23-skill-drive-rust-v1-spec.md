@@ -487,7 +487,7 @@ skills/                    seed 원본 (Rust는 빌드할 때 binary에 포함)
 - `cargo test --all-targets`는 206개 통과, 0개 실패. Windows link 테스트 4개가 실행되고 통과했다.
 - 기존 Python 0.4.1과 기존 `state.json`이 있다(Q3 판단 자료).
 - 세 에이전트 명령이 모두 설치되어 있다.
-- Python 테스트는 Windows에서 실제 host 폴더에 쓰는 문제가 있다.
+- 테스트 격리 문제가 있다. Python 테스트는 실제 host 폴더와 `%LOCALAPPDATA%`에 쓰고, Rust 테스트 1건(`data-path --create`)은 `%LOCALAPPDATA%\my-skills\data`에 쓴다.
 - 세 host의 junction 발견 여부(Q1)는 아직 확인하지 않았다. 상세: `docs/2026-11-23-skill-drive-windows-python-tests-report.md`.
 
 ## 13. 열린 질문
