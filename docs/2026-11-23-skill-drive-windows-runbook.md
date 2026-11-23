@@ -120,9 +120,14 @@ Remove-Item -Recurse -Force $Check
 
 - Python 0.4.x 테스트는 uv로 돌린다. uv가 저장소 안에 `.venv`를 만들기 때문에 가상환경을 따로 만들거나 활성화할 필요가 없다. 전역 Python에 패키지를 설치하지 않는다.
 
+  > **경고 (2026-11-23 Windows 실측):** Windows에서 `uv run pytest`를 그냥 실행하지 않는다.
+  > 테스트가 `HOME`만 바꾸는데 Windows의 Python은 `USERPROFILE`을 쓰기 때문에, **실제 host 폴더에 시험용 스킬을 쓴다.**
+  > 또 102개가 실패하고 1개는 끝나지 않는다.
+  > 자세한 내용과 안전하게 돌리는 방법(`USERPROFILE`도 임시 폴더로 돌림)은 `docs/2026-11-23-skill-drive-windows-python-tests-report.md` §7에 있다.
+
   ```powershell
   uv sync
-  uv run pytest
+  # uv run pytest   <- Windows에서는 위 보고서 §7의 방법으로만 실행한다
   ```
 
 ---

@@ -59,6 +59,7 @@ flowchart LR
 | 08:15 | **두 번째 검토**(agy 세션): Windows 실행 문서와 최근 커밋 검토. 문서 보완 제안 5건, 코드·CI 참고 2건 | 보고서는 그 세션에 있음 |
 | 이후 | 제안을 하나씩 재확인(모두 사실). **문서만 수정**하고 코드·CI 항목은 §7 L로 기록 | `b99b514`, `aff3bee` |
 | 이후 | **§7 C 완료**: `release/v0.4.2`에서 main 채널 guard, 태그 기준 이전 링크, doctor 안내를 추가하고 v0.4.2로 배포. `main`을 `dev`에 병합 | `f97a065`, `ca41abd`, 태그 `v0.4.2`, `382a19a` |
+| 이후 | **Windows PC 점검**(H의 준비 절과 1~2단계 일부): Rust 환경 준비됨. Python 테스트가 실제 host 폴더에 쓰는 문제 발견(§6.5) | `docs/2026-11-23-skill-drive-windows-python-tests-report.md` |
 
 Codex 운영:
 - 1단계: `gpt-6.2-sol` `xhigh` 5개. 5시간 한도의 약 51%포인트를 썼다(99% → 48%).
@@ -207,6 +208,17 @@ Codex 운영:
 | Linux CI의 `ETXTBSY` 간헐 실패가 `update_cli.rs`에서 재발 (run `45056025212`, 커밋 `0a9ab6f`) | 사실. 재시도는 `registry_init.rs`에만 있고 `support_i.rs`, `hooks_git.rs`에는 없음 | §7 L |
 | convert가 state를 두 번 저장 (`drive/apply.rs`의 `commit_record`와 `commands/connect.rs`의 `apply_plan`) | 사실. 결과는 같고 저장 횟수만 두 배 | §7 L |
 
+### 6.5 Windows PC 점검에서 나온 것
+
+상세: `docs/2026-11-23-skill-drive-windows-python-tests-report.md`. 이번에도 코드는 고치지 않았다.
+
+| 발견 | 확인 결과 | 처리 |
+|---|---|---|
+| Rust 개발 환경 (MSVC, Rust 1.100.0, fmt, clippy) | fmt, clippy, `cargo test --all-targets` 206개, Windows junction 테스트 4개 모두 통과 | 기록 |
+| **Python 테스트가 실제 host 폴더에 씀** | 사실. 테스트가 `HOME`만 바꾸는데 Windows의 Python은 `USERPROFILE`을 씀. 시험용 스킬 8개가 실제 host 폴더에 생김. `root`, `state.json`, 실제 레지스트리는 무사 | 사용자 승인 후 지움. runbook 준비 절에 경고 추가. §7 L (5) |
+| Python 테스트 102개 실패, 1개 끝나지 않음 | 사실. TOML 이스케이프 61건 이상, symlink 권한 12건, POSIX 경로 가정 11건, 홈 격리. Python CI는 Ubuntu에서만 돎 | 기록만. §7 D에서 Python을 지울 예정 |
+| audit 상대 경로가 Windows에서 `\`로 나옴 (Python) | 사실. Rust 판은 확인하지 않음 | §7 L (6) |
+
 ---
 
 ## 7. 남은 작업
@@ -226,7 +238,7 @@ Codex 운영:
 | I | v1.0.0: `dev`를 `main`에 병합, README를 binary 설치 방식으로, 태그 | C, G, H | **필요** |
 | J | 자동 pull (macOS launchd, Windows 작업 스케줄러) | I | 스펙 작성 후 승인 |
 | K | worktree 정리 (`dev-stream-*` 8개와 그 브랜치. 디스크 약 12GB) | — | 확인 후 진행 |
-| L | 작은 코드 정리: (1) `support_i.rs`와 `hooks_git.rs`에 `ETXTBSY` 재시도 추가, (2) convert의 state 이중 저장 정리, (3) 읽기 전용 명령과 `--dry-run`이 활성 레지스트리 기록을 쓰지 않게 할지 결정, (4) H 결과에 따라 Windows에서 `HOME`보다 `USERPROFILE`을 우선할지 결정 | (4)는 H | 필요 없음 (동작 변경인 (3), (4)는 결정 후) |
+| L | 작은 코드 정리: (1) `support_i.rs`와 `hooks_git.rs`에 `ETXTBSY` 재시도 추가, (2) convert의 state 이중 저장 정리, (3) 읽기 전용 명령과 `--dry-run`이 활성 레지스트리 기록을 쓰지 않게 할지 결정, (4) H 결과에 따라 Windows에서 `HOME`보다 `USERPROFILE`을 우선할지 결정. 바꾸면 `HOME`만 바꾸는 Rust 테스트가 실제 홈에 쓰게 되므로 테스트 격리도 함께 바꾼다, (5) Windows 테스트 격리: `HOME`과 `USERPROFILE`을 함께 바꾸는 공통 helper, Windows CI에서 테스트 전후 실제 host 폴더 비교. 0.4.x 패치를 낸다면 `tests/conftest.py`에 `USERPROFILE`도 추가, (6) Windows에서 audit 보고와 hash 입력의 상대 경로가 `/`로 통일되는지 확인 (Python은 `\`로 나옴) | (4)는 H | 필요 없음 (동작 변경인 (3), (4)는 결정 후) |
 
 ### 권장 순서
 
@@ -293,6 +305,8 @@ Windows 전용 코드(`cfg(windows)`)는 CI에서만 컴파일된다.
 스펙 §12는 확인할 항목의 목록이고, 실행 절차는 이 runbook을 따른다.
 - 레지스트리 manifest에는 아직 `install_mode = "copy"`가 명시돼 있다. 그래서 Windows에서는 `my-skills.local.toml`로 link를 지정한다(runbook 4.2).
 - hook은 PATH의 `my-skills`를 먼저 찾는다. Python 0.4.x가 앞에 있으면 hook이 잘못 동작한다(runbook 3.5, 4.1). 맥 전환(G)에도 같은 주의가 필요하다.
+- **Windows에서 `uv run pytest`를 그냥 실행하지 않는다.** 실제 host 폴더에 쓴다(§6.5, 점검 보고서 §7).
+- 2026-11-23 점검 기준 진행 상황: 준비 절, 1단계, 2단계의 테스트까지 끝났다. `cargo build --release`와 3단계 이후는 아직 하지 않았다.
 
 ---
 
