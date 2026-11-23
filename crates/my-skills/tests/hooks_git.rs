@@ -1,11 +1,13 @@
 #[allow(dead_code)]
 mod support_g;
+mod support_i;
 
 use std::fs;
 
 use assert_cmd::prelude::*;
 use predicates::str::contains;
 use support_g::{Fixture, MANIFEST, skill};
+use support_i::assert_with_busy_retry;
 
 const HOOKS: [&str; 4] = ["pre-commit", "post-merge", "post-rewrite", "post-checkout"];
 
@@ -184,11 +186,7 @@ fn real_git_commit_runs_pre_commit_with_the_shell_quoted_binary_fallback() {
         .base
         .join(format!("cli's copy{}", std::env::consts::EXE_SUFFIX));
     fs::copy(assert_cmd::cargo::cargo_bin("my-skills"), &binary).unwrap();
-    fixture
-        .command_from(&binary)
-        .args(["hooks", "install"])
-        .assert()
-        .success();
+    assert_with_busy_retry(fixture.command_from(&binary).args(["hooks", "install"])).success();
 
     fixture.write("skills/example/SKILL.md", &skill("example"));
     fixture.git(&["add", "skills"]);
@@ -425,13 +423,18 @@ fn hook_scripts_prefer_path_and_forward_git_arguments_verbatim() {
         .assert()
         .success();
     let binary = fixture.fake_executable("my-skills");
-    fs::write(binary, "#!/bin/sh\nprintf '<%s>\\n' \"$@\"\n").unwrap();
+    fs::write(&binary, "#!/bin/sh\nprintf '<%s>\\n' \"$@\"\n").unwrap();
+    // The hook executes this script indirectly. Check that it can be launched
+    // before invoking the hook, where a spawn error would be a shell exit code.
+    assert_with_busy_retry(&mut fixture.command_from(&binary)).success();
 
     let hook_path = fixture.registry.join(".git/hooks/post-checkout");
-    fixture
-        .command_from(hook_path)
-        .args(["one value", "second", "1", "--example"])
-        .assert()
-        .success()
-        .stdout("<hooks>\n<run>\n<post-checkout>\n<one value>\n<second>\n<1>\n<--example>\n");
+    assert_with_busy_retry(fixture.command_from(hook_path).args([
+        "one value",
+        "second",
+        "1",
+        "--example",
+    ]))
+    .success()
+    .stdout("<hooks>\n<run>\n<post-checkout>\n<one value>\n<second>\n<1>\n<--example>\n");
 }

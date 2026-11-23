@@ -2,7 +2,6 @@ mod support_i;
 
 use std::fs;
 
-use assert_cmd::assert::OutputAssertExt;
 use predicates::prelude::predicate;
 use support_i::{CURRENT, Fixture, NEXT, archive_name};
 
@@ -21,9 +20,7 @@ fn update_check_exits_one_when_stable_update_is_available() {
         ("v1.invalid", false, false),
     ]);
     fixture
-        .command()
-        .args(["update", "--check"])
-        .assert()
+        .run(&["update", "--check"])
         .code(1)
         .stdout(format!(
             "Current: my-skills {CURRENT}\nChannel: stable\nLatest:  {latest}\nUpdate available\n"
@@ -36,17 +33,13 @@ fn update_check_reports_current_main_release_and_ahead_version() {
     let fixture = Fixture::new();
     fixture.release_list(&[(&format!("v{CURRENT}"), true, false)]);
     fixture
-        .command()
-        .args(["update", "--check", "--channel", "main"])
-        .assert()
+        .run(&["update", "--check", "--channel", "main"])
         .success()
         .stdout(predicate::str::contains("Already up to date"));
 
     fixture.release_list(&[("v0.4.2", false, false)]);
     fixture
-        .command()
-        .args(["update", "--check", "--channel", "main"])
-        .assert()
+        .run(&["update", "--check", "--channel", "main"])
         .success()
         .stdout(predicate::str::contains(
             "Installed version is ahead of the latest main release",
@@ -57,9 +50,7 @@ fn update_check_reports_current_main_release_and_ahead_version() {
 fn update_returns_two_when_stable_check_cannot_resolve_releases() {
     let fixture = Fixture::new();
     fixture
-        .command()
-        .args(["update", "--check"])
-        .assert()
+        .run(&["update", "--check"])
         .code(2)
         .stderr(predicate::str::contains(
             "Update status unknown: could not fetch GitHub releases",
@@ -67,9 +58,7 @@ fn update_returns_two_when_stable_check_cannot_resolve_releases() {
 
     fixture.release_list(&[("v0.4.2", false, false), ("v1.0.0-rc.1", true, false)]);
     fixture
-        .command()
-        .args(["update", "--check"])
-        .assert()
+        .run(&["update", "--check"])
         .code(2)
         .stderr("Update status unknown: no stable v1 releases found\n");
 }
@@ -87,9 +76,7 @@ fn update_dry_run_prints_main_channel_downloads_and_writes_nothing() {
     let archive = asset_url.join(archive_name()).unwrap();
     let checksums = asset_url.join("SHA256SUMS").unwrap();
     fixture
-        .command()
-        .args(["update", "--channel", "main", "--dry-run"])
-        .assert()
+        .run(&["update", "--channel", "main", "--dry-run"])
         .success()
         .stdout(format!(
             "Current: my-skills {CURRENT}\nChannel: main\nLatest:  v1.2.0-rc.10\n\
@@ -112,18 +99,14 @@ fn update_installs_archive_and_verifies_stable_version() {
     fixture.package(&candidate);
 
     fixture
-        .command()
-        .arg("update")
-        .assert()
+        .run(&["update"])
         .success()
         .stdout(predicate::str::contains(format!(
             "Updated: my-skills {NEXT}"
         )))
         .stderr("");
     fixture
-        .command()
-        .arg("--version")
-        .assert()
+        .run(&["--version"])
         .success()
         .stdout(format!("my-skills {NEXT}\n"));
     assert_eq!(
@@ -135,9 +118,7 @@ fn update_installs_archive_and_verifies_stable_version() {
 fn assert_original_executable(fixture: &Fixture, before: &[u8]) {
     assert_eq!(fs::read(&fixture.exe).unwrap(), before);
     fixture
-        .command()
-        .arg("--version")
-        .assert()
+        .run(&["--version"])
         .success()
         .stdout(format!("my-skills {CURRENT}\n"));
 }
@@ -150,9 +131,7 @@ fn update_checksum_mismatch_preserves_original_executable() {
     fs::write(fixture.assets.join(archive_name()), b"tampered archive").unwrap();
     fixture.checksum(&"0".repeat(64));
     fixture
-        .command()
-        .arg("update")
-        .assert()
+        .run(&["update"])
         .code(1)
         .stderr(predicate::str::contains("SHA-256 mismatch"));
     assert_original_executable(&fixture, &before);
@@ -165,9 +144,7 @@ fn update_failed_download_preserves_original_executable() {
     let before = fs::read(&fixture.exe).unwrap();
     fixture.checksum(&"0".repeat(64));
     fixture
-        .command()
-        .arg("update")
-        .assert()
+        .run(&["update"])
         .code(1)
         .stderr(predicate::str::contains(format!(
             "could not download {}",
@@ -183,9 +160,7 @@ fn post_install_version_mismatch_restores_original_executable() {
     let before = fs::read(&fixture.exe).unwrap();
     fixture.package(&fixture.exe);
     fixture
-        .command()
-        .arg("update")
-        .assert()
+        .run(&["update"])
         .code(1)
         .stderr(predicate::str::contains(format!(
             "updated command did not report expected version {NEXT}: my-skills {CURRENT}"

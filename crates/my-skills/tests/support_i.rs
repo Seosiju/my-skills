@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use assert_cmd::assert::{Assert, OutputAssertExt};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
@@ -16,6 +17,32 @@ pub const BINARY: &str = if cfg!(windows) {
 } else {
     "my-skills"
 };
+
+// On Linux, a concurrent fork can briefly retain an open write handle to
+// a freshly copied or written executable and cause exec to fail with ETXTBSY.
+#[track_caller]
+pub fn assert_with_busy_retry(command: &mut Command) -> Assert {
+    const MAX_ATTEMPTS: usize = 100;
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
+        match command.output() {
+            Ok(output) => {
+                return output
+                    .assert()
+                    .append_context("command", format!("{command:?}"));
+            }
+            Err(err) if cfg!(target_os = "linux") && err.raw_os_error() == Some(26) => {
+                assert!(
+                    attempts < MAX_ATTEMPTS,
+                    "{command:?} stayed busy (ETXTBSY) after {MAX_ATTEMPTS} attempts: {err}"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(err) => panic!("cannot run {command:?}: {err}"),
+        }
+    }
+}
 
 pub fn archive_name() -> &'static str {
     match (std::env::consts::OS, std::env::consts::ARCH) {
@@ -81,7 +108,8 @@ impl Fixture {
         Url::from_directory_path(&self.assets).unwrap()
     }
 
-    pub fn command(&self) -> Command {
+    #[track_caller]
+    pub fn run(&self, args: &[&str]) -> Assert {
         let mut command = Command::new(&self.exe);
         command
             .current_dir(&self.root)
@@ -100,7 +128,7 @@ impl Fixture {
                     .as_str(),
             )
             .env("MY_SKILLS_RELEASE_BASE_URL", self.asset_url().as_str());
-        command
+        assert_with_busy_retry(command.args(args))
     }
 
     pub fn package(&self, binary: &Path) {
