@@ -315,6 +315,98 @@ fn manifest_rejects_invalid_effective_install_modes() {
 }
 
 #[test]
+fn manifest_parses_overlays_and_validates_target_install_mode() {
+    with_temp_home(
+        "manifest_parses_overlays_and_validates_target_install_mode",
+        |root| {
+            let main = root.join(MANIFEST_FILE);
+            let local = root.join(LOCAL_MANIFEST_FILE);
+            fs::write(
+                &main,
+                concat!(
+                    "[defaults]\ninstall_mode = \"link\"\n",
+                    "[targets.agy]\nenabled = true\ninstall_mode = \"copy\"\n",
+                    "[targets.claude]\nenabled = true\ninstall_mode = \"copy\"\n",
+                    "[targets.codex]\nenabled = true\n",
+                ),
+            )
+            .unwrap();
+            let cli = CliOverrides::default();
+            let manifest = load_manifest(root, &cli).unwrap();
+            assert_eq!(
+                manifest.targets["agy"].install_mode,
+                Some(InstallMode::Copy)
+            );
+            assert_eq!(
+                manifest.targets["claude"].install_mode,
+                Some(InstallMode::Copy)
+            );
+            assert_eq!(manifest.targets["codex"].install_mode, None);
+            assert_eq!(manifest.effective_install_mode("agy"), InstallMode::Copy);
+            assert_eq!(manifest.effective_install_mode("claude"), InstallMode::Copy);
+            assert_eq!(manifest.effective_install_mode("codex"), InstallMode::Link);
+
+            // Overlay wins for targets that specify install_mode, and preserves main for others.
+            fs::write(
+                &local,
+                concat!(
+                    "[targets.claude]\ninstall_mode = \"link\"\n",
+                    "[targets.agy]\nenabled = true\n",
+                    "[targets.codex]\ninstall_mode = \"copy\"\n",
+                ),
+            )
+            .unwrap();
+            let overlay = load_manifest(root, &cli).unwrap();
+            assert_eq!(overlay.targets["agy"].install_mode, Some(InstallMode::Copy));
+            assert_eq!(
+                overlay.targets["claude"].install_mode,
+                Some(InstallMode::Link)
+            );
+            assert_eq!(
+                overlay.targets["codex"].install_mode,
+                Some(InstallMode::Copy)
+            );
+            assert_eq!(overlay.effective_install_mode("agy"), InstallMode::Copy);
+            assert_eq!(overlay.effective_install_mode("claude"), InstallMode::Link);
+            assert_eq!(overlay.effective_install_mode("codex"), InstallMode::Copy);
+
+            // CLI --mode overrides both target and default modes.
+            let cli_link = CliOverrides {
+                install_mode: Some(InstallMode::Link),
+                ..CliOverrides::default()
+            };
+            let with_cli = load_manifest(root, &cli_link).unwrap();
+            assert_eq!(with_cli.effective_install_mode("agy"), InstallMode::Link);
+            assert_eq!(with_cli.effective_install_mode("codex"), InstallMode::Link);
+
+            // Invalid values fail validation in both main and local manifests.
+            fs::remove_file(&local).unwrap();
+            for (path, value) in [(&main, "\"symlink\""), (&main, "\"\""), (&local, "7")] {
+                fs::write(path, format!("[targets.agy]\ninstall_mode = {value}\n")).unwrap();
+                let error = load_manifest(root, &cli).unwrap_err();
+                assert!(matches!(error, Error::Manifest(_)));
+                assert_eq!(
+                    error.to_string(),
+                    format!(
+                        "invalid install_mode for target 'agy' in {}: {value}; expected \"link\" or \"copy\"",
+                        path.display()
+                    )
+                );
+            }
+
+            // A valid local overlay overrides an invalid main target install_mode.
+            fs::write(&main, "[targets.agy]\ninstall_mode = \"bad\"\n").unwrap();
+            fs::write(&local, "[targets.agy]\ninstall_mode = \"copy\"\n").unwrap();
+            let recovered = load_manifest(root, &cli).unwrap();
+            assert_eq!(
+                recovered.targets["agy"].install_mode,
+                Some(InstallMode::Copy)
+            );
+        },
+    );
+}
+
+#[test]
 fn manifest_requires_a_path_for_unknown_targets() {
     with_temp_home("manifest_requires_a_path_for_unknown_targets", |root| {
         let main = root.join(MANIFEST_FILE);

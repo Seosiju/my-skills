@@ -221,17 +221,7 @@ pub(crate) fn field<'a>(meta: &'a Mapping, field: &str) -> Option<&'a Node> {
 /// Keep Windows verbatim prefixes for filesystem calls and omit them in
 /// user-facing paths, as pathlib does for normally spelled absolute paths.
 pub(crate) fn display_path(path: &Path) -> String {
-    let text = path.to_string_lossy();
-    #[cfg(windows)]
-    {
-        if let Some(unc) = text.strip_prefix(r"\\?\UNC\") {
-            return format!(r"\\{unc}");
-        }
-        if let Some(disk) = text.strip_prefix(r"\\?\") {
-            return disk.into();
-        }
-    }
-    text.into_owned()
+    crate::platform::paths::display_path(path)
 }
 
 pub(crate) fn json_output(value: &impl Serialize) -> String {

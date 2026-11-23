@@ -156,11 +156,12 @@ flowchart LR
 ### D1. 기본 연결 방식은 link
 
 - CLI 기본값을 `copy`에서 `link`로 바꾼다. manifest `[defaults] install_mode`는 `"link" | "copy"`이고, 값이 없으면 `"link"`다.
-- 우선순위: CLI `--mode`, `my-skills.local.toml`, `my-skills.toml`, 기본값 `link` 순.
+- `[targets.<host>]`에도 선택 항목 `install_mode = "link" | "copy"`를 둘 수 있다(`my-skills.toml` 및 `my-skills.local.toml`, 기기별 오버레이 우선). 잘못된 값은 manifest 검증 오류로 실패한다.
+- 새 연결의 우선순위: CLI `--mode` > `[targets.<host>] install_mode` (`my-skills.local.toml` > `my-skills.toml`) > `[defaults] install_mode` (`my-skills.local.toml` > `my-skills.toml`) > 기본값 `link` 순.
 - link를 만드는 순서:
   - macOS/Linux: symlink. 실패하면 copy로 설치한다(I4).
   - Windows: junction, 실패하면 symlink, 그것도 실패하면 copy(I4).
-- copy는 사용자가 직접 고르는 선택지로 남는다. 예: 특정 시점의 스냅샷을 고정하고 싶을 때.
+- copy는 사용자가 직접 고르는 선택지로 남는다. 예: 특정 시점의 스냅샷을 고정하고 싶을 때, 또는 Windows에서 junction을 발견하지 못하는 host(`agy`)만 `[targets.agy] install_mode = "copy"`로 둘 때.
 - 이미 있는 연결은 기존 방식을 유지한다. 방식을 바꾸는 건 `convert`(§6.6)만 한다.
 
 **근거:** copy를 기본으로 둔 이유는 동기화 시점의 검증 관문과 Windows 권한 문제였다
@@ -269,6 +270,7 @@ Windows에서는 `\\?\` 접두어를 제거하고 비교한다.
   - link 생성이 실패하면 backup을 되돌린다(I6).
 - link를 copy로 바꾸는 조건: FRESH. staging에 복사한 뒤 링크와 교체한다.
 - DRIFTED, CONFLICT, BROKEN, UNMANAGED는 막고, 해결 방법을 안내한다.
+- `--host all`(또는 `--host` 생략)에서는 `[targets.<host>] install_mode`가 명시되어 있고 `--to`와 다른 host를 건너뛰며, 해당 host와 설정을 안내 줄로 출력한다(`--dry-run` 동일). 명시적인 `--host <name>`은 요청대로 전환한다.
 - 기존 copy 연결을 link로 바꾸는 전환에 이 명령을 쓴다.
 
 ### 6.7 `hooks install | uninstall | status` (신규)
@@ -294,6 +296,7 @@ Windows에서는 `\\?\` 접두어를 제거하고 비교한다.
 - registry 상태: 기본 브랜치인지, rebase·merge 중인지, 커밋하지 않은 변경 수, 원격 대비 앞서거나 뒤처진 커밋 수.
 - hooks 상태(§6.7).
 - 연결 방식별 집계: `link 41 / copy 2 (fallback 0)` 같은 형식.
+- Windows에서 `agy` target이 유효 모드 `link`로 활성화되어 있거나 `state.json`에 `agy`의 link 연결이 남아 있으면(`agy`가 비활성이거나 이미 `copy`로 설정된 경우 포함), junction 미발견 가능성과 함께 유효 모드가 `link`이면 `my-skills.local.toml`의 `[targets.agy] install_mode = "copy"` 설정을, 기존 link 연결이 남아 있으면 `my-skills convert --to copy --host agy` 전환을 안내하는 경고를 출력한다(경고만 출력하며 종료 코드는 바꾸지 않음).
 
 ### 6.9 동작 유지 목록 (0.4.1과 같은 동작으로 이식)
 
@@ -340,6 +343,10 @@ target 경로는 manifest의 `~`를 OS의 home으로 펼친다. 경로 구분자
 install_mode = "link"   # "link" | "copy". 없으면 "link" (v1부터)
 collision = "error"
 verify_after_install = true
+
+[targets.agy]
+# 선택: host별 연결 방식 오버라이드 ("link" | "copy"). 없으면 [defaults]를 따름
+install_mode = "copy"
 ```
 
 주의: 이 사용자의 registry에는 지금 `install_mode = "copy"`가 **명시돼 있다**. 0.4.1에서는 이 값이 무시됐지만,
@@ -347,7 +354,7 @@ Rust v1은 이 값을 따른다. 그래서 3단계에서 이 값을 `"link"`로 
 
 ### 8.2 기기별 덮어쓰기 (`my-skills.local.toml`, git 제외)
 
-0.4.1과 같다. 기기마다 target 활성 여부, 경로, `install_mode`를 덮어쓸 수 있다.
+0.4.1과 같다. 기기마다 target 활성 여부, 경로, `[defaults] install_mode`, `[targets.<host>] install_mode`를 덮어쓸 수 있다. 예를 들어 Windows PC에서는 `my-skills.local.toml`에 `[targets.agy] install_mode = "copy"`를 두어 `agy`만 copy로 유지할 수 있다.
 
 ### 8.3 state (`state.json`, schema 1 유지)
 

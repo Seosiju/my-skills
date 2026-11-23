@@ -360,11 +360,14 @@ pub struct SyncScope<'a> {
 
 /// Reconcile (D3): connect what the manifest wants, prune managed
 /// connections it no longer wants. Disabled targets are never touched (I7).
+///
+/// When `requested_mode` is `Some(mode)`, it overrides the manifest mode for
+/// new connections; otherwise each host uses `manifest.effective_install_mode(host)`.
 pub fn plan_sync(
     manifest: &Manifest,
     state: &State,
     scope: &SyncScope<'_>,
-    requested_mode: InstallMode,
+    requested_mode: Option<InstallMode>,
 ) -> Result<Vec<PlanItem>> {
     let mut items = Vec::new();
     for host in scope.hosts {
@@ -372,15 +375,10 @@ pub fn plan_sync(
         if !target_enabled {
             continue;
         }
+        let host_mode = requested_mode.unwrap_or_else(|| manifest.effective_install_mode(host));
         for skill in scope.skills {
             if wants(manifest, skill, host) {
-                items.push(plan_install_one(
-                    manifest,
-                    skill,
-                    host,
-                    state,
-                    requested_mode,
-                )?);
+                items.push(plan_install_one(manifest, skill, host, state, host_mode)?);
             } else if scope.prune && state.get(&skill.name, host).is_some() {
                 let mut item = plan_uninstall_one(manifest, &skill.name, host, state)?;
                 if item.action == Action::Remove {
@@ -402,6 +400,38 @@ pub fn plan_sync(
         }
     }
     Ok(items)
+}
+
+/// Partition hosts for `convert --to <mode>`.
+///
+/// When `explicit_host` is false (`--host all` or omitted), any host whose
+/// `[targets.<host>] install_mode` is set explicitly and differs from `to`
+/// is returned in the skipped list rather than the active list. An explicit
+/// `--host <name>` is never skipped.
+pub fn filter_convert_hosts(
+    manifest: &Manifest,
+    hosts: &[String],
+    to: InstallMode,
+    explicit_host: bool,
+) -> (Vec<String>, Vec<(String, InstallMode)>) {
+    if explicit_host {
+        return (hosts.to_vec(), Vec::new());
+    }
+    let mut active = Vec::new();
+    let mut skipped = Vec::new();
+    for host in hosts {
+        if let Some(mode) = manifest
+            .targets
+            .get(host)
+            .and_then(|target| target.install_mode)
+            .filter(|&mode| mode != to)
+        {
+            skipped.push((host.clone(), mode));
+        } else {
+            active.push(host.clone());
+        }
+    }
+    (active, skipped)
 }
 
 /// Plan switching existing connections to `to` (spec §6.6).

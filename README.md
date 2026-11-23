@@ -48,8 +48,16 @@ agy -p '/skills' --output-format json
 ```
 
 The project path is `.agents/skills`. Global-path discovery for both regular
-folders and symlinks was verified with **Antigravity CLI 1.2.16**; `/skills`
-used zero model turns and tokens in that verification. This does not validate
+folders and symlinks was verified on macOS with **Antigravity CLI 1.2.16**; `/skills`
+used zero model turns and tokens in that verification. On Windows, `my-skills`
+links skills with directory junctions by default, which **Antigravity CLI 1.5.14**
+did not discover while regular folders worked. Windows users can set
+`install_mode = "copy"` under `[targets.agy]` in `my-skills.local.toml` while
+other hosts keep links; `my-skills doctor` warns on Windows when `agy` is
+enabled with effective mode `link`, or when recorded `agy` link connections
+remain (even if `agy` is disabled or already set to `copy`). On Windows, run
+`agy -p '/skills' --output-format json` from PowerShell rather than Git Bash
+(Git Bash rewrites `/skills` into a Windows path). This does not validate
 Antigravity IDE or every CLI version. Official documentation has also described
 `~/.gemini/antigravity-cli/skills`, so recheck discovery on other versions and use
 a target path override if needed. Preserve existing unmanaged skills: compare,
@@ -367,13 +375,19 @@ my-skills install cli-inventory --host claude --mode link
 ```
 
 Link mode uses a symlink on Unix and prefers a junction on Windows. Uninstalling a
-managed link removes the link while leaving its target in the registry. Existing
-installs retain their recorded mode. Use `my-skills convert --to link` with
-`--dry-run` to preview converting existing copies.
+managed link removes the link while leaving its target in the registry. You can
+override `install_mode = "link" | "copy"` per host under `[targets.<host>]` in
+`my-skills.toml` or `my-skills.local.toml` (precedence for new connections:
+`install --mode` > `[targets.<host>] install_mode` > `[defaults] install_mode`).
+Existing installs retain their recorded mode. Use `my-skills convert --to link`
+with `--dry-run` to preview converting existing copies; `convert --to <mode> --host all`
+skips hosts whose explicit `[targets.<host>] install_mode` differs from `--to`,
+while an explicit `--host <name>` still converts as requested.
 
 ## How it stays safe
 
-- **Link by default.** Set `install_mode = "copy"` in the manifest or pass
+- **Link by default.** Set `install_mode = "copy"` under `[defaults]` or
+  `[targets.<host>]` in `my-skills.toml` / `my-skills.local.toml`, or pass
   `--mode copy` to `install` to create new copies.
 - **Multi-host writes require confirmation.** Review a dry run before running
   `install` or `sync` with `--yes` across multiple hosts. A plain `install` of

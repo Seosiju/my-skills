@@ -93,8 +93,7 @@ impl Drive {
             include_orphans: true,
             prune,
         };
-        let items =
-            plan::plan_sync(&manifest, &state, &scope, manifest.defaults.install_mode).unwrap();
+        let items = plan::plan_sync(&manifest, &state, &scope, None).unwrap();
         for item in &items {
             assert!(!item.action.is_block(), "unexpected block: {item:?}");
             apply::apply(item, &mut state, None).unwrap();
@@ -404,7 +403,7 @@ fn drifted_copy_blocks_convert_and_prune() {
         include_orphans: true,
         prune: true,
     };
-    let items = plan::plan_sync(&manifest, &state, &scope, InstallMode::Link).unwrap();
+    let items = plan::plan_sync(&manifest, &state, &scope, Some(InstallMode::Link)).unwrap();
     let alpha = items.iter().find(|i| i.skill == "alpha").unwrap();
     assert_eq!(
         alpha.action,
@@ -414,5 +413,106 @@ fn drifted_copy_blocks_convert_and_prune() {
     assert_eq!(
         fs::read_to_string(&host_copy).unwrap(),
         "edited in the host copy"
+    );
+}
+
+#[test]
+fn sync_uses_per_target_install_mode_and_retains_recorded_mode() {
+    let drive = Drive::new();
+    fs::write(
+        drive.registry.join("my-skills.local.toml"),
+        "[targets.agy]\ninstall_mode = \"copy\"\n",
+    )
+    .unwrap();
+
+    let items = drive.sync(true);
+    let agy_alpha = items
+        .iter()
+        .find(|i| i.skill == "alpha" && i.host == "agy")
+        .unwrap();
+    let claude_alpha = items
+        .iter()
+        .find(|i| i.skill == "alpha" && i.host == "claude")
+        .unwrap();
+    assert_eq!(agy_alpha.mode, InstallMode::Copy);
+    assert_eq!(claude_alpha.mode, InstallMode::Link);
+    assert_eq!(
+        link::entry_kind(&drive.host_dir("agy").join("alpha")).unwrap(),
+        EntryKind::Dir
+    );
+    assert!(matches!(
+        link::entry_kind(&drive.host_dir("claude").join("alpha")).unwrap(),
+        EntryKind::Link(_)
+    ));
+
+    // Changing target install_mode in the manifest does not silently convert existing records.
+    fs::write(
+        drive.registry.join("my-skills.local.toml"),
+        "[targets.agy]\ninstall_mode = \"link\"\n",
+    )
+    .unwrap();
+    let again = drive.sync(true);
+    let agy_alpha_again = again
+        .iter()
+        .find(|i| i.skill == "alpha" && i.host == "agy")
+        .unwrap();
+    assert_eq!(agy_alpha_again.action, Action::Noop);
+    assert_eq!(agy_alpha_again.mode, InstallMode::Copy);
+    assert_eq!(
+        link::entry_kind(&drive.host_dir("agy").join("alpha")).unwrap(),
+        EntryKind::Dir
+    );
+    assert_eq!(
+        drive.state().get("alpha", "agy").unwrap().mode,
+        InstallMode::Copy
+    );
+}
+
+#[test]
+fn recorded_copy_updates_in_copy_mode_after_target_switches_to_link() {
+    let drive = Drive::new();
+    fs::write(
+        drive.registry.join("my-skills.local.toml"),
+        "[targets.agy]\ninstall_mode = \"copy\"\n",
+    )
+    .unwrap();
+    drive.sync(true);
+    assert_eq!(
+        link::entry_kind(&drive.host_dir("agy").join("alpha")).unwrap(),
+        EntryKind::Dir
+    );
+
+    // Switch target mode to link and edit the canonical skill.
+    fs::write(
+        drive.registry.join("my-skills.local.toml"),
+        "[targets.agy]\ninstall_mode = \"link\"\n",
+    )
+    .unwrap();
+    let updated_skill = "---\nname: alpha\ndescription: Updated canonical.\n---\nUpdated body\n";
+    fs::write(
+        drive.registry.join("skills").join("alpha").join("SKILL.md"),
+        updated_skill,
+    )
+    .unwrap();
+    assert_eq!(drive.status("alpha", "agy"), Status::Stale);
+
+    let items = drive.sync(true);
+    let agy_alpha = items
+        .iter()
+        .find(|i| i.skill == "alpha" && i.host == "agy")
+        .unwrap();
+    assert_eq!(agy_alpha.action, Action::Update);
+    assert_eq!(agy_alpha.mode, InstallMode::Copy);
+    assert_eq!(
+        link::entry_kind(&drive.host_dir("agy").join("alpha")).unwrap(),
+        EntryKind::Dir
+    );
+    assert_eq!(
+        fs::read_to_string(drive.host_dir("agy").join("alpha").join("SKILL.md")).unwrap(),
+        updated_skill
+    );
+    assert_eq!(
+        drive.state().get("alpha", "agy").unwrap().mode,
+        InstallMode::Copy
     );
 }

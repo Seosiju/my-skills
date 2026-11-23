@@ -7,6 +7,7 @@ use std::process::Command;
 
 use my_skills::check::audit::{AuditPolicy, run_audit};
 use my_skills::check::validate::compose_validation;
+use my_skills::platform::paths;
 use serde_json::Value;
 use support_g::Fixture;
 
@@ -164,7 +165,8 @@ fn repo_manifest_supports_read_only_cli_commands() {
     assert!(enabled > 0, "the tool repo has no enabled seed skills");
     let doctor = cli_stdout(&mut by_env(), &["doctor", "--no-update-check"]);
     let registry = fixture.registry.canonicalize().unwrap();
-    let env_origin = format!("Registry: {} (source: env)", registry.display());
+    let displayed_registry = paths::display_path(&registry);
+    let env_origin = format!("Registry: {displayed_registry} (source: env)");
     let registrations = format!("Skills:   {} registered, {enabled} enabled", seeds.len());
     let validation = format!("Full validation: {enabled} checked, 0 failed");
     for expected in [
@@ -214,7 +216,7 @@ fn repo_manifest_supports_read_only_cli_commands() {
         command
     };
     let doctor = cli_stdout(&mut by_cwd(), &["doctor", "--no-update-check"]);
-    let cwd_origin = format!("Registry: {} (source: cwd)", registry.display());
+    let cwd_origin = format!("Registry: {displayed_registry} (source: cwd)");
     for expected in [&cwd_origin, &validation] {
         assert!(
             doctor.lines().any(|line| line == expected),
