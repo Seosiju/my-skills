@@ -22,8 +22,8 @@
 | Rust v1 구현 | 19개 명령 모두 연결됨 |
 | 테스트 | Rust 209개, Python 308개 모두 통과 |
 | CI (`dev`) | Ubuntu, macOS, Windows, Python. 최신 결과는 §9 명령으로 확인 |
-| 릴리스 | **없음**. 태그와 GitHub Release를 하나도 만들지 않았고, 릴리스 workflow도 실행되지 않았다 |
-| `main` | v0.4.1 그대로. `dev`가 앞서 있다(병합 커밋 제외 40개 이상) |
+| 릴리스 | **Python v0.4.2** (태그 `v0.4.2`, GitHub Release "Latest"). Rust v1 릴리스는 아직 없고, Rust 릴리스 workflow도 실행되지 않았다 |
+| `main` | v0.4.2 (`ca41abd`, `release/v0.4.2` 병합). Rust 코드는 아직 없다. `main`은 `dev`에 다시 병합했다(`382a19a`) |
 | **실제 사용자 환경** | **바뀌지 않았다**. 설치된 CLI는 Python `my-skills 0.4.1`, 모든 연결은 copy, 레지스트리 `install_mode = "copy"`, git hook 없음 |
 | 감사 세션의 사전 점검 | 빌드한 v1 binary를 실제 레지스트리에 읽기 전용으로 실행: 모든 연결이 FRESH였고, `convert --to link --host all --dry-run`은 막힌 항목 없이 활성 host의 copy 연결 전체를 CONVERT로 계획했다. 비활성 host(hermes) 기록은 대상에서 빠졌다 |
 | Windows | CI에서 junction 테스트 4개 통과. 실기기에서 세 에이전트가 junction 스킬을 발견하는지는 **아직 확인하지 않았다** |
@@ -57,7 +57,8 @@ flowchart LR
 | 이후 | §7 B: 남은 쓰기 명령에 `--dry-run` 추가. §7 A: 모듈을 기능별로 재배치하고 테스트 데이터를 crate 안으로 이동 | `ee2ad94`, `b1113e8`, `2368f93` |
 | 이후 | Windows 실행 문서 작성 | `4dcce46` |
 | 08:15 | **두 번째 검토**(agy 세션): Windows 실행 문서와 최근 커밋 검토. 문서 보완 제안 5건, 코드·CI 참고 2건 | 보고서는 그 세션에 있음 |
-| 이후 | 제안을 하나씩 재확인(모두 사실). **문서만 수정**하고 코드·CI 항목은 §7 L로 기록 | 이 문서 커밋 |
+| 이후 | 제안을 하나씩 재확인(모두 사실). **문서만 수정**하고 코드·CI 항목은 §7 L로 기록 | `b99b514`, `aff3bee` |
+| 이후 | **§7 C 완료**: `release/v0.4.2`에서 main 채널 guard, 태그 기준 이전 링크, doctor 안내를 추가하고 v0.4.2로 배포. `main`을 `dev`에 병합 | `f97a065`, `ca41abd`, 태그 `v0.4.2`, `382a19a` |
 
 Codex 운영:
 - 1단계: `gpt-6.2-sol` `xhigh` 5개. 5시간 한도의 약 51%포인트를 썼다(99% → 48%).
@@ -216,7 +217,7 @@ Codex 운영:
 |---|---|---|---|
 | A | ~~Rust를 기능별로 재배치하고 Python 폴더 의존을 끊음~~ **완료** (`b1113e8`, `2368f93`) | — | — |
 | B | ~~쓰기 명령에 `--dry-run` 추가, §6.1 보류 항목 결정~~ **완료** (`ee2ad94`). `set-root`도 포함했다. `share --dry-run`은 `--plan`과 같다 | — | — |
-| C | Python 0.4.2: `main`에서 `release/v0.4.2`를 만들고 guard를 반영. **main 채널 guard와 `doctor`의 v1 이전 안내** 추가, 버전과 CHANGELOG → 태그 → `main`에 병합 | — | **필요 (태그, `main` 변경)** |
+| C | ~~Python 0.4.2~~ **완료** (태그 `v0.4.2`). stable과 main 채널 모두 v1 태그가 생기면 설치하지 않고 이전 안내를 출력한다. 안내 링크는 이전 대상 태그를 가리키므로 `main`에 Rust가 들어가기 전에도 동작한다. 배포 전 검증: 릴리스 브랜치 CI, `main` CI, 격리된 폴더에서 GitHub 설치 경로 확인 | — | — |
 | D | `dev`에서 Python 제거, Rust를 루트 `src/`, `tests/`로 이동, CI에서 Python 작업 제거, §6.3의 루트 기준 경로 조정, `builtin_rules.yaml` 비교 테스트 삭제 | C | 필요 없음 |
 | E | tool repo 문서: `README.md`, `README.ko.md`, `AGENTS.md`("host directory = install output", `uv` 명령), seed `skills/my-skills/SKILL.md`, `seeds.rs`의 README 템플릿과 `SEED_REVISION`, `docs/release-checklist.md`의 Python 절차 | D | 필요 없음 |
 | F | `v1.0.0-alpha.1` pre-release: `Cargo.toml` 버전을 `1.0.0-alpha.1`로 올림 → 태그와 버전을 비교하는 CI 단계 추가 → `workflow_dispatch`로 시험 실행(binary, `--version`, 설치 스크립트) → 태그 | — (A·D 뒤가 깔끔하지만 필수는 아님) | **필요 (태그)** |
@@ -231,7 +232,7 @@ Codex 운영:
 
 ```mermaid
 flowchart LR
-  AB["A · B (완료)"] --> C["C"] --> DE["D · E"] --> F["F"]
+  AB["A · B (완료)"] --> C["C (완료)"] --> DE["D · E"] --> F["F"]
   F --> G["G 맥"]
   F --> H["H Windows"]
   G --> I["I v1.0.0"]
@@ -239,7 +240,7 @@ flowchart LR
   I --> J["J"]
 ```
 
-- A·B가 끝났으므로 다음은 C다. 맥 전환을 서둘러야 하면 G를 C보다 먼저 할 수 있다. 이때는 직접 빌드한 binary를 쓰고, 나중에 F의 binary로 한 번 더 교체한다.
+- A·B·C가 끝났으므로 다음은 D·E다. 맥 전환을 서둘러야 하면 G를 먼저 할 수 있다. 이때는 직접 빌드한 binary를 쓰고, 나중에 F의 binary로 한 번 더 교체한다.
 - G는 실제 스킬 폴더와 전역 안내를 바꾼다. dry-run과 바뀔 문서의 diff를 먼저 보여 주고 승인을 받는다.
 - 태그(C, F, I)는 공개 저장소에 영구적으로 남는다. 실패하면 태그를 옮기거나 지우지 않고 번호를 올린다(예: `alpha.2`).
 
