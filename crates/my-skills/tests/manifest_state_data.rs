@@ -32,6 +32,8 @@ fn with_temp_home(test: &str, run: impl FnOnce(&Path)) {
         .current_dir(root)
         .env("MY_SKILLS_STREAM_B_TEST_ROOT", root)
         .env("HOME", root.join("home"))
+        .env("USERPROFILE", root.join("home"))
+        .env("APPDATA", root.join("config"))
         .env("XDG_STATE_HOME", root.join("state"))
         .env("XDG_DATA_HOME", root.join("data"))
         .env("XDG_CONFIG_HOME", root.join("config"))

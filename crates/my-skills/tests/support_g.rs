@@ -116,6 +116,7 @@ impl Fixture {
             .env("XDG_DATA_HOME", self.base.join("xdg-data"))
             .env("XDG_CONFIG_HOME", self.base.join("xdg-config"))
             .env("LOCALAPPDATA", self.base.join("local-app-data"))
+            .env("APPDATA", self.base.join("xdg-config"))
             .env("PATH", self.path())
             .env("SHELL", "/bin/sh")
             .env("GIT_CONFIG_NOSYSTEM", "1")
