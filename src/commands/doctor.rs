@@ -547,43 +547,86 @@ fn parse_counts(counts: &str) -> anyhow::Result<(usize, usize)> {
     }
 }
 
+/// Return a Windows-only warning when Antigravity CLI (`agy`) is enabled and
+/// either its effective install mode is `link` or it has recorded link
+/// connections. Takes `os` (for example `std::env::consts::OS`) so the decision
+/// logic is testable on any platform.
+pub fn agy_windows_link_warning(
+    os: &str,
+    manifest: Option<&Manifest>,
+    state: Option<&State>,
+) -> Option<String> {
+    if os != "windows" {
+        return None;
+    }
+    let manifest = manifest?;
+    if !manifest.targets.get("agy").is_some_and(|t| t.enabled) {
+        return None;
+    }
+    let effective_is_link = manifest.effective_install_mode("agy") == InstallMode::Link;
+    let has_link_connection = state.is_some_and(|state| {
+        state
+            .records()
+            .any(|record| record.host == "agy" && record.mode == InstallMode::Link)
+    });
+    if !effective_is_link && !has_link_connection {
+        return None;
+    }
+    let message = if has_link_connection {
+        "Antigravity CLI (agy) on Windows may not discover junction-linked skills; \
+         set `[targets.agy] install_mode = \"copy\"` in my-skills.local.toml \
+         and convert existing agy links with `my-skills convert --to copy --host agy`."
+    } else {
+        "Antigravity CLI (agy) on Windows may not discover junction-linked skills; \
+         set `[targets.agy] install_mode = \"copy\"` in my-skills.local.toml."
+    };
+    Some(message.to_owned())
+}
+
 impl Connections {
     fn collect(manifest: Option<&Manifest>) -> Self {
         let mut report = Self::default();
         let state = match State::load(None) {
-            Ok(state) => state,
+            Ok(state) => Some(state),
             Err(error) => {
                 report.warnings.push(error.to_string());
-                return report;
+                None
             }
         };
-        for record in state.records() {
-            match record.mode {
-                InstallMode::Link => report.link += 1,
-                InstallMode::Copy => {
-                    report.copy += 1;
-                    report.fallback += usize::from(record.fallback_reason.is_some());
+        if let Some(state) = &state {
+            for record in state.records() {
+                match record.mode {
+                    InstallMode::Link => report.link += 1,
+                    InstallMode::Copy => {
+                        report.copy += 1;
+                        report.fallback += usize::from(record.fallback_reason.is_some());
+                    }
+                }
+            }
+            if let Some(manifest) = manifest {
+                for skill in manifest.skills.values() {
+                    for target in manifest.targets.values().filter(|target| target.enabled) {
+                        // Count only pairs the drive wants or still has; a
+                        // disabled skill with no connection is not MISSING.
+                        if !plan::wants(manifest, skill, &target.name)
+                            && state.get(&skill.name, &target.name).is_none()
+                        {
+                            continue;
+                        }
+                        match plan::status_of(manifest, skill, &target.name, state) {
+                            Ok(status) => *report.statuses.entry(status.label()).or_default() += 1,
+                            Err(error) => report
+                                .warnings
+                                .push(format!("{} / {}: {error}", skill.name, target.name)),
+                        }
+                    }
                 }
             }
         }
-        if let Some(manifest) = manifest {
-            for skill in manifest.skills.values() {
-                for target in manifest.targets.values().filter(|target| target.enabled) {
-                    // Count only pairs the drive wants or still has; a
-                    // disabled skill with no connection is not MISSING.
-                    if !plan::wants(manifest, skill, &target.name)
-                        && state.get(&skill.name, &target.name).is_none()
-                    {
-                        continue;
-                    }
-                    match plan::status_of(manifest, skill, &target.name, &state) {
-                        Ok(status) => *report.statuses.entry(status.label()).or_default() += 1,
-                        Err(error) => report
-                            .warnings
-                            .push(format!("{} / {}: {error}", skill.name, target.name)),
-                    }
-                }
-            }
+        if let Some(warning) =
+            agy_windows_link_warning(std::env::consts::OS, manifest, state.as_ref())
+        {
+            report.warnings.push(warning);
         }
         report
     }

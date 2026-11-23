@@ -5,8 +5,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use assert_cmd::prelude::*;
+use my_skills::commands::doctor::agy_windows_link_warning;
 use my_skills::drive::hash::hash_directory;
+use my_skills::drive::state::{InstallRecord, State};
 use my_skills::platform::paths;
+use my_skills::registry::manifest::{CliOverrides, InstallMode, load_manifest};
 use serde_json::{Value, json};
 use support_g::{Fixture, MANIFEST, skill};
 
@@ -496,4 +499,132 @@ fn doctor_displays_registry_path_without_windows_verbatim_prefix() {
             paths::display_path(&fixture.registry.canonicalize().unwrap())
         )
     );
+}
+
+fn sample_record(host: &str, mode: InstallMode) -> InstallRecord {
+    InstallRecord {
+        skill: "example".into(),
+        host: host.into(),
+        mode,
+        source: "/fixture/src".into(),
+        destination: "/fixture/dst".into(),
+        source_hash: "sha256:00".into(),
+        installed_hash: "sha256:00".into(),
+        installed_at: "2026-01-01T00:00:00Z".into(),
+        source_type: "canonical".into(),
+        source_url: String::new(),
+        source_revision: String::new(),
+        last_audit_at: String::new(),
+        last_audit_result_hash: String::new(),
+        audit_profile: String::new(),
+        audit_threshold: String::new(),
+        link_kind: None,
+        fallback_reason: None,
+    }
+}
+
+#[test]
+fn agy_windows_link_warning_decision_is_os_and_mode_aware() {
+    let fixture = Fixture::isolated();
+    let empty_state = State::load(Some(&fixture.base.join("empty-state.json"))).unwrap();
+
+    // No manifest: no warning.
+    assert!(agy_windows_link_warning("windows", None, Some(&empty_state)).is_none());
+
+    // agy disabled (default): no warning even on Windows with link default.
+    let disabled_manifest = load_manifest(&fixture.registry, &CliOverrides::default()).unwrap();
+    assert!(
+        agy_windows_link_warning("windows", Some(&disabled_manifest), Some(&empty_state)).is_none()
+    );
+
+    // agy enabled with effective mode = link: warns on Windows, silent on macOS/Linux.
+    fixture.write(
+        "my-skills.toml",
+        &format!("{MANIFEST}[defaults]\ninstall_mode = \"link\"\n[targets.agy]\nenabled = true\n"),
+    );
+    let link_manifest = load_manifest(&fixture.registry, &CliOverrides::default()).unwrap();
+    let warning =
+        agy_windows_link_warning("windows", Some(&link_manifest), Some(&empty_state)).unwrap();
+    assert!(warning.contains("junction"), "{warning}");
+    assert!(
+        warning.contains("[targets.agy] install_mode = \"copy\""),
+        "{warning}"
+    );
+    assert!(warning.contains("my-skills.local.toml"), "{warning}");
+    assert!(agy_windows_link_warning("macos", Some(&link_manifest), Some(&empty_state)).is_none());
+    assert!(agy_windows_link_warning("linux", Some(&link_manifest), Some(&empty_state)).is_none());
+
+    // agy enabled with [targets.agy] install_mode = "copy" and no link connections: no warning.
+    fixture.write(
+        "my-skills.local.toml",
+        "[targets.agy]\ninstall_mode = \"copy\"\n",
+    );
+    let copy_manifest = load_manifest(&fixture.registry, &CliOverrides::default()).unwrap();
+    assert!(
+        agy_windows_link_warning("windows", Some(&copy_manifest), Some(&empty_state)).is_none()
+    );
+
+    // Copy connections on agy or link connections on claude do not trigger the warning.
+    let mut non_agy_link_state = empty_state.clone();
+    non_agy_link_state.put(sample_record("agy", InstallMode::Copy));
+    non_agy_link_state.put(sample_record("claude", InstallMode::Link));
+    assert!(
+        agy_windows_link_warning("windows", Some(&copy_manifest), Some(&non_agy_link_state))
+            .is_none()
+    );
+
+    // Existing agy link connection still triggers warning on Windows even when target mode is copy.
+    let mut agy_link_state = empty_state.clone();
+    agy_link_state.put(sample_record("agy", InstallMode::Link));
+    let link_conn_warning =
+        agy_windows_link_warning("windows", Some(&copy_manifest), Some(&agy_link_state)).unwrap();
+    assert!(
+        link_conn_warning.contains("convert --to copy --host agy"),
+        "{link_conn_warning}"
+    );
+    assert!(
+        agy_windows_link_warning("macos", Some(&copy_manifest), Some(&agy_link_state)).is_none()
+    );
+    // Disabled agy does not warn even if an old link connection exists in state.
+    assert!(
+        agy_windows_link_warning("windows", Some(&disabled_manifest), Some(&agy_link_state))
+            .is_none()
+    );
+}
+
+#[test]
+fn doctor_cli_reports_windows_agy_link_warning_without_failing() {
+    let fixture = Fixture::isolated();
+    fixture.write(
+        "my-skills.toml",
+        &format!("{MANIFEST}[defaults]\ninstall_mode = \"link\"\n[targets.agy]\nenabled = true\n"),
+    );
+    let result = fixture
+        .command()
+        .args(["doctor", "--no-update-check"])
+        .assert()
+        .success();
+    let text = output(&result);
+    #[cfg(windows)]
+    assert!(
+        text.contains("warning: Antigravity CLI (agy) on Windows")
+            && text.contains("[targets.agy] install_mode = \"copy\"")
+            && text.contains("my-skills.local.toml"),
+        "{text}"
+    );
+    #[cfg(not(windows))]
+    assert!(!text.contains("Antigravity CLI (agy) on Windows"), "{text}");
+
+    // Setting [targets.agy] install_mode = "copy" in my-skills.local.toml clears the warning.
+    fixture.write(
+        "my-skills.local.toml",
+        "[targets.agy]\ninstall_mode = \"copy\"\n",
+    );
+    let result = fixture
+        .command()
+        .args(["doctor", "--no-update-check"])
+        .assert()
+        .success();
+    let text = output(&result);
+    assert!(!text.contains("Antigravity CLI (agy) on Windows"), "{text}");
 }
