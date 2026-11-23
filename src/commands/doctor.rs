@@ -181,7 +181,7 @@ impl Report {
         println!("Python: {}", self.python);
         println!();
         if let (Some(path), Some(source)) = (&self.registry.path, self.registry.source) {
-            println!("Registry: {} (source: {source})", path.display());
+            println!("Registry: {} (source: {source})", paths::display_path(path));
         } else if let Some(error) = &self.registry.error {
             println!("Registry: INVALID ({error})");
         } else {
@@ -269,7 +269,7 @@ fn registry() -> (Registry, ManifestHealth, Option<Manifest>) {
         .map(|active| {
             format!(
                 "this directory is not the active registry (active: {})",
-                active.display()
+                paths::display_path(&active)
             )
         });
     let manifest = manifest::load_manifest(&resolution.root, &Default::default());

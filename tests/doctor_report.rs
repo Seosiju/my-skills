@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use assert_cmd::prelude::*;
 use my_skills::drive::hash::hash_directory;
+use my_skills::platform::paths;
 use serde_json::{Value, json};
 use support_g::{Fixture, MANIFEST, skill};
 
@@ -50,7 +51,7 @@ fn test_doctor_reports_registry_source_version_state_and_data() {
         "Update:  skipped".to_owned(),
         format!(
             "Registry: {} (source: cache)",
-            fixture.registry.canonicalize().unwrap().display()
+            paths::display_path(&fixture.registry.canonicalize().unwrap())
         ),
         "Skills:   2 registered, 1 enabled".to_owned(),
         format!(
@@ -469,5 +470,30 @@ fn doctor_tolerates_invalid_connection_state_and_non_git_registries() {
             .as_str()
             .unwrap()
             .contains("invalid JSON")
+    );
+}
+
+#[test]
+fn doctor_displays_registry_path_without_windows_verbatim_prefix() {
+    let fixture = Fixture::isolated();
+    let result = fixture
+        .command()
+        .args(["doctor", "--no-update-check"])
+        .assert()
+        .success();
+    let registry_line = output(&result)
+        .lines()
+        .find(|line| line.starts_with("Registry: "))
+        .expect("Registry line present");
+    assert!(
+        !registry_line.contains(r"\\?\"),
+        "Registry line should not contain verbatim prefix: {registry_line}"
+    );
+    assert_eq!(
+        registry_line,
+        format!(
+            "Registry: {} (source: env)",
+            paths::display_path(&fixture.registry.canonicalize().unwrap())
+        )
     );
 }
