@@ -314,9 +314,9 @@ Windows에서는 `\\?\` 접두어를 제거하고 비교한다.
 | 항목 | macOS / Linux | Windows |
 |---|---|---|
 | home | `$HOME` | `%USERPROFILE%` |
-| Claude Code | `~/.claude/skills` | `%USERPROFILE%\.claude\skills` (실기기 확인 필요) |
-| Codex | `~/.agents/skills` | `%USERPROFILE%\.agents\skills` (실기기 확인 필요) |
-| agy | `~/.gemini/config/skills` | `%USERPROFILE%\.gemini\config\skills` (실기기 확인 필요) |
+| Claude Code | `~/.claude/skills` | `%USERPROFILE%\.claude\skills` (2026-11-23 실기기 확인, junction 발견) |
+| Codex | `~/.agents/skills` | `%USERPROFILE%\.agents\skills` (2026-11-23 실기기 확인, junction 발견) |
+| agy | `~/.gemini/config/skills` | `%USERPROFILE%\.gemini\config\skills` (2026-11-23 실기기 확인. agy 1.5.14는 junction을 발견하지 못하고 일반 폴더만 발견하므로 Windows에서는 `[targets.agy] install_mode = "copy"`) |
 | data dir | `$XDG_DATA_HOME/my-skills` → `~/.local/share/my-skills` | `%LOCALAPPDATA%\my-skills\data` (0.4.1과 같음) |
 | state | `$XDG_STATE_HOME/my-skills/state.json` → `~/.local/state/...` | 0.4.1은 Windows에서도 `~/.local/state`를 쓴다. 호환을 위해 유지한다(열린 질문 Q3) |
 | active root 설정 | XDG config | 0.4.1 동작 유지 |
@@ -495,13 +495,36 @@ skills/                    빌드 시 바이너리에 포함하는 시드 원본
 - 테스트 격리 문제가 있다. Python 테스트는 실제 host 폴더와 `%LOCALAPPDATA%`에 쓰고, Rust 테스트 1건(`data-path --create`)은 `%LOCALAPPDATA%\my-skills\data`에 쓴다.
 - 세 host의 junction 발견 여부(Q1)는 아직 확인하지 않았다. 상세: `docs/2026-11-23-skill-drive-windows-python-tests-report.md`.
 
+**실기기 (2026-11-23, Windows 11 Home 10.0.26300, Rust 1.100.0):**
+
+| 항목 | 결과 |
+|---|---|
+| 검증한 커밋 | 3단계: `071ca28`(release binary). 4단계: `a7c35c6`(wave4 포함, `cargo install --locked --path .`) |
+| 개발 환경 | 새로 설치한 것 없음. Git 2.56.1, Rust 1.100.0(MSVC), Visual Studio Build Tools 2026 |
+| cargo test | `071ca28`에서 209개 통과, 0개 실패(Windows link 테스트 4개 실행). wave4 뒤 221개 통과 |
+| 기존 Python 0.4.x, 기존 state.json (Q3 판단용) | 있음(0.4.1, `%USERPROFILE%\.local\bin`), 있음(copy 기록 3개) |
+| 세 에이전트 명령 설치 여부 | claude, codex, agy 모두 있음 |
+| Link capability | junction |
+| Claude Code 발견 | 예. 새 세션(`claude -p`)에서 junction 스킬의 설명을 읽고 답함. 실행 중인 세션도 바로 인식 (`%USERPROFILE%\.claude\skills`) |
+| Codex 발견 | 예. 새 세션(`codex exec`)에서 junction 경로로 `SKILL.md`를 읽고 답함 (`%USERPROFILE%\.agents\skills`) |
+| agy 발견 | **junction은 아니요, 일반 폴더는 예**. agy 1.5.14의 `/skills` 조회(모델 호출 없음)에서 같은 폴더의 일반 폴더는 나오고 junction은 빠짐. 나중에 만든 일반 폴더는 나왔으므로 캐시 문제가 아님 (`%USERPROFILE%\.gemini\config\skills`). 대응: host별 `install_mode`(wave4) |
+| Git Bash `HOME` 형식과 doctor 경로 | `HOME=/c/Users/...`. Registry, State, Data, Hosts 모두 올바른 Windows 경로 |
+| pre-commit 차단 (Git Bash) | 예. 막은 이유가 검증 메시지 3개 |
+| post-checkout, post-merge가 link를 만듦 (Git Bash) | 예. 둘 다 sync를 실행해 새 스킬을 junction으로 연결 |
+| 처음 Git Bash에서 잡힌 my-skills | Python 판(0.4.1). `cargo install` 뒤 새 Git Bash와 새 PowerShell에서는 Rust 판(`%USERPROFILE%\.cargo\bin`이 사용자 PATH 1번이라 PATH는 바꾸지 않음) |
+| 공백이 든 경로에서 동작 | 정상(`%TEMP%\skill drive probe`) |
+| 줄바꿈 | `core.autocrlf=true`, `.gitattributes` 없음, 작업 폴더의 CRLF 파일 60개. 문제 없음 |
+| hook이 my-skills를 찾음 | PATH(설치 후 Rust 판) |
+| 실제 연결 (4단계) | 진행함. `my-skills.local.toml`에 `[defaults] install_mode = "link"`, `[targets.agy] install_mode = "copy"`. convert 2개(agy는 건너뜀), 새 연결 40개. 결과: 스킬 15개, link 28개, copy 15개, 모두 FRESH(claude는 manifest상 지원하지 않는 2개 제외), `sync --check` 0, hook 4개 설치. 새 세션에서 세 에이전트 모두 실제 스킬을 발견 |
+| 기타 | Git Bash에서 `agy -p '/skills'`는 MSYS가 경로로 바꿔 모델을 호출하므로 PowerShell에서 실행. `set-root`와 hook 설치 메시지에 `\\?\` 접두어나 `/`와 `\`가 섞인 경로가 남음(표시만의 문제). `bootstrap --dry-run`은 "then: my-skills hooks install"이라고 보여 주지만 실제 bootstrap은 hook을 설치하지 않고 안내만 함 |
+
 ## 13. 열린 질문
 
 | ID | 질문 | 제안 |
 |---|---|---|
-| Q1 | Windows에서 세 host의 실제 스킬 경로와 junction 발견 여부 | §12에서 확인 |
+| Q1 | Windows에서 세 host의 실제 스킬 경로와 junction 발견 여부 | **확인(2026-11-23)**: 경로는 §7.1과 같다. Claude Code와 Codex는 junction을 발견하고, agy 1.5.14는 발견하지 못한다. Windows에서는 `[targets.agy] install_mode = "copy"`를 쓴다(§12) |
 | Q2 | pre-commit 검사 범위 | **결정(2026-11-23)**: 이번 커밋에서 바뀐 스킬과 manifest만, staged 내용 기준. 전체 검사는 `doctor` (§6.7) |
-| Q3 | Windows state 경로를 `%LOCALAPPDATA%`로 옮길지 | Windows에 0.4.1 설치 기록이 없으면 v1부터 `%LOCALAPPDATA%\my-skills\state`로 옮기고, 있으면 유지 |
+| Q3 | Windows state 경로를 `%LOCALAPPDATA%`로 옮길지 | Windows에 0.4.1 설치 기록이 없으면 v1부터 `%LOCALAPPDATA%\my-skills\state`로 옮기고, 있으면 유지. 2026-11-23 실기기에는 0.4.1 기록(`%USERPROFILE%\.local\state\my-skills\state.json`)이 있어 그대로 썼고 문제없었다. 기록이 없는 PC의 이전 여부는 아직 결정하지 않음 |
 | Q4 | sync의 해제를 기본으로 할지 | **결정(2026-11-23)**: 기본으로 해제. `--no-prune`으로 끔 (D3) |
 | Q5 | binary 코드 서명 | 1차는 서명 없이 설치 스크립트(curl/PowerShell)로 배포. 브라우저로 받으면 경고가 뜰 수 있음을 문서에 적음 |
 | Q6 | audit 규칙 YAML을 그대로 둘지 | Rust 구현 시점에 YAML crate 상태를 보고 결정 |
