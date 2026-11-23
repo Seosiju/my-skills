@@ -9,6 +9,9 @@ import pytest
 import my_skills.update_commands as update_commands
 from my_skills import cli
 
+# The autouse fixture in conftest.py replaces this lookup; keep the real one.
+_REAL_LATEST_RUST_REF = update_commands.latest_rust_ref
+
 
 def _completed(
     command: Sequence[str], stdout: str = "", stderr: str = "", returncode: int = 0
@@ -226,9 +229,9 @@ def test_update_directs_python_users_to_binary_installers(
     assert captured.out.splitlines() == [
         "Current: my-skills 0.4.2",
         f"my-skills {release} is available. Install the Rust binary with:",
-        "  macOS/Linux: https://github.com/Seosiju/my-skills/blob/main/scripts/install.sh",
-        "  Windows:     https://github.com/Seosiju/my-skills/blob/main/scripts/install.ps1",
-        "  Migration spec: https://github.com/Seosiju/my-skills/blob/main/"
+        f"  macOS/Linux: https://github.com/Seosiju/my-skills/blob/{release}/scripts/install.sh",
+        f"  Windows:     https://github.com/Seosiju/my-skills/blob/{release}/scripts/install.ps1",
+        f"  Migration spec: https://github.com/Seosiju/my-skills/blob/{release}/"
         "docs/2026-11-23-skill-drive-rust-v1-spec.md",
     ]
     assert captured.err == ""
@@ -272,3 +275,90 @@ def test_update_check_does_not_suggest_migration_for_prerelease_only(
         "Latest:  v0.4.2",
         "Already up to date",
     ]
+
+
+def _tags(*tags: str):
+    def run(command: Sequence[str], _timeout: int | None = None) -> subprocess.CompletedProcess[str]:
+        return _completed(command, stdout="".join(f"abc123\trefs/tags/{tag}\n" for tag in tags))
+
+    return run
+
+
+@pytest.mark.parametrize(
+    ("tags", "expected"),
+    [
+        (("v0.4.1", "v0.4.2"), None),
+        (("v0.4.2", "v1.0.0-alpha.1", "v1.0.0-alpha.2"), "v1.0.0-alpha.2"),
+        (("v1.0.0-alpha.2", "v1.0.0", "v1.0.0-rc.1"), "v1.0.0"),
+        (("v1.0.0", "v1.1.0-alpha.1"), "v1.1.0-alpha.1"),
+    ],
+)
+def test_latest_rust_ref_includes_prereleases_and_prefers_stable(
+    tags: tuple[str, ...], expected: str | None
+) -> None:
+    ref = _REAL_LATEST_RUST_REF(run=_tags(*tags), which=_git_path)
+    assert (ref.name if ref else None) == expected
+
+
+def _mock_main_cutover(monkeypatch: pytest.MonkeyPatch, release: str) -> None:
+    def unexpected(*_args: object) -> None:
+        pytest.fail("main-channel migration must not read main or run the installer")
+
+    monkeypatch.setattr(update_commands, "read_install_info", lambda: _install_info("0.4.2"))
+    monkeypatch.setattr(
+        update_commands,
+        "latest_rust_ref",
+        lambda: _REAL_LATEST_RUST_REF(run=_tags("v0.4.2", release), which=_git_path),
+    )
+    monkeypatch.setattr(update_commands, "latest_main_ref", unexpected)
+    monkeypatch.setattr(update_commands, "run_command", unexpected)
+    monkeypatch.setattr(shutil, "which", unexpected)
+
+
+@pytest.mark.parametrize("flags", [[], ["--dry-run"]])
+def test_main_channel_directs_to_rust_binary_once_any_v1_tag_exists(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], flags: list[str]
+) -> None:
+    _mock_main_cutover(monkeypatch, "v1.0.0-alpha.1")
+
+    assert cli.main(["update", "--channel", "main", *flags]) == 0
+
+    captured = capsys.readouterr()
+    base = "https://github.com/Seosiju/my-skills/blob/v1.0.0-alpha.1"
+    assert captured.out.splitlines() == [
+        "Current: my-skills 0.4.2",
+        "my-skills v1.0.0-alpha.1 is available. Install the Rust binary with:",
+        f"  macOS/Linux: {base}/scripts/install.sh",
+        f"  Windows:     {base}/scripts/install.ps1",
+        f"  Migration spec: {base}/docs/2026-11-23-skill-drive-rust-v1-spec.md",
+    ]
+    assert captured.err == ""
+
+
+def test_main_channel_check_reports_migration_without_failing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _mock_main_cutover(monkeypatch, "v1.0.0-alpha.1")
+
+    assert cli.main(["update", "--channel", "main", "--check"]) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "Current: my-skills 0.4.2",
+        "Python updates have moved to the Rust v1 binary",
+        "my-skills v1.0.0-alpha.1 is available.",
+    ]
+
+
+def test_doctor_update_line_mentions_rust_release() -> None:
+    info = _install_info("0.4.2")
+    v042 = update_commands.RemoteRef(name="v0.4.2", version=(0, 4, 2), commitish="a")
+    v1 = update_commands.RemoteRef(name="v1.0.0", version=(1, 0, 0), commitish="b")
+    stable = update_commands.UpdateStatus(info, "stable", v042, "current", "v0.4.2", migration=v1)
+    assert update_commands.format_update_status(stable) == (
+        "Update:  up to date (stable v0.4.2); Rust v1.0.0 is available "
+        "(run 'my-skills update' for install steps)"
+    )
+    main = update_commands.UpdateStatus(info, "main", None, "migrate", "moved", migration=v1)
+    assert update_commands.format_update_status(main) == (
+        "Update:  main channel moved to the Rust binary v1.0.0 "
+        "(run 'my-skills update' for install steps)"
+    )
