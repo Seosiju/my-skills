@@ -6,16 +6,15 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 const TEXT_SUFFIXES: &[&str] = &[
     "md", "json", "toml", "py", "yaml", "yml", "txt", "rs", "sh", "ps1", "lock", "",
 ];
 
-fn repo_root() -> PathBuf {
-    // crates/my-skills -> repository root. Adjust when the crate moves to the root.
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
+fn repo_root() -> &'static Path {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
 }
 
 fn tracked_files() -> Vec<String> {

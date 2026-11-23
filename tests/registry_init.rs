@@ -217,7 +217,7 @@ fn init_registry_seed_copy_does_not_copy_private_source_files() {
         "my-jira/config.example.json",
         "my-skills/SKILL.md",
     ];
-    let tool_repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let tool_repo = Path::new(env!("CARGO_MANIFEST_DIR"));
     for file in seed_files {
         assert_eq!(
             fs::read(fixture.registry.join("skills").join(file)).unwrap(),

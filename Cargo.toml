@@ -1,9 +1,66 @@
-[workspace]
-resolver = "3"
-members = ["crates/my-skills"]
-
-[workspace.package]
+[package]
+name = "my-skills"
+version = "1.0.0-alpha.0"
+description = "Personal skill drive: one canonical skill registry, linked into every agent host."
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
 repository = "https://github.com/Seosiju/my-skills"
+
+[lib]
+name = "my_skills"
+path = "src/lib.rs"
+
+[[bin]]
+name = "my-skills"
+path = "src/main.rs"
+
+# Parallel streams: add a dependency only in your own block below and keep
+# versions as caret requirements. The integrator resolves Cargo.lock on merge.
+[dependencies]
+# core (skeleton)
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+# YAML for SKILL.md frontmatter (D) and audit rules (E). Chosen 2026-11-23:
+# actively maintained; serde_yaml is deprecated. YAML 1.2, so PyYAML 1.1
+# scalars (yes/no/on/off) parse as strings: streams D/E handle parity.
+yaml-rust2 = "0.13"
+# stream A (hash)
+sha2 = "0.10"
+walkdir = "2"
+# stream B (manifest/state/data)
+toml = "0.8"
+dirs = "6"
+# stream D (validate/frontmatter)
+# stream E (audit)
+regex = "1"
+# stream G (hooks and doctor)
+# stream H (registry)
+cap-fs-ext = "4"
+cap-std = "4"
+include_dir = "0.7"
+tempfile = "3"
+# stream I (self-update)
+flate2 = "1"
+fs4 = "1.1"
+semver = "1"
+url = "2"
+
+[target.'cfg(windows)'.dependencies]
+# stream C (link)
+junction = "1"
+# stream I (self-update)
+ureq = { version = "3.5", default-features = false, features = ["native-tls-no-default"] }
+zip = { version = "7.2", default-features = false, features = ["deflate-flate2"] }
+
+[target.'cfg(not(windows))'.dependencies]
+# stream I (self-update)
+tar = { version = "0.4.46", default-features = false }
+ureq = { version = "3.5", default-features = false, features = ["rustls"] }
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"

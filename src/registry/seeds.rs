@@ -30,12 +30,12 @@ macro_rules! seed_file {
     ($path:literal) => {
         File::new(
             $path,
-            include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../skills/", $path)),
+            include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/skills/", $path)),
         )
     };
 }
 
-// Match the wheel's force-include list. Embedding the entire skills/ tree
+// Match the Python 0.4.x wheel's force-include list. Embedding the entire skills/ tree
 // would put untracked machine-local files into the binary.
 const SEED_FILES: [File<'static>; 6] = [
     seed_file!("cli-inventory/SKILL.md"),
