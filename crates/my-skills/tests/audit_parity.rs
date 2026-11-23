@@ -83,12 +83,6 @@ fn bundles_match_python_and_all_builtin_rules_are_exercised() {
         let id = rule["id"].as_str().unwrap();
         assert!(covered.contains(id), "no fixture covers {id}");
     }
-    assert_eq!(
-        include_str!("../src/check/audit/builtin_rules.yaml"),
-        // Transitional: compares against the Python copy. Remove with the
-        // Python package (handoff §7 D).
-        include_str!("../../../src/my_skills/audit/builtin_rules.yaml")
-    );
 }
 
 #[test]

@@ -1,4 +1,0 @@
-# No Frontmatter
-
-This file has no YAML frontmatter block at all, so validation must fail with a
-"missing opening" error.
