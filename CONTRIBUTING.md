@@ -1,30 +1,28 @@
 # Contributing
 
-Thanks for helping improve `my-skills`. This project is a GitHub-first Python
-CLI built with `uv`, `pytest`, and `hatchling`.
+The `dev` branch contains the Rust `my-skills` CLI.
 
 ## Development Setup
 
-Requirements:
-
-- Python 3.11+
-- `uv`
+Use Git and stable Rust with the `rustfmt` and `clippy` components. On
+Windows, use the MSVC toolchain and build tools.
 
 Clone the repository and run the test suite:
 
 ```bash
-git clone https://github.com/Seosiju/my-skills.git
+git clone --branch dev https://github.com/Seosiju/my-skills.git
 cd my-skills
-uv run pytest
+cargo test --all-targets
 ```
 
-Use the CLI from the working tree while developing:
+Use `cargo run -- <cmd>` from the working tree. For checks that resolve a
+registry, point `MY_SKILLS_ROOT` to a disposable registry with test host paths.
 
 ```bash
-uv run my-skills doctor
-uv run my-skills skills --json
-uv run my-skills bootstrap --dry-run
-uv run my-skills install my-skills --host hermes --dry-run
+cargo run -- doctor --no-update-check
+cargo run -- skills --json
+cargo run -- bootstrap --dry-run
+cargo run -- install my-skills --host hermes --dry-run
 ```
 
 ## Contribution Guidelines
@@ -43,11 +41,10 @@ uv run my-skills install my-skills --host hermes --dry-run
 Run:
 
 ```bash
-uv run pytest
-uv build
-uv run my-skills doctor
-uv run my-skills skills --json
-uv run my-skills install my-skills --host hermes --dry-run
+cargo fmt --all --check
+cargo clippy --all-targets -- -D warnings
+cargo test --all-targets
+cargo build --release
 ```
 
 For release-related changes, also check `docs/release-checklist.md`.

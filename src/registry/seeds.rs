@@ -23,8 +23,8 @@ const SEED_SKILLS: [(&str, bool); 3] = [
     ("my-jira", false),
 ];
 const SEED_HOSTS: &str = r#"["claude", "codex", "hermes", "agy"]"#;
-// This is the version of the embedded seed payload, which is unchanged from v0.4.1.
-const SEED_REVISION: &str = "0.4.1";
+// This is the version of the embedded seed payload.
+const SEED_REVISION: &str = "1.0.0-alpha.0";
 
 macro_rules! seed_file {
     ($path:literal) => {
@@ -84,13 +84,20 @@ const GITIGNORE: &str =
 
 const README_BODY: &str = r#"This repository is your canonical source for private Agent Skills.
 
-Install the public `my-skills` CLI:
+Install the public Rust `my-skills` CLI from a separate tool repo checkout
+with Git and stable Rust:
 
 ```bash
-uv tool install git+https://github.com/Seosiju/my-skills.git
+git clone --branch dev https://github.com/Seosiju/my-skills.git
+cd my-skills
+cargo install --locked --path .
 ```
 
-Add skills under `skills/<name>/SKILL.md`, then preview and install them:
+Once v1 binaries are published, see the release installer instructions in the
+[tool repo README](https://github.com/Seosiju/my-skills/tree/dev#install-the-cli).
+
+Return to this registry. Add skills under `skills/<name>/SKILL.md`, then
+preview and install them. Add `--yes` after reviewing a plan for multiple hosts.
 
 ```bash
 my-skills skills

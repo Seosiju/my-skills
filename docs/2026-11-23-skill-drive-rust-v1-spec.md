@@ -397,16 +397,15 @@ Rust 테스트가 같은 값을 내는지 확인한다.
 ### 10.1 저장소 배치
 
 ```
-Cargo.toml                 workspace
-crates/my-skills/          lib(core) + bin(my-skills) 하나의 crate로 시작
-  src/main.rs              CLI 진입점
-  src/lib.rs
-  src/{manifest,state,hash,link,plan,install,reconcile,hooks,validate,
-       audit,doctor,data,update,seeds}.rs
-  tests/                   black-box CLI 테스트 (임시 HOME, XDG 경로)
-  tests/golden/            0.4.1 hash golden 파일
-src/my_skills/             Python 0.4.x (전환 완료 전까지 유지)
-skills/                    seed 원본 (Rust는 빌드할 때 binary에 포함)
+Cargo.toml                 루트의 단일 패키지 (라이브러리 + my-skills 실행 파일)
+src/main.rs                CLI 진입점
+src/lib.rs                 라이브러리 진입점
+src/commands/              CLI 명령 구현
+src/{registry,drive,check,git,platform}/
+src/update.rs              릴리스 조회와 자체 업데이트
+tests/                     통합 테스트 (격리된 사용자 경로)
+tests/golden/              v0.4.1과 비교할 golden 데이터
+skills/                    빌드 시 바이너리에 포함하는 시드 원본
 ```
 
 ### 10.2 의존성 후보 (구현 시작 시 유지 상태와 라이선스 확인)
@@ -427,9 +426,8 @@ skills/                    seed 원본 (Rust는 빌드할 때 binary에 포함)
 
 ### 10.3 CI
 
-- OS: `ubuntu-latest`, `macos-latest`, `windows-latest`. 지금은 ubuntu만 있다.
-- 실행 항목: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`.
-- Python 0.4.x 테스트는 전환을 마칠 때까지 ubuntu에서 계속 돌린다.
+- `dev`의 Rust CI는 `ubuntu-latest`, `macos-latest`, `windows-latest`에서 실행한다.
+- 루트에서 `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --all-targets`를 실행한다.
 
 ### 10.4 배포
 
@@ -460,7 +458,7 @@ skills/                    seed 원본 (Rust는 빌드할 때 binary에 포함)
 
 **전제:** `dev` 브랜치와 1단계 결과물이 원격에 push돼 있다. Windows PC에 Git for Windows와 Rust toolchain(MSVC)이 있다.
 
-1. tool repo의 `dev`를 받고 `cargo test`를 실행한다. junction 관련 테스트가 실제로 실행됐는지 출력으로 확인한다.
+1. tool repo의 `dev`를 받고 루트에서 `cargo test --all-targets`를 실행한다. junction 관련 테스트가 실제로 실행됐는지 출력으로 확인한다.
 2. 경로 실측: Claude Code, Codex, agy가 Windows에서 사용자 스킬을 읽는 폴더를 각 도구의 문서나 실제 동작으로 확인하고, §7.1 표를 고친다.
 3. junction 발견 확인: 임시 테스트 스킬을 junction으로 연결하고, 세 host가 각각 그 스킬을 발견하는지 확인한다. 발견하지 못하는 host가 있으면 symlink(개발자 모드)와 copy로 다시 확인하고, 결과를 이 문서에 적는다.
 4. 대소문자, `\\?\` 접두어, 공백이 든 경로에서 `is_managed_link` 판정을 확인한다.

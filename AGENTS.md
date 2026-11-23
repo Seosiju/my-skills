@@ -21,9 +21,11 @@ or set the intended registry with `my-skills set-root <path>` before writing.
 Development commands:
 
 ```bash
-uv run pytest
-uv build
-uv run my-skills <cmd>
+cargo fmt --all --check
+cargo clippy --all-targets -- -D warnings
+cargo test --all-targets
+cargo build --release
+cargo run -- <cmd>
 ```
 
 Running commands inside this source checkout should not silently repoint an

@@ -12,10 +12,10 @@ or disable the skill.
 **Mental model.** Your registry is a folder (default `~/my-agent-skills`) holding
 `my-skills.toml` (the manifest) and `skills/<name>/SKILL.md` (the canonical
 originals). Host directories (`~/.claude/skills`, `~/.agents/skills`,
-`~/.hermes/skills`, `~/.gemini/config/skills`) are **build outputs**: `install` and `sync` copy the canonical
-skill into them. Editing a host copy directly causes **drift**, which the CLI
-detects and refuses to silently overwrite. git is optional — the registry works
-as a plain folder; version control and remotes are the user's choice.
+`~/.hermes/skills`, `~/.gemini/config/skills`) hold the host connections.
+New registries use links by default, and edits to canonical skills are visible
+through those links. In copy mode, the CLI detects local changes before
+replacing a copy. A registry can also work as a plain folder without Git.
 
 ## Which registry am I operating on?
 
@@ -43,13 +43,20 @@ the user explicitly wants to make a registry active.
 
 ## First-time setup (the front door)
 
-If the user has no registry yet, set one up. Install the CLI once:
+If the Rust CLI is missing, install it from the tool repo with Git and stable
+Rust. On Windows, use the MSVC toolchain and build tools.
 
 ```bash
-uv tool install git+https://github.com/Seosiju/my-skills.git
+git clone --branch dev https://github.com/Seosiju/my-skills.git
+cd my-skills
+cargo install --locked --path .
+my-skills --version
 ```
 
-Then create the registry. `init-registry` prompts for a location (default
+Once v1 binaries are published, follow the release installer instructions in
+the [tool repo README](https://github.com/Seosiju/my-skills/tree/dev#install-the-cli).
+
+Create the registry from outside the tool repo. `init-registry` prompts for a location (default
 `~/my-agent-skills`), seeds the public-safe default skills, and runs `git init`:
 
 ```bash
@@ -64,7 +71,7 @@ my-skills init-registry
 from any directory. Deploy the enabled skills into your agents:
 
 ```bash
-my-skills install --dry-run   # preview the plan, write nothing
+my-skills install --dry-run   # preview host changes
 my-skills install
 ```
 
@@ -143,8 +150,8 @@ my-skills install <skill> --host <host>
 Import sources must not contain symlinks. Copy real files into the source
 directory before importing so audit and copy inspect the same tree.
 
-After import, edit the canonical registry copy and use `sync` to update managed
-host installs.
+After import, edit the canonical skill. Linked installs see those edits
+immediately. Use `sync` to update managed copies.
 
 ## Audit
 
@@ -179,14 +186,17 @@ Never add `--yes` yourself to a multi-host write. `--yes` means the user already
 approved that exact multi-host plan. If the user has not explicitly approved all
 hosts, stop after the dry-run and ask which host to update.
 
-Before writing into host directories, show the dry-run plan:
+Before writing into host directories, show the dry-run plan for the command
+you intend to run.
 
 ```bash
 my-skills install <skill> --host <host> --dry-run --json
+my-skills sync <skill> --host <host> --dry-run
 ```
 
-Review both `actions` and `audit`. If audit would block, do not continue. If the
-plan is acceptable, run the matching command:
+For `install`, review both `actions` and `audit`. For `sync`, review removals
+as well as new and updated connections. If audit would block, surface the
+finding. When the plan is acceptable, run the corresponding command.
 
 ```bash
 my-skills install <skill> --host <host>
@@ -229,6 +239,9 @@ my-skills disable <skill>
 my-skills validate <skill>
 ```
 
+A later `sync` can prune managed connections for disabled skills. Preview
+those removals with `sync --dry-run`.
+
 ## Other Commands
 
 This skill covers the common flows. For the full command surface — including
@@ -238,5 +251,5 @@ This skill covers the common flows. For the full command surface — including
 my-skills --help
 ```
 
-`bootstrap` is for **contributors/maintainers** working from a cloned repo (it
-does an editable install); regular users never need it.
+On a new machine, run `bootstrap` from a clone of the registry to reconcile
+its host connections. Run `my-skills hooks install` separately for Git hooks.
