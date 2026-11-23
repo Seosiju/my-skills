@@ -296,7 +296,7 @@ Windows에서는 `\\?\` 접두어를 제거하고 비교한다.
 - registry 상태: 기본 브랜치인지, rebase·merge 중인지, 커밋하지 않은 변경 수, 원격 대비 앞서거나 뒤처진 커밋 수.
 - hooks 상태(§6.7).
 - 연결 방식별 집계: `link 41 / copy 2 (fallback 0)` 같은 형식.
-- Windows에서 `agy` target이 활성화되어 있고 유효 모드가 `link`이거나 `agy`의 link 연결이 남아 있으면, junction 미발견 가능성과 `my-skills.local.toml`의 `[targets.agy] install_mode = "copy"` 설정을 안내하는 경고를 출력한다(경고만 출력하며 종료 코드는 바꾸지 않음).
+- Windows에서 `agy` target이 유효 모드 `link`로 활성화되어 있거나 `state.json`에 `agy`의 link 연결이 남아 있으면(`agy`가 비활성이거나 이미 `copy`로 설정된 경우 포함), junction 미발견 가능성과 함께 유효 모드가 `link`이면 `my-skills.local.toml`의 `[targets.agy] install_mode = "copy"` 설정을, 기존 link 연결이 남아 있으면 `my-skills convert --to copy --host agy` 전환을 안내하는 경고를 출력한다(경고만 출력하며 종료 코드는 바꾸지 않음).
 
 ### 6.9 동작 유지 목록 (0.4.1과 같은 동작으로 이식)
 

@@ -407,13 +407,13 @@ my-skills sync --dry-run
 
 사용자에게 보여 줄 것:
 - `doctor`의 레지스트리 위치, Link capability, 연결 집계
-- `sync --dry-run`의 동작 목록. CREATE는 새 link이고, BLOCK은 막힌 항목이다. 항목별로 개수를 센다
+- `sync --dry-run`의 동작 목록. CREATE 중 `claude`·`codex`는 `[link]` 표시가 붙는 새 link이고, `agy`는 `[link]` 없이 출력되는 새 copy다. BLOCK은 막힌 항목이다. 항목별로 개수를 센다
 
 경우별 처리:
 
 | dry-run 결과 | 처리 |
 |---|---|
-| 모두 CREATE (link) | 승인을 받으면 4.4로 |
+| 모두 CREATE (`claude`·`codex`는 `[link]`, `agy`는 copy) | 승인을 받으면 4.4로 |
 | 1단계에서 본 기존 copy 기록이 있음 | `my-skills convert --to link --host all --dry-run` 결과도 함께 보여 준다. 승인을 받으면 4.4에서 convert도 실행 |
 | `BLOCK_CONFLICT` (같은 이름의 폴더가 있는데 기록이 없음) | **진행하지 않는다.** 해당 폴더를 어떻게 할지 사용자가 정한다 |
 | `[copy fallback]` 또는 `BLOCK_DRIFT` | 진행하지 않고 기록한다 |

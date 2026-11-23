@@ -54,7 +54,8 @@ links skills with directory junctions by default, which **Antigravity CLI 1.5.14
 did not discover while regular folders worked. Windows users can set
 `install_mode = "copy"` under `[targets.agy]` in `my-skills.local.toml` while
 other hosts keep links; `my-skills doctor` warns on Windows when `agy` is
-enabled in link mode or still has link connections. On Windows, run
+enabled with effective mode `link`, or when recorded `agy` link connections
+remain (even if `agy` is disabled or already set to `copy`). On Windows, run
 `agy -p '/skills' --output-format json` from PowerShell rather than Git Bash
 (Git Bash rewrites `/skills` into a Windows path). This does not validate
 Antigravity IDE or every CLI version. Official documentation has also described

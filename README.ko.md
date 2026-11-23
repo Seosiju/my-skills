@@ -53,7 +53,8 @@ macOS의 **Antigravity CLI 1.2.16**에서 확인했으며, 해당 `/skills` 검�
 연결하는데, **Antigravity CLI 1.5.14**에서는 일반 폴더는 발견되지만 junction은
 발견되지 않았습니다. Windows에서는 다른 호스트는 링크로 유지하면서
 `my-skills.local.toml`의 `[targets.agy]`에 `install_mode = "copy"`를 설정할 수
-있으며, Windows에서 `agy`가 링크 모드로 활성화되어 있거나 링크 연결이 남아 있으면
+있으며, Windows에서 `agy`가 유효 모드 `link`로 활성화되어 있거나 기록된 `agy`
+링크 연결이 남아 있으면(`agy`가 비활성이거나 이미 `copy`로 설정된 경우 포함)
 `my-skills doctor`가 경고를 출력합니다. Windows에서
 `agy -p '/skills' --output-format json`은 Git Bash가 `/skills`를 Windows 경로로
 바꾸므로 PowerShell에서 실행하세요. IDE나 모든 CLI 버전을 검증한 의미는 아닙니다.
