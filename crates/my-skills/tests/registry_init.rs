@@ -1,12 +1,13 @@
 mod support_h;
+mod support_i;
 
 use std::fs;
 use std::path::Path;
-use std::process::Command as Process;
 
 use assert_cmd::Command;
 use predicates::prelude::*;
 use support_h::{Fixture, json, native, plain};
+use support_i::assert_with_busy_retry;
 
 fn init(fixture: &Fixture) -> Command {
     let mut cmd = fixture.command();
@@ -319,14 +320,14 @@ fn default_seed_skills_are_defined_once_and_available_outside_tool_repo() {
         .join("bin")
         .join(std::path::Path::new(bin).file_name().unwrap());
     fs::copy(bin, &copied).unwrap();
-    wait_until_executable(&copied);
-    let process: Process = fixture.process(&copied);
-    Command::from_std(process)
-        .arg("init-registry")
-        .arg(&fixture.registry)
-        .args(["--with-defaults", "--no-git"])
-        .assert()
-        .success();
+    assert_with_busy_retry(
+        fixture
+            .process(&copied)
+            .arg("init-registry")
+            .arg(&fixture.registry)
+            .args(["--with-defaults", "--no-git"]),
+    )
+    .success();
     assert_eq!(
         fs::read_dir(fixture.registry.join("skills"))
             .unwrap()
@@ -339,20 +340,4 @@ fn default_seed_skills_are_defined_once_and_available_outside_tool_repo() {
             .join("scripts/scan_tools.py")
             .is_file()
     );
-}
-
-/// On Linux, a parallel test that forks while the copy's write handle is
-/// open can make exec fail with ETXTBSY ("Text file busy") for a moment.
-/// Retry a harmless `--version` until the copy can be executed.
-fn wait_until_executable(path: &std::path::Path) {
-    for _ in 0..100 {
-        match std::process::Command::new(path).arg("--version").output() {
-            Ok(_) => return,
-            Err(err) if err.raw_os_error() == Some(26) => {
-                std::thread::sleep(std::time::Duration::from_millis(50));
-            }
-            Err(err) => panic!("cannot run {}: {err}", path.display()),
-        }
-    }
-    panic!("{} stayed busy (ETXTBSY)", path.display());
 }
