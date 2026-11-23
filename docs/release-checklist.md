@@ -9,6 +9,13 @@
 - Select the intended `v1.*` tag and verify that its version without the
   leading `v` matches the package version in `Cargo.toml`. The updater
   expects the installed executable's `--version` to match the release tag.
+- When Rust v1.0.0 moves to `main`, switch the source checkout examples
+  using `--branch dev` in `README.md`, `README.ko.md`, `CONTRIBUTING.md`,
+  `docs/release-checklist.md`, `skills/my-skills/SKILL.md`, and the generated
+  registry README in `src/registry/seeds.rs`. Update the `/tree/dev` install
+  links in `skills/my-skills/SKILL.md` and `src/registry/seeds.rs` to the
+  `main` README. The handoff's `gh run list --branch dev` commands query
+  development CI.
 
 ## 2. Source Verification
 
@@ -40,7 +47,23 @@ Verify a manifest without `targets.agy` keeps AGY disabled and leaves it out of
 default `--host all` plans. New registries explicitly disable AGY while seeded
 skills support it. Keep the Hermes regression checks.
 
+On macOS, Antigravity CLI 1.2.16 discovered regular folders and symlinks at
+`~/.gemini/config/skills` with the non-interactive command
+`agy -p '/skills' --output-format json`. The check used zero model turns and
+tokens. Verify discovery again for other Antigravity CLI versions.
+
 ## 3. Package and Test Before Tagging
+
+GitHub requires `.github/workflows/release-rust.yml` on the default branch
+(`main`) before **Release Rust** can be dispatched manually.
+[GitHub's manual workflow requirements](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow#configuring-a-workflow-to-run-manually)
+
+While the workflow is absent from `main`, run the source checks in §2 before
+tagging and compare the local release binary's `--version` with the planned
+tag. If `main` still lacks the workflow when the first Rust tag is pushed,
+that tag run will be the first full hosted build and packaging run.
+
+Once the workflow is on `main`, use the following pre-tag artifact checks.
 
 1. Run **Release Rust** with `workflow_dispatch` on the candidate commit. The
    run builds and uploads the `rust-release` artifact.

@@ -53,10 +53,15 @@ cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
 cargo test --all-targets
 cargo build --release
+```
+
+For CLI smoke checks, set `MY_SKILLS_ROOT` to a disposable seeded registry with
+test host paths and isolate config, state, and data from your own.
+
+```bash
 cargo run -- doctor --no-update-check
 cargo run -- skills --json
 cargo run -- bootstrap --dry-run
 cargo run -- install my-skills --host hermes --dry-run
+cargo run -- install my-skills --host agy --dry-run
 ```
-
-Use a disposable registry and test host paths for CLI smoke checks.

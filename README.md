@@ -74,24 +74,24 @@ Each agent (Claude Code, Codex, Hermes, Antigravity CLI) is a **host**.
 reconciles configured connections and removes managed installs that are no
 longer wanted by default. It protects locally edited copies from overwrites.
 
-Think of your registry's `skills/` as your source and each host directory as a build
-output:
+The registry's `skills/` directory holds the canonical skills. Host directories
+hold links to those skills or copies that the agent can discover.
 
 ```mermaid
 flowchart LR
     edit["✏️ You"] --> src["registry skills/&lt;name&gt;<br/><b>source (canonical)</b>"]
     ext["external skill"] -.->|import / share| src
-    src -->|"install (link or copy)"| out
-    src -->|"sync (reconcile)"| out
+    src -->|"install (link or copy)"| hosts
+    src -->|"sync (reconcile)"| hosts
 
-    subgraph out["build output (each host)"]
+    subgraph hosts["Host directories"]
         c["Claude Code"]
         x["Codex"]
         h["Hermes"]
         a["Antigravity CLI (agy)"]
     end
 
-    out -. "if a copy is edited directly" .-> drift["⚠️ DRIFTED<br/>sync won't overwrite"]
+    hosts -. "if a copy is edited directly" .-> drift["⚠️ DRIFTED<br/>sync won't overwrite"]
 ```
 
 ## Install the CLI
@@ -150,8 +150,10 @@ my-skills skills --json
 
 For a Rust build from source, pull the latest `dev` changes and rerun
 `cargo install --locked --path .` from the tool repo. On `main`, the current
-release is Python 0.4.2. Its `my-skills update` prints migration steps when a
-Rust v1 release becomes available. See the 0.4.2 entry in
+release is Python 0.4.2. Its default stable command, `my-skills update`, prints
+the Rust migration steps only for unsuffixed v1 release tags such as `v1.0.0`.
+In Python 0.4.2, `my-skills update --channel main` also considers prerelease
+tags such as `v1.0.0-alpha.1`. See the 0.4.2 entry in
 [CHANGELOG.md](CHANGELOG.md#042---2026-11-23).
 
 The Rust CLI's `my-skills doctor` checks for a newer stable v1 release.
@@ -275,13 +277,14 @@ enabled = true
 hosts = ["claude", "codex", "hermes", "agy"]
 ```
 
-Preview before writing to agent hosts:
+Validate the registry and review the install plan for the new skill before
+confirming the write to multiple hosts.
 
 ```bash
 my-skills validate
 my-skills audit --all --json
-my-skills install --dry-run
-my-skills install
+my-skills install my-private-skill --dry-run
+my-skills install my-private-skill --yes
 ```
 
 ## Included skills
@@ -344,10 +347,11 @@ my-skills install cli-inventory --host <host>
 # Or register it as enabled immediately.
 my-skills import ~/.hermes/skills/cli-inventory --enable
 
-# Or review a host's local skills, then promote one into my-skills.
+# Or promote a Claude Code skill that is new to the registry.
 my-skills share --from claude --plan --json
-my-skills share --from claude cli-inventory --enable
-my-skills sync cli-inventory --host claude
+my-skills share --from claude example-skill --enable
+my-skills sync example-skill --dry-run
+my-skills sync example-skill --yes
 ```
 
 `import` registers the skill in `my-skills.toml` automatically. By default the
@@ -394,7 +398,8 @@ and never committed.
 | `BROKEN` | a managed link points at a missing canonical directory |
 | `UNSUPPORTED` | the skill's host list excludes this host |
 
-`sync` only writes the safe cases; `DRIFTED`, `CONFLICT`, and `UNMANAGED` block with a non-zero exit.
+When `sync` tries to connect a wanted skill, `DRIFTED`, `CONFLICT`,
+`UNMANAGED`, and `BROKEN` block that connection and produce a non-zero exit.
 
 ### Machine-local data
 
