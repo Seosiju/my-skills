@@ -12,6 +12,9 @@ VersionRunner = Callable[
     [Sequence[str], int | None],
     subprocess.CompletedProcess[str],
 ]
+# Links are built from the migration tag, which always contains these files.
+V1_FILES = "https://github.com/Seosiju/my-skills/blob"
+V1_SPEC = "docs/2026-11-23-skill-drive-rust-v1-spec.md"
 
 
 class UpdateArgs(Protocol):
@@ -62,6 +65,9 @@ def _check_exit_code(status: update_commands.UpdateStatus) -> int:
         return 2
     if status.state == "current":
         print("Already up to date")
+        return 0
+    if status.state == "migrate":
+        print("Python updates have moved to the Rust v1 binary")
         return 0
     print("Installed version is ahead of the latest stable release")
     return 0
@@ -120,10 +126,20 @@ def _verify_main_commit(status: update_commands.UpdateStatus) -> bool:
 def cmd_update(args: UpdateArgs) -> int:
     status = update_commands.check_update(args.channel)
     print(f"Current: my-skills {status.current.version}")
+    if status.migration is not None and not args.check:
+        files = f"{V1_FILES}/{status.migration.name}"
+        print(f"my-skills {status.migration.name} is available. Install the Rust binary with:")
+        print(f"  macOS/Linux: {files}/scripts/install.sh")
+        print(f"  Windows:     {files}/scripts/install.ps1")
+        print(f"  Migration spec: {files}/{V1_SPEC}")
+        return 0
     _print_target(status)
 
     if args.check:
-        return _check_exit_code(status)
+        code = _check_exit_code(status)
+        if status.migration is not None:
+            print(f"my-skills {status.migration.name} is available.")
+        return code
     if status.state == "not-checked" or status.latest is None:
         print(f"error: could not resolve update target ({status.detail})", file=sys.stderr)
         return 2

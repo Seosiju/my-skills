@@ -5,7 +5,7 @@ import re
 import shutil
 import subprocess
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib import metadata
 from typing import Literal, cast
 
@@ -13,12 +13,14 @@ from . import __version__
 
 REPO_URL = "https://github.com/Seosiju/my-skills.git"
 SEMVER_TAG_RE = re.compile(r"^refs/tags/v(\d+)\.(\d+)\.(\d+)$")
+# Rust v1 releases, including prereleases such as v1.0.0-alpha.1.
+RUST_TAG_RE = re.compile(r"^refs/tags/v(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?$")
 VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 DEFAULT_TIMEOUT_SECONDS = 3
 INSTALL_TIMEOUT_SECONDS = 300
 
 UpdateChannel = Literal["stable", "main"]
-UpdateState = Literal["available", "current", "ahead", "not-checked", "unknown-current"]
+UpdateState = Literal["available", "current", "ahead", "not-checked", "unknown-current", "migrate"]
 CommandRunner = Callable[
     [Sequence[str], int | None],
     subprocess.CompletedProcess[str],
@@ -41,6 +43,7 @@ class RemoteRef:
     name: str
     version: tuple[int, int, int] | None
     commitish: str
+    compatible: RemoteRef | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +53,7 @@ class UpdateStatus:
     latest: RemoteRef | None
     state: UpdateState
     detail: str
+    migration: RemoteRef | None = None
 
 
 class UpdateCheckError(RuntimeError):
@@ -179,7 +183,68 @@ def latest_stable_ref(
 
     if not candidates:
         raise UpdateCheckError("no stable release tags found")
-    return max(candidates, key=lambda candidate: candidate.version or (0, 0, 0))
+    latest = max(candidates, key=_ref_version)
+    if _ref_version(latest)[0] < 1:
+        return latest
+    # Select the Python fallback from the same tag lookup as the migration release.
+    compatible = max(
+        (ref for ref in candidates if _ref_version(ref)[:2] == (0, 4)),
+        key=_ref_version,
+        default=None,
+    )
+    return replace(latest, compatible=compatible)
+
+
+def _ref_version(ref: RemoteRef) -> tuple[int, int, int]:
+    return ref.version or (0, 0, 0)
+
+
+def latest_rust_ref(
+    *,
+    run: CommandRunner = run_command,
+    which: CommandFinder = shutil.which,
+) -> RemoteRef | None:
+    """Highest Rust v1+ release tag, prereleases included; None when none exist.
+
+    The main channel follows the repository's main branch, which becomes the
+    Rust v1 codebase. Once any v1 tag exists, Python main-channel updates stop
+    and point to the Rust binary instead of installing from main.
+    """
+    if which("git") is None:
+        raise UpdateCheckError("git not found")
+    try:
+        result = run(
+            ["git", "ls-remote", "--tags", "--refs", REPO_URL, "v*"],
+            DEFAULT_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError as exc:
+        raise UpdateCheckError("git not found") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise UpdateCheckError("network unavailable") from exc
+    if result.returncode != 0:
+        raise UpdateCheckError(first_stderr_line(result))
+
+    best: tuple[tuple[int, int, int], bool, str] | None = None
+    best_ref: RemoteRef | None = None
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) < 2:
+            continue
+        match = RUST_TAG_RE.fullmatch(fields[1])
+        if match is None or int(match.group(1)) < 1:
+            continue
+        version = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        prerelease = match.group(4) or ""
+        # A stable release outranks prereleases of the same version.
+        key = (version, prerelease == "", prerelease)
+        if best is None or key > best:
+            best = key
+            best_ref = RemoteRef(
+                name=fields[1].removeprefix("refs/tags/"),
+                version=version,
+                commitish=fields[0],
+            )
+    return best_ref
 
 
 def latest_main_ref(
@@ -231,6 +296,7 @@ def check_update(
     install_info_reader: Callable[[], InstallInfo] | None = None,
     stable_ref_reader: Callable[[], RemoteRef] | None = None,
     main_ref_reader: Callable[[], RemoteRef] | None = None,
+    rust_ref_reader: Callable[[], RemoteRef | None] | None = None,
 ) -> UpdateStatus:
     if install_info_reader is None:
         install_info_reader = read_install_info
@@ -238,19 +304,53 @@ def check_update(
         stable_ref_reader = latest_stable_ref
     if main_ref_reader is None:
         main_ref_reader = latest_main_ref
+    if rust_ref_reader is None:
+        rust_ref_reader = latest_rust_ref
 
     current = install_info_reader()
     try:
         match channel:
             case "stable":
-                return _stable_status(current, stable_ref_reader())
+                latest = stable_ref_reader()
+                if _ref_version(latest)[0] < 1:
+                    return _stable_status(current, latest)
+                if latest.compatible is None:
+                    return UpdateStatus(
+                        current,
+                        "stable",
+                        None,
+                        "not-checked",
+                        "no compatible 0.4.x release tags found",
+                        migration=latest,
+                    )
+                return replace(_stable_status(current, latest.compatible), migration=latest)
             case "main":
+                rust = rust_ref_reader()
+                if rust is not None:
+                    return UpdateStatus(
+                        current,
+                        "main",
+                        None,
+                        "migrate",
+                        "the main channel now ships the Rust v1 binary",
+                        migration=rust,
+                    )
                 return _main_status(current, main_ref_reader())
     except UpdateCheckError as exc:
         return UpdateStatus(current, channel, None, "not-checked", str(exc))
 
 
 def format_update_status(status: UpdateStatus) -> str:
+    line = _format_state(status)
+    if status.migration is not None and status.state != "migrate":
+        line += (
+            f"; Rust {status.migration.name} is available "
+            "(run 'my-skills update' for install steps)"
+        )
+    return line
+
+
+def _format_state(status: UpdateStatus) -> str:
     match status.state:
         case "available":
             if status.latest is None:
@@ -272,6 +372,12 @@ def format_update_status(status: UpdateStatus) -> str:
             if status.latest is None:
                 return f"Update:  not checked ({status.detail})"
             return f"Update:  not checked ({status.detail}; latest {status.latest.name})"
+        case "migrate":
+            name = status.migration.name if status.migration else "v1"
+            return (
+                f"Update:  {status.channel} channel moved to the Rust binary {name} "
+                "(run 'my-skills update' for install steps)"
+            )
 
 
 def format_doctor_update_status() -> str:
