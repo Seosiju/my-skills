@@ -8,8 +8,6 @@ local/
 __pycache__/
 *.py[cod]
 .venv/
-build/
-dist/
 
 # Tooling / agent scratch (not part of the project)
 .omc/

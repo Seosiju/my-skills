@@ -15,8 +15,6 @@ path = "src/lib.rs"
 name = "my-skills"
 path = "src/main.rs"
 
-# Parallel streams: add a dependency only in your own block below and keep
-# versions as caret requirements. The integrator resolves Cargo.lock on merge.
 [dependencies]
 # core (skeleton)
 anyhow = "1"
