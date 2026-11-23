@@ -19,10 +19,9 @@ Describe the problem and the behavior you expected.
 ## Environment
 
 - OS:
-- Python:
-- uv:
-- my-skills version or commit:
-- Host target, if relevant: Claude Code / Codex / Hermes
+- Output of `my-skills --version`:
+- Install method (include the source commit if built from source):
+- Host target, if relevant: Claude Code / Codex / Hermes / Antigravity CLI (`agy`)
 
 ## Output
 

@@ -11,7 +11,7 @@
 
 | 단계 | 하는 일 | 실제 환경을 바꾸는가 |
 |---|---|---|
-| 준비. 개발 환경 | Git, MSVC 빌드 도구, Rust, (선택) uv 설치와 확인 | 소프트웨어 설치 (**[멈춤]** 사용자 확인 후) |
+| 준비. 개발 환경 | Git, MSVC 빌드 도구, Rust 설치와 확인 | 소프트웨어 설치 (**[멈춤]** 사용자 확인 후) |
 | 1. 사전 점검 | 도구, 기존 Python `my-skills`, 기존 연결 기록 확인 | 아니요 (읽기만) |
 | 2. 빌드와 테스트 | `dev`를 받아 빌드하고 테스트 실행 | 아니요 (저장소 안에서만) |
 | 3. 안전한 확인 | 임시 레지스트리와 시험용 스킬로 junction 발견, 경로, hook 확인 | 시험용 스킬 하나를 host 폴더에 연결했다가 지움 |
@@ -50,12 +50,12 @@ $env:MY_SKILLS_ROOT = "$T\registry"; $env:XDG_STATE_HOME = "$T\state"; $env:XDG_
 ## 준비. 개발 환경
 
 이 작업에 꼭 필요한 것은 **Git for Windows**, **MSVC 빌드 도구**, **Rust(MSVC toolchain)** 세 가지다.
-Python과 uv는 **선택**이다. 이 runbook의 범위(확인과 실제 연결)에는 Rust만 필요하다. Windows에서 코드를 직접 고치거나 Python 0.4.x 테스트, golden 데이터 재생성을 할 때만 설치한다.
+`dev`에는 Rust CLI의 소스와 테스트가 있다. 이 절차는 소스에서 빌드한 실행 파일을 사용한다.
 
 ### 이미 있는지 먼저 확인
 
 ```powershell
-Get-Command git, cargo, rustup, uv -ErrorAction SilentlyContinue | Format-Table Name, Source
+Get-Command git, cargo, rustup -ErrorAction SilentlyContinue | Format-Table Name, Source
 winget --version              # winget이 있어야 아래 설치 명령을 쓸 수 있다
 ```
 
@@ -81,12 +81,6 @@ rustup default stable-x86_64-pc-windows-msvc        # CI와 같은 stable을 쓴
 rustup component add rustfmt clippy
 ```
 
-선택: Python 테스트를 돌릴 때만 설치한다.
-
-```powershell
-winget install --id astral-sh.uv -e
-```
-
 ### 설치 확인
 
 ```powershell
@@ -109,27 +103,15 @@ Remove-Item -Recurse -Force $Check
 
 이 runbook에서는 코드를 고치지 않는다(5단계). 나중에 Windows에서 개발할 때는 다음 기준을 따른다.
 
-- macOS 개발 기계와 달리 Windows에서는 `cargo fmt`와 `cargo clippy`를 그대로 쓴다.
-- CI와 같은 검사를 돌린다.
+CI와 같은 검사를 돌린다.
 
-  ```powershell
-  cargo fmt --all --check
-  cargo clippy --all-targets -- -D warnings
-  cargo test --all-targets
-  ```
+```powershell
+cargo fmt --all --check
+cargo clippy --all-targets -- -D warnings
+cargo test --all-targets
+```
 
-- Python 0.4.x 테스트는 uv로 돌린다. uv가 저장소 안에 `.venv`를 만들기 때문에 가상환경을 따로 만들거나 활성화할 필요가 없다. 전역 Python에 패키지를 설치하지 않는다.
-
-  > **경고 (2026-11-23 Windows 실측, 커밋 `681a701`):** Windows에서 이 체크아웃의 `uv run pytest`를 격리 없이 실행하지 않는다.
-  > 테스트는 `HOME`과 `XDG_*`만 바꾼다. 그런데 Windows의 Python은 홈으로 `USERPROFILE`을, 데이터 경로로 `LOCALAPPDATA`를 쓴다.
-  > 그래서 **실제 host 폴더와 `%LOCALAPPDATA%`에 쓴다.** 또 102개가 실패하고 1개는 끝나지 않는다.
-  > 자세한 내용과 격리 실행 수정안(`USERPROFILE`, `HOME`, `LOCALAPPDATA`를 돌림. 아직 실행해서 검증하지 않음)은 `docs/2026-11-23-skill-drive-windows-python-tests-report.md` §7에 있다.
-  > Rust 테스트 중에도 `%LOCALAPPDATA%`에 쓰는 것이 있다(보고서 §5).
-
-  ```powershell
-  uv sync
-  # uv run pytest   <- Windows에서는 위 보고서 §7의 방법으로만 실행한다
-  ```
+`dev`에는 Python 테스트 모음이 없다.
 
 ---
 
@@ -169,7 +151,7 @@ foreach ($d in ".claude\skills", ".agents\skills", ".gemini\config\skills") {
 ```powershell
 cd <tool repo>                     # 없으면: git clone https://github.com/Seosiju/my-skills.git
 git fetch origin; git switch dev; git pull
-cargo test                         # 전체가 통과해야 한다
+cargo test --all-targets           # 전체가 통과해야 한다
 cargo test --lib drive::link::tests::windows -- --nocapture   # junction 테스트 4개가 실제로 실행되는지
 cargo build --release
 $MS = (Resolve-Path .\target\release\my-skills.exe).Path
@@ -177,7 +159,7 @@ git rev-parse --short HEAD         # 검증한 커밋. 5단계 결과 표에 적
 & $MS --version                    # my-skills 1.0.0-alpha.N
 ```
 
-- `cargo test`가 실패하면 **[멈춤]** 실패 출력 전체를 기록한다.
+- `cargo test --all-targets`가 실패하면 **[멈춤]** 실패 출력 전체를 기록한다.
 - `link` 테스트 이름에 `windows::`가 보이지 않으면 Windows 코드가 실행되지 않은 것이다. 기록하고 **[멈춤]**.
 - 이 단계에서는 `$MS`를 PATH에 넣지 않는다.
 
@@ -406,8 +388,10 @@ install_mode = "link"
 
 ### 4.3 dry-run **[멈춤: 사용자 승인]**
 
-`status`, `doctor`, `bootstrap`, `sync`는 현재 폴더에서 레지스트리를 찾는다. 활성 레지스트리가 아직 기록되지 않은 PC라면 **처음 실행할 때 그 위치를 기록한다**(v0.4.1과 같은 동작, `~\.config\my-skills\root`).
-승인 전에 아무것도 쓰지 않도록, 미리보기 동안에는 `MY_SKILLS_ROOT`로 레지스트리를 직접 지정한다. 이렇게 지정하면 그 기록을 쓰지 않는다.
+`status`, `doctor`, `bootstrap`, `sync`는 현재 폴더에서 레지스트리를 찾을 수 있다.
+활성 레지스트리 기록이 없으면 `status`나 `sync --dry-run`이 처음 찾은 위치를 기록할 수 있다
+(`~\.config\my-skills\root`가 기본 위치). 어느 레지스트리를 볼지 명시하고 이 기록을
+생성하지 않도록 미리보기 동안에는 `MY_SKILLS_ROOT`를 지정한다.
 
 ```powershell
 $env:MY_SKILLS_ROOT = (Resolve-Path .).Path        # <registry> 안에서 실행
@@ -464,7 +448,7 @@ my-skills hooks status
 |---|---|
 | 검증한 커밋 | `git rev-parse --short HEAD` 값 (2단계에서 빌드한 커밋) |
 | 개발 환경 | 새로 설치한 것, Rust 버전, MSVC 빌드 도구 버전 |
-| cargo test | 통과 N개 / 실패 N개 (windows 링크 테스트 실행 여부) |
+| `cargo test --all-targets` | 통과 N개 / 실패 N개 (Windows 링크 테스트 실행 여부) |
 | 기존 Python 0.4.x, 기존 state.json (Q3 판단용) | 있음 / 없음, 있음 / 없음 |
 | 세 에이전트 명령 설치 여부 | claude / codex / agy 각각 |
 | Link capability | junction / symlink / copy fallback |

@@ -55,7 +55,7 @@ fn init_registry_registers_seed_skills_in_manifest() {
             ["claude", "codex", "hermes", "agy"]
         );
         assert_eq!(row["source_type"].as_str(), Some("builtin-seed"));
-        assert_eq!(row["source_revision"].as_str(), Some("0.4.1"));
+        assert_eq!(row["source_revision"].as_str(), Some("1.0.0-alpha.0"));
     }
 }
 

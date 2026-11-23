@@ -21,7 +21,7 @@
 | 목표 | **개인 스킬 드라이브**: 원본은 한 곳에 두고, 모든 기기와 에이전트는 바로가기(link)로 연결한다 (스펙 제품 정의) |
 | Rust v1 구현 | 19개 명령 모두 연결됨 |
 | 테스트 | Rust 209개, Python 308개 모두 통과 |
-| CI (`dev`) | Ubuntu, macOS, Windows, Python. 최신 결과는 §9 명령으로 확인 |
+| CI (`dev`) | Rust 검사와 테스트를 Ubuntu, macOS, Windows에서 실행. 최신 결과는 §9 명령으로 확인 |
 | 릴리스 | **Python v0.4.2** (태그 `v0.4.2`, GitHub Release "Latest"). Rust v1 릴리스는 아직 없고, Rust 릴리스 workflow도 실행되지 않았다 |
 | `main` | v0.4.2 (`ca41abd`, `release/v0.4.2` 병합). Rust 코드는 아직 없다. `main`은 `dev`에 다시 병합했다(`382a19a`) |
 | **실제 사용자 환경** | **바뀌지 않았다**. 설치된 CLI는 Python `my-skills 0.4.1`, 모든 연결은 copy, 레지스트리 `install_mode = "copy"`, git hook 없음 |
@@ -176,7 +176,7 @@ Codex 운영:
 
 ### 6.3 그 밖의 알려진 문제와 구조
 
-- **구조 (§7 A에서 정리)**: 모듈 위치가 바뀌었다(`crates/my-skills/src/` 기준).
+- **구조**: §7 A에서 기능별로 나눈 모듈은 §7 D 이후 tool repo 루트의 `src/`에 있다. 같은 루트에 `Cargo.toml`과 `tests/`가 있다.
 
   | 이전 | 지금 |
   |---|---|
@@ -187,10 +187,8 @@ Codex 운영:
   | `self_update.rs` | `update.rs` |
   | `paths.rs`, `data.rs` | `platform/paths.rs`, `platform/data.rs` |
 
-- **Rust가 Python 쪽에 기대는 곳**: 테스트 데이터는 모두 crate 안으로 옮겼다(`tests/fixtures/shared`, `tests/golden/audit`). 남은 곳은 다음과 같다.
-  - `tests/audit_parity.rs`: Rust와 Python의 `builtin_rules.yaml`이 같은지 비교한다. 이전 기간에만 필요한 의도된 비교라 §7 D에서 Python과 함께 지운다.
-  - `tests/golden/*/generate.py`: Python v0.4.1로 golden 데이터를 다시 만드는 도구다. §7 D 이후에는 기록으로만 남는다.
-  - 저장소 루트 기준 경로를 쓰는 곳: `src/registry/seeds.rs`(seed 원본 `skills/`), `tests/public_hygiene.rs`, `tests/registry_init.rs`, `tests/validate_golden.rs`, `tests/audit_parity.rs`. crate를 루트로 옮길 때(§7 D) 경로를 조정한다.
+- **테스트와 시드 경로**: `tests/fixtures/shared`와 `tests/golden/audit`에 테스트 데이터가 있다. `tests/audit_parity.rs`는 남아 있는 golden 데이터를 읽는다. Python 패키지의 `builtin_rules.yaml`과 직접 비교하던 테스트는 §7 D에서 제거했다.
+  `tests/golden/*/generate.py`는 v0.4.1으로 golden 데이터를 생성했던 이력이다. 현재 테스트는 저장된 데이터를 사용한다. `src/registry/seeds.rs`는 같은 저장소 루트의 `skills/`에서 시드를 포함한다.
 - **import의 dry-run**: 검증과 audit를 위해 레지스트리 안에 임시 staging 폴더와 편집 잠금을 잠깐 만들었다가 지운다. 영구적인 쓰기는 하지 않는다.
 - 스펙의 열린 질문 Q1(Windows 경로 실측), Q3(Windows state 경로), Q5(코드 서명), Q7(0.4.x 안내)은 아직 결정하지 않았다.
 - 이 작업과 무관한 다른 도구의 worktree가 `git worktree list`에 `prunable`로 남아 있다.
@@ -268,22 +266,24 @@ flowchart LR
 cd <tool repo> && git switch dev && git pull
 git status -sb                       # dev...origin/dev, clean
 gh run list --branch dev --limit 1   # 마지막 CI 결과
-my-skills --version                  # 전환 전까지는 Python 0.4.1
+my-skills --version                  # PATH에서 선택된 설치 버전 확인
 ```
 
-### 빌드와 검사 (macOS, Homebrew Rust)
+### 빌드와 검사
 
-`~/.cargo/bin`의 rustup proxy 때문에 `cargo fmt`와 `cargo clippy`가 실패한다. 도구를 직접 부른다.
+tool repo 루트에서 실행한다. macOS에서 Homebrew Rust를 쓰고 rustup
+proxy가 먼저 잡히면, 현재 셸의 PATH에서 Homebrew bin을 앞에 둔다.
 
 ```bash
-cargo build && cargo test
-rustfmt --edition 2024 $(git ls-files 'crates/*.rs')
-/opt/homebrew/bin/cargo-clippy clippy --all-targets -- -D warnings
-uv run pytest            # Python 0.4.x (D 전까지)
+cargo fmt --all --check
+cargo clippy --all-targets -- -D warnings
+cargo test --all-targets
+cargo build --release
+cargo run -- --help
 ```
 
-이 맥의 Rust는 1.96이고 CI는 1.100이라 CI의 lint가 더 엄격하다. push한 뒤 반드시 CI를 확인한다.
-Windows 전용 코드(`cfg(windows)`)는 CI에서만 컴파일된다.
+`cargo run -- <cmd>`로 작업 트리의 CLI를 실행한다. 로컬 검사 뒤에는 CI
+결과도 확인한다. Windows 전용 코드(`cfg(windows)`)는 Windows에서 검사한다.
 
 ### 규칙
 
@@ -307,7 +307,7 @@ Windows 전용 코드(`cfg(windows)`)는 CI에서만 컴파일된다.
 스펙 §12는 확인할 항목의 목록이고, 실행 절차는 이 runbook을 따른다.
 - 레지스트리 manifest에는 아직 `install_mode = "copy"`가 명시돼 있다. 그래서 Windows에서는 `my-skills.local.toml`로 link를 지정한다(runbook 4.2).
 - hook은 PATH의 `my-skills`를 먼저 찾는다. Python 0.4.x가 앞에 있으면 hook이 잘못 동작한다(runbook 3.5, 4.1). 맥 전환(G)에도 같은 주의가 필요하다.
-- **Windows에서 `uv run pytest`를 격리 없이 실행하지 않는다.** 실제 host 폴더와 `%LOCALAPPDATA%`에 쓴다(§6.5, 점검 보고서 §7). Rust `cargo test`의 `data-path` 테스트 1건이 실제 `%LOCALAPPDATA%\my-skills\data`에 쓰던 문제는 `681a701`에서 발견했고 `12524a6`에서 격리했다(점검 보고서 §5).
+- `dev`에는 Python 테스트 모음이 없다. Windows에서는 `cargo test --all-targets`로 검사한다. CLI 테스트의 사용자 경로 격리는 §7 L (5)를 참고한다.
 - 2026-11-23 점검 기준 진행 상황: 준비 절, 1단계, 2단계의 테스트까지 끝났다. `cargo build --release`와 3단계 이후는 아직 하지 않았다.
 
 ---
@@ -316,9 +316,8 @@ Windows 전용 코드(`cfg(windows)`)는 CI에서만 컴파일된다.
 
 ```bash
 git log --oneline --no-merges main..dev | wc -l
-cargo test -q 2>&1 | grep "test result" | awk '{p+=$4;f+=$6} END{print p,f}'   # 209 0 이상
-uv run pytest -q | tail -1                                # 308 passed
+cargo test --all-targets                                 # 대상별 통과 및 실패 수 확인
 gh run list --branch dev --limit 1                        # 최신 CI
-git ls-remote --tags origin                               # v0.4.1이 최신, v1 태그 없음
+git ls-remote --tags origin                              # 게시된 태그 목록 확인
 my-skills doctor                                          # 실제 환경: 버전, 레지스트리, 연결 집계
 ```
