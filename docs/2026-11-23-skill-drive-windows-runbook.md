@@ -11,6 +11,7 @@
 
 | 단계 | 하는 일 | 실제 환경을 바꾸는가 |
 |---|---|---|
+| 준비. 개발 환경 | Git, MSVC 빌드 도구, Rust, (선택) uv 설치와 확인 | 소프트웨어 설치 (**[멈춤]** 사용자 확인 후) |
 | 1. 사전 점검 | 도구, 기존 Python `my-skills`, 기존 연결 기록 확인 | 아니요 (읽기만) |
 | 2. 빌드와 테스트 | `dev`를 받아 빌드하고 테스트 실행 | 아니요 (저장소 안에서만) |
 | 3. 안전한 확인 | 임시 레지스트리와 시험용 스킬로 junction 발견, 경로, hook 확인 | 시험용 스킬 하나를 host 폴더에 연결했다가 지움 |
@@ -46,6 +47,86 @@ $env:MY_SKILLS_ROOT = "$T\registry"; $env:XDG_STATE_HOME = "$T\state"; $env:XDG_
 
 ---
 
+## 준비. 개발 환경
+
+이 작업에 꼭 필요한 것은 **Git for Windows**, **MSVC 빌드 도구**, **Rust(MSVC toolchain)** 세 가지다.
+Python과 uv는 **선택**이다. 이 runbook의 범위(확인과 실제 연결)에는 Rust만 필요하다. Windows에서 코드를 직접 고치거나 Python 0.4.x 테스트, golden 데이터 재생성을 할 때만 설치한다.
+
+### 이미 있는지 먼저 확인
+
+```powershell
+Get-Command git, cargo, rustup, uv -ErrorAction SilentlyContinue | Format-Table Name, Source
+winget --version              # winget이 있어야 아래 설치 명령을 쓸 수 있다
+```
+
+모두 있으면 아래 "설치 확인"으로 바로 간다.
+
+### 설치 **[멈춤: 소프트웨어 설치는 사용자 확인 후]**
+
+아래는 일반적으로 쓰이는 winget 패키지 ID와 설치 옵션이다. macOS에서 작성해서 이 PC에서 실행해 보지는 않았다. **설치가 실패하면 출력을 기록하고 멈춘다.**
+
+```powershell
+winget install --id Git.Git -e                       # Git for Windows (Git Bash 포함)
+
+# MSVC 링커와 Windows SDK. 없으면 Rust 빌드가 링크 단계에서 실패한다.
+winget install --id Microsoft.VisualStudio.2022.BuildTools -e --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+
+winget install --id Rustlang.Rustup -e
+```
+
+설치한 뒤에는 **새 PowerShell 창**을 연다. 그래야 PATH가 반영된다.
+
+```powershell
+rustup default stable-x86_64-pc-windows-msvc        # CI와 같은 stable을 쓴다
+rustup component add rustfmt clippy
+```
+
+선택: Python 테스트를 돌릴 때만 설치한다.
+
+```powershell
+winget install --id astral-sh.uv -e
+```
+
+### 설치 확인
+
+```powershell
+git --version
+rustup show active-toolchain         # stable-x86_64-pc-windows-msvc
+cargo --version; rustc --version
+cargo fmt --version; cargo clippy --version
+
+# 링커까지 동작하는지 작은 프로그램으로 확인한다.
+$Check = Join-Path $env:TEMP "rust-link-check"
+Remove-Item -Recurse -Force $Check -ErrorAction SilentlyContinue
+cargo new --bin --quiet $Check
+cargo run --quiet --manifest-path "$Check\Cargo.toml"   # "Hello, world!"
+Remove-Item -Recurse -Force $Check
+```
+
+`cargo run`이 `link.exe not found`나 `kernel32.lib`를 못 찾는다는 오류로 실패하면 MSVC 빌드 도구가 제대로 설치되지 않은 것이다. 기록하고 **[멈춤]**.
+
+### Windows에서 코드를 고칠 때 (선택)
+
+이 runbook에서는 코드를 고치지 않는다(5단계). 나중에 Windows에서 개발할 때는 다음 기준을 따른다.
+
+- macOS 개발 기계와 달리 Windows에서는 `cargo fmt`와 `cargo clippy`를 그대로 쓴다.
+- CI와 같은 검사를 돌린다.
+
+  ```powershell
+  cargo fmt --all --check
+  cargo clippy --all-targets -- -D warnings
+  cargo test --all-targets
+  ```
+
+- Python 0.4.x 테스트는 uv로 돌린다. uv가 저장소 안에 `.venv`를 만들기 때문에 가상환경을 따로 만들거나 활성화할 필요가 없다. 전역 Python에 패키지를 설치하지 않는다.
+
+  ```powershell
+  uv sync
+  uv run pytest
+  ```
+
+---
+
 ## 1. 사전 점검 (읽기만)
 
 ```powershell
@@ -66,7 +147,7 @@ foreach ($d in ".claude\skills", ".agents\skills", ".gemini\config\skills") {
 
 | 결과 | 의미 | 할 일 |
 |---|---|---|
-| `cargo`가 없음 | Rust가 없음 | rustup으로 설치. MSVC 빌드 도구("Desktop development with C++")가 필요하다. 설치는 **[멈춤]** 사용자 확인 후 |
+| `cargo`가 없음 | Rust가 없음 | "준비. 개발 환경"으로 돌아간다 |
 | `rustup show`가 `-gnu` | 다른 toolchain | MSVC toolchain으로 바꿀지 **[멈춤]** |
 | `my-skills`가 이미 있음 (0.4.x) | Python 판이 설치돼 있음 | 지우지 않는다. 2~3단계에서는 Rust binary를 **전체 경로로** 실행해서 충돌을 피한다 |
 | `state.json`이 있음 | 이 PC에 기존 연결 기록이 있음 | 4단계에서 copy 기록을 convert할 수 있다. 지금은 기록만 해 둔다. 스펙 Q3(Windows state 위치) 판단에도 쓴다 |
@@ -86,6 +167,7 @@ cargo test                         # 전체가 통과해야 한다
 cargo test --lib drive::link::tests::windows -- --nocapture   # junction 테스트 4개가 실제로 실행되는지
 cargo build --release
 $MS = (Resolve-Path .\target\release\my-skills.exe).Path
+git rev-parse --short HEAD         # 검증한 커밋. 5단계 결과 표에 적는다
 & $MS --version                    # my-skills 1.0.0-alpha.N
 ```
 
@@ -374,6 +456,8 @@ my-skills hooks status
 
 | 항목 | 결과 |
 |---|---|
+| 검증한 커밋 | `git rev-parse --short HEAD` 값 (2단계에서 빌드한 커밋) |
+| 개발 환경 | 새로 설치한 것, Rust 버전, MSVC 빌드 도구 버전 |
 | cargo test | 통과 N개 / 실패 N개 (windows 링크 테스트 실행 여부) |
 | 기존 Python 0.4.x, 기존 state.json (Q3 판단용) | 있음 / 없음, 있음 / 없음 |
 | 세 에이전트 명령 설치 여부 | claude / codex / agy 각각 |
