@@ -467,3 +467,52 @@ fn sync_uses_per_target_install_mode_and_retains_recorded_mode() {
         InstallMode::Copy
     );
 }
+
+#[test]
+fn recorded_copy_updates_in_copy_mode_after_target_switches_to_link() {
+    let drive = Drive::new();
+    fs::write(
+        drive.registry.join("my-skills.local.toml"),
+        "[targets.agy]\ninstall_mode = \"copy\"\n",
+    )
+    .unwrap();
+    drive.sync(true);
+    assert_eq!(
+        link::entry_kind(&drive.host_dir("agy").join("alpha")).unwrap(),
+        EntryKind::Dir
+    );
+
+    // Switch target mode to link and edit the canonical skill.
+    fs::write(
+        drive.registry.join("my-skills.local.toml"),
+        "[targets.agy]\ninstall_mode = \"link\"\n",
+    )
+    .unwrap();
+    let updated_skill = "---\nname: alpha\ndescription: Updated canonical.\n---\nUpdated body\n";
+    fs::write(
+        drive.registry.join("skills").join("alpha").join("SKILL.md"),
+        updated_skill,
+    )
+    .unwrap();
+    assert_eq!(drive.status("alpha", "agy"), Status::Stale);
+
+    let items = drive.sync(true);
+    let agy_alpha = items
+        .iter()
+        .find(|i| i.skill == "alpha" && i.host == "agy")
+        .unwrap();
+    assert_eq!(agy_alpha.action, Action::Update);
+    assert_eq!(agy_alpha.mode, InstallMode::Copy);
+    assert_eq!(
+        link::entry_kind(&drive.host_dir("agy").join("alpha")).unwrap(),
+        EntryKind::Dir
+    );
+    assert_eq!(
+        fs::read_to_string(drive.host_dir("agy").join("alpha").join("SKILL.md")).unwrap(),
+        updated_skill
+    );
+    assert_eq!(
+        drive.state().get("alpha", "agy").unwrap().mode,
+        InstallMode::Copy
+    );
+}

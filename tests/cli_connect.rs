@@ -466,6 +466,24 @@ fn install_and_sync_respect_cli_target_defaults_precedence_and_keep_recorded_mod
     )
     .unwrap();
 
+    let create_actions = |value: &serde_json::Value| -> Vec<(String, String, String)> {
+        let mut creates: Vec<_> = value["actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|a| a["action"] == "CREATE")
+            .map(|a| {
+                (
+                    a["skill"].as_str().unwrap().to_owned(),
+                    a["host"].as_str().unwrap().to_owned(),
+                    a["mode"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect();
+        creates.sort();
+        creates
+    };
+
     // Without CLI --mode: agy uses target copy, others use default link.
     let out = env
         .cmd()
@@ -474,19 +492,16 @@ fn install_and_sync_respect_cli_target_defaults_precedence_and_keep_recorded_mod
         .unwrap();
     assert!(out.status.success());
     let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    let actions = value["actions"].as_array().unwrap();
-    let mode_of = |skill: &str, host: &str| {
-        actions
-            .iter()
-            .find(|a| a["skill"] == skill && a["host"] == host)
-            .unwrap()["mode"]
-            .as_str()
-            .unwrap()
-            .to_owned()
-    };
-    assert_eq!(mode_of("alpha", "claude"), "link");
-    assert_eq!(mode_of("alpha", "codex"), "link");
-    assert_eq!(mode_of("alpha", "agy"), "copy");
+    assert_eq!(
+        create_actions(&value),
+        vec![
+            ("alpha".into(), "agy".into(), "copy".into()),
+            ("alpha".into(), "claude".into(), "link".into()),
+            ("alpha".into(), "codex".into(), "link".into()),
+            ("beta".into(), "claude".into(), "link".into()),
+        ],
+        "{value}"
+    );
 
     // CLI --mode link overrides [targets.agy] install_mode = "copy".
     let out = env
@@ -496,12 +511,14 @@ fn install_and_sync_respect_cli_target_defaults_precedence_and_keep_recorded_mod
         .unwrap();
     assert!(out.status.success());
     let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    let actions = value["actions"].as_array().unwrap();
-    assert!(
-        actions
-            .iter()
-            .filter(|a| a["action"] == "CREATE")
-            .all(|a| a["mode"] == "link"),
+    assert_eq!(
+        create_actions(&value),
+        vec![
+            ("alpha".into(), "agy".into(), "link".into()),
+            ("alpha".into(), "claude".into(), "link".into()),
+            ("alpha".into(), "codex".into(), "link".into()),
+            ("beta".into(), "claude".into(), "link".into()),
+        ],
         "{value}"
     );
 
@@ -513,12 +530,14 @@ fn install_and_sync_respect_cli_target_defaults_precedence_and_keep_recorded_mod
         .unwrap();
     assert!(out.status.success());
     let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    let actions = value["actions"].as_array().unwrap();
-    assert!(
-        actions
-            .iter()
-            .filter(|a| a["action"] == "CREATE")
-            .all(|a| a["mode"] == "copy"),
+    assert_eq!(
+        create_actions(&value),
+        vec![
+            ("alpha".into(), "agy".into(), "copy".into()),
+            ("alpha".into(), "claude".into(), "copy".into()),
+            ("alpha".into(), "codex".into(), "copy".into()),
+            ("beta".into(), "claude".into(), "copy".into()),
+        ],
         "{value}"
     );
 
@@ -624,4 +643,118 @@ fn convert_host_all_skips_explicit_differing_target_mode_and_explicit_host_conve
             "converted: alpha -> agy (link: {LINK_KIND})"
         )));
     assert!(is_link(&agy_alpha));
+}
+
+#[test]
+fn cli_target_link_overrides_defaults_copy() {
+    let env = Env::new();
+    fs::write(
+        env.root().join("my-skills.local.toml"),
+        "[defaults]\ninstall_mode = \"copy\"\n\n[targets.claude]\ninstall_mode = \"link\"\n",
+    )
+    .unwrap();
+
+    let out = env
+        .cmd()
+        .args(["install", "--dry-run", "--json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let mut creates: Vec<_> = value["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|a| a["action"] == "CREATE")
+        .map(|a| {
+            (
+                a["skill"].as_str().unwrap().to_owned(),
+                a["host"].as_str().unwrap().to_owned(),
+                a["mode"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    creates.sort();
+    assert_eq!(
+        creates,
+        vec![
+            ("alpha".into(), "agy".into(), "copy".into()),
+            ("alpha".into(), "claude".into(), "link".into()),
+            ("alpha".into(), "codex".into(), "copy".into()),
+            ("beta".into(), "claude".into(), "link".into()),
+        ],
+        "{value}"
+    );
+
+    env.cmd().args(["install", "--yes"]).assert().success();
+    assert!(is_link(&env.host("claude").join("alpha")));
+    assert!(is_link(&env.host("claude").join("beta")));
+    let codex_alpha = env.host("codex").join("alpha");
+    let agy_alpha = env.host("agy").join("alpha");
+    assert!(codex_alpha.is_dir() && !is_link(&codex_alpha));
+    assert!(agy_alpha.is_dir() && !is_link(&agy_alpha));
+}
+
+#[test]
+fn convert_to_copy_host_all_skips_link_pinned_host() {
+    let env = Env::new();
+    env.cmd().args(["sync", "--yes"]).assert().success();
+    fs::write(
+        env.root().join("my-skills.local.toml"),
+        "[targets.claude]\ninstall_mode = \"link\"\n",
+    )
+    .unwrap();
+
+    // Dry run with --to copy --host all skips claude and plans codex/agy.
+    let dry = env
+        .cmd()
+        .args(["convert", "--to", "copy", "--host", "all", "--dry-run"])
+        .output()
+        .unwrap();
+    assert!(dry.status.success());
+    let dry_stdout = String::from_utf8_lossy(&dry.stdout);
+    assert!(
+        dry_stdout.contains("CONVERT          alpha -> codex"),
+        "{dry_stdout}"
+    );
+    assert!(
+        dry_stdout.contains("CONVERT          alpha -> agy"),
+        "{dry_stdout}"
+    );
+    assert!(
+        !dry_stdout.contains("CONVERT          alpha -> claude"),
+        "{dry_stdout}"
+    );
+    assert!(
+        dry_stdout.contains("skipped host claude ([targets.claude] install_mode = \"link\")"),
+        "{dry_stdout}"
+    );
+
+    // Apply with --to copy --host all converts codex/agy and leaves claude linked.
+    let apply = env
+        .cmd()
+        .args(["convert", "--to", "copy", "--host", "all", "--yes"])
+        .output()
+        .unwrap();
+    assert!(apply.status.success());
+    let apply_stdout = String::from_utf8_lossy(&apply.stdout);
+    assert!(
+        apply_stdout.contains("skipped host claude ([targets.claude] install_mode = \"link\")"),
+        "{apply_stdout}"
+    );
+    assert!(is_link(&env.host("claude").join("alpha")));
+    let codex_alpha = env.host("codex").join("alpha");
+    let agy_alpha = env.host("agy").join("alpha");
+    assert!(codex_alpha.is_dir() && !is_link(&codex_alpha));
+    assert!(agy_alpha.is_dir() && !is_link(&agy_alpha));
+
+    // Explicit --host claude still converts claude to copy.
+    env.cmd()
+        .args(["convert", "--to", "copy", "--host", "claude"])
+        .assert()
+        .success()
+        .stdout(contains("converted: alpha -> claude"))
+        .stdout(predicate::str::contains("skipped host claude").not());
+    let claude_alpha = env.host("claude").join("alpha");
+    assert!(claude_alpha.is_dir() && !is_link(&claude_alpha));
 }
