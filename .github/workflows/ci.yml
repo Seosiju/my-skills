@@ -109,5 +109,43 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --all-targets -- -D warnings
 
+      - name: Record Windows user directories before Rust tests
+        id: windows-paths-before
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $snapshot = Join-Path $env:RUNNER_TEMP 'my-skills-user-paths.ps1'
+          @'
+          $locations = @(
+            "$env:USERPROFILE\.claude\skills"
+            "$env:USERPROFILE\.agents\skills"
+            "$env:USERPROFILE\.gemini\config\skills"
+            "$env:USERPROFILE\.hermes"
+            "$env:LOCALAPPDATA\my-skills"
+          )
+          foreach ($location in $locations) {
+            if (Test-Path -LiteralPath $location) {
+              $(Get-Item -LiteralPath $location -Force
+                Get-ChildItem -LiteralPath $location -Force -Recurse) |
+                ForEach-Object { "$($_.Mode) $($_.FullName)" }
+            } else {
+              "Missing $location"
+            }
+          }
+          '@ | Set-Content -LiteralPath $snapshot
+          & $snapshot | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'my-skills-user-paths.txt')
+
       - name: Run Rust tests
         run: cargo test --all-targets
+
+      - name: Check Windows user directories after Rust tests
+        if: ${{ !cancelled() && runner.os == 'Windows' && steps.windows-paths-before.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $snapshot = Join-Path $env:RUNNER_TEMP 'my-skills-user-paths.ps1'
+          $before = Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'my-skills-user-paths.txt')
+          $changes = Compare-Object -CaseSensitive -ReferenceObject $before -DifferenceObject @(& $snapshot)
+          if ($changes) {
+            $changes | Format-List
+            throw 'Rust tests changed Windows user directory listings.'
+          }

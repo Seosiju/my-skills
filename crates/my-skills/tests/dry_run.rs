@@ -50,6 +50,9 @@ impl Env {
         let mut cmd = Command::cargo_bin("my-skills").unwrap();
         cmd.current_dir(base)
             .env("HOME", base.join("home"))
+            .env("USERPROFILE", base.join("home"))
+            .env("LOCALAPPDATA", base.join("local-app-data"))
+            .env("APPDATA", base.join("appdata"))
             .env("XDG_STATE_HOME", base.join("state"))
             .env("XDG_DATA_HOME", base.join("data"))
             .env("XDG_CONFIG_HOME", base.join("config"))

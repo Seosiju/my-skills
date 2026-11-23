@@ -97,6 +97,7 @@ impl Fixture {
             .env("XDG_STATE_HOME", self.root.join("state"))
             .env("XDG_DATA_HOME", self.root.join("data"))
             .env("LOCALAPPDATA", self.root.join("data"))
+            .env("APPDATA", self.root.join("config"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_CONFIG_GLOBAL", self.root.join("gitconfig"))
             .env("GIT_AUTHOR_NAME", "Test Author")

@@ -68,6 +68,9 @@ impl Env {
         let base = self.tmp.path();
         cmd.current_dir(base)
             .env("HOME", base.join("home"))
+            .env("USERPROFILE", base.join("home"))
+            .env("LOCALAPPDATA", base.join("local-app-data"))
+            .env("APPDATA", base.join("appdata"))
             .env("XDG_STATE_HOME", base.join("state"))
             .env("XDG_DATA_HOME", base.join("data"))
             .env("XDG_CONFIG_HOME", base.join("config"))
@@ -295,6 +298,13 @@ fn data_path_uses_xdg_data_home_and_rejects_bad_names() {
         .stdout(contains("my-skills"));
     #[cfg(not(windows))]
     assert!(env.tmp.path().join("data/my-skills/alpha").is_dir());
+    #[cfg(windows)]
+    assert!(
+        env.tmp
+            .path()
+            .join("local-app-data/my-skills/data/alpha")
+            .is_dir()
+    );
     env.cmd().args(["data-path", "../x"]).assert().code(2);
 }
 
