@@ -23,7 +23,7 @@
 3. **Rust 테스트 1건도 실제 `%LOCALAPPDATA%`에 썼다.** [관찰] `%LOCALAPPDATA%\my-skills\data\alpha`(빈 폴더)가 생겼다. [추론] `cli_connect.rs`의 `data-path` 테스트가 만든 것이다(§5).
 4. [관찰] 확인한 범위(§3.1)에서는 실제 레지스트리, `root`, `state.json`에 변화가 없었다.
    - host 폴더에 생긴 시험용 폴더는 사용자 승인을 받아 지웠다.
-   - `%LOCALAPPDATA%\my-skills\data\alpha`는 아직 지우지 않았다.
+   - `%LOCALAPPDATA%\my-skills\data\alpha`는 아직 지우지 않았다. (후속: §5 끝)
 5. runbook 3단계 이후(격리 확인, 실제 연결)는 **아직 하지 않았다.**
 
 **오케스트레이터가 정할 것** (자세한 내용은 §6):
@@ -244,6 +244,9 @@ OSError: cannot create a symlink at ... [WinError 1314]
 - 시각 근거 [관찰]: 저장소 `.venv`는 첫 `uv run pytest` 때 만들어졌다(`pyvenv.cfg` 09:58:49). 그 직전에 실행한 것은 첫 `cargo test`뿐이었다. Python `test_data.py`는 `data_root()`를 직접 부를 뿐 `--create`로 `alpha`를 만들지 않는다.
 - 이 폴더는 아직 지우지 않았다.
 - [추론] Windows CI에서도 같은 테스트가 러너의 `LOCALAPPDATA`에 쓴다.
+
+> **후속 (2026-11-23, 작성자 관찰, `dev` `4a518e9` 시점):** 안에 파일이 없는 것을 확인한 뒤 `%LOCALAPPDATA%\my-skills\data\alpha`, `data`, `my-skills`를 지웠다.
+> 원인이 된 테스트 환경은 `12524a6`에서 `LOCALAPPDATA`를 임시 폴더로 돌린다. 이 절의 다른 내용은 작성 당시 기록으로 그대로 둔다.
 
 **Rust 테스트 환경의 격리 수준** [확정: 소스]
 
