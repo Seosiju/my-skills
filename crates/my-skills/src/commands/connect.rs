@@ -93,7 +93,7 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         return code;
     }
     let audit = audit_meta_by_skill(&gate);
-    let (_, blocked) = apply_plan(&items, &mut state, &audit, false);
+    let (_, blocked) = apply_plan(&items, &mut state, &audit, false, State::save);
     exit(blocked)
 }
 
@@ -245,7 +245,7 @@ pub fn sync_manifest(manifest: &Manifest, args: &SyncArgs) -> ExitCode {
     }
     let mut state = state;
     let audit = audit_meta_by_skill(&gate);
-    let (_, blocked) = apply_plan(&items, &mut state, &audit, args.quiet);
+    let (_, blocked) = apply_plan(&items, &mut state, &audit, args.quiet, State::save);
     exit(blocked)
 }
 
@@ -357,7 +357,7 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
     if !confirm_multi_host_write(&hosts, args.yes) {
         return ExitCode::from(2);
     }
-    let (_, blocked) = apply_plan(&items, &mut state, &BTreeMap::new(), false);
+    let (_, blocked) = apply_plan(&items, &mut state, &BTreeMap::new(), false, State::save);
     exit(blocked)
 }
 
@@ -497,13 +497,14 @@ fn audit_meta_by_skill(gate: &AuditGateResult) -> BTreeMap<String, AuditMeta> {
         .collect()
 }
 
-/// Apply writes in order and print v0.4.1-style result lines. State is saved
-/// after every change. Returns (changed, blocked).
+/// Apply writes in order and print v0.4.1-style result lines. Save state for
+/// changes that `apply` did not already save. Returns (changed, blocked).
 fn apply_plan(
     items: &[PlanItem],
     state: &mut State,
     audit: &BTreeMap<String, AuditMeta>,
     quiet: bool,
+    save: impl Fn(&State) -> crate::Result<()>,
 ) -> (usize, bool) {
     let mut changed = 0;
     let mut blocked = false;
@@ -511,7 +512,11 @@ fn apply_plan(
         if item.action.writes() {
             match apply::apply(item, state, audit.get(&item.skill)) {
                 Ok(outcome) => {
-                    if let Err(e) = state.save() {
+                    let save_result = match outcome {
+                        Outcome::Converted(_) => Ok(()),
+                        _ => save(state),
+                    };
+                    if let Err(e) = save_result {
                         blocked = true;
                         println!("  FAILED: {} -> {} (state: {e})", item.skill, item.host);
                         continue;
@@ -619,5 +624,63 @@ fn exit(blocked: bool) -> ExitCode {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+    use crate::drive::link::{self, EntryKind};
+
+    #[test]
+    fn conversion_persists_state_without_a_caller_save() {
+        let temp = tempfile::tempdir().unwrap();
+        let state_path = temp.path().join("state.json");
+        let mut state = State::load(Some(&state_path)).unwrap();
+        let source = temp.path().join("registry").join("alpha");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("SKILL.md"), "canonical").unwrap();
+
+        let mut item = PlanItem {
+            skill: "alpha".into(),
+            host: "claude".into(),
+            source,
+            destination: temp.path().join("host").join("alpha"),
+            action: Action::Create,
+            reason: String::new(),
+            mode: InstallMode::Copy,
+            source_hash: None,
+        };
+        let audit = BTreeMap::new();
+        let items = std::slice::from_ref(&item);
+        assert_eq!(
+            apply_plan(items, &mut state, &audit, false, State::save),
+            (1, false)
+        );
+        assert_eq!(State::load(Some(&state_path)).unwrap(), state);
+
+        item.action = Action::Convert;
+        for mode in [InstallMode::Link, InstallMode::Copy] {
+            item.mode = mode;
+            let items = std::slice::from_ref(&item);
+            assert_eq!(
+                apply_plan(items, &mut state, &audit, false, |_| {
+                    panic!("a successful conversion must save its own record")
+                }),
+                (1, false)
+            );
+            let persisted = State::load(Some(&state_path)).unwrap();
+            assert_eq!(persisted, state);
+            assert_eq!(persisted.get("alpha", "claude").unwrap().mode, mode);
+            assert_eq!(
+                matches!(
+                    link::entry_kind(&item.destination).unwrap(),
+                    EntryKind::Link(_)
+                ),
+                mode == InstallMode::Link
+            );
+        }
     }
 }
