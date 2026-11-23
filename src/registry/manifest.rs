@@ -74,6 +74,8 @@ pub struct Target {
     pub scope: String,
     /// `~` and environment variables expanded, absolute, links not resolved.
     pub path: PathBuf,
+    /// Optional per-target install mode override (`[targets.<host>] install_mode`).
+    pub install_mode: Option<InstallMode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,6 +96,8 @@ pub struct Manifest {
     pub root: PathBuf,
     pub skills_root: String,
     pub defaults: Defaults,
+    /// Explicit CLI `--mode` override, which takes precedence over target and default modes.
+    pub cli_install_mode: Option<InstallMode>,
     pub audit: AuditSettings,
     /// Every built-in host plus every declared target, sorted by name.
     pub targets: BTreeMap<String, Target>,
@@ -108,6 +112,18 @@ impl Manifest {
     /// Canonical directory of one skill.
     pub fn skill_dir(&self, name: &str) -> PathBuf {
         self.skills_dir().join(name)
+    }
+
+    /// Effective install mode for a new connection on `host`:
+    /// CLI `--mode` > `[targets.<host>] install_mode` > `[defaults] install_mode`.
+    pub fn effective_install_mode(&self, host: &str) -> InstallMode {
+        self.cli_install_mode
+            .or_else(|| {
+                self.targets
+                    .get(host)
+                    .and_then(|target| target.install_mode)
+            })
+            .unwrap_or(self.defaults.install_mode)
     }
 }
 
@@ -196,8 +212,9 @@ pub fn load_manifest(root: &Path, cli: &CliOverrides) -> Result<Manifest> {
         root: root.to_owned(),
         skills_root: skills_root.into(),
         defaults,
+        cli_install_mode: cli.install_mode,
         audit,
-        targets: resolve_targets(root_values.table("targets"), cli)?,
+        targets: resolve_targets(root_values.table("targets"), &main_path, &local_path, cli)?,
         skills: resolve_skills(root_values.table("skills")),
     })
 }
@@ -280,6 +297,8 @@ fn schema_version(main: &Table) -> i64 {
 
 fn resolve_targets(
     target_values: Layers<'_>,
+    main_path: &Path,
+    local_path: &Path,
     cli: &CliOverrides,
 ) -> Result<BTreeMap<String, Target>> {
     let names: BTreeSet<&str> = hosts::ALL
@@ -293,6 +312,29 @@ fn resolve_targets(
     for name in names {
         let values = target_values.table(name);
         let host = hosts::get_host(name);
+        let target_mode = values
+            .local
+            .and_then(|table| table.get("install_mode"))
+            .map(|value| (value, local_path))
+            .or_else(|| {
+                values
+                    .main
+                    .and_then(|table| table.get("install_mode"))
+                    .map(|value| (value, main_path))
+            });
+        let install_mode = match target_mode {
+            None => None,
+            Some((value, path)) => Some(match value.as_str() {
+                Some("link") => InstallMode::Link,
+                Some("copy") => InstallMode::Copy,
+                _ => {
+                    return Err(Error::Manifest(format!(
+                        "invalid install_mode for target '{name}' in {}: {value}; expected \"link\" or \"copy\"",
+                        path.display(),
+                    )));
+                }
+            }),
+        };
         let path = match cli.target_paths.get(name) {
             Some(path) if !path.as_os_str().is_empty() => expand_os_path(path),
             override_path => {
@@ -318,6 +360,7 @@ fn resolve_targets(
             enabled: values.boolean("enabled", host.is_none_or(|host| host.default_enabled)),
             scope: values.string("scope").unwrap_or("user").into(),
             path,
+            install_mode,
         };
         targets.insert(name.into(), target);
     }

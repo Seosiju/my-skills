@@ -61,10 +61,10 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         Ok(s) => s,
         Err(e) => return config_error(e),
     };
-    let mode = manifest.defaults.install_mode;
     let mut items = Vec::new();
     for skill in &skills {
         for host in &hosts {
+            let mode = manifest.effective_install_mode(host);
             match plan::plan_install_one(&manifest, skill, host, &state, mode) {
                 Ok(item) => items.push(item),
                 Err(e) => return config_error(e),
@@ -173,7 +173,7 @@ pub fn sync_manifest(manifest: &Manifest, args: &SyncArgs) -> ExitCode {
         include_orphans: args.skill.is_none(),
         prune: !args.no_prune,
     };
-    let items = match plan::plan_sync(manifest, &state, &scope, manifest.defaults.install_mode) {
+    let items = match plan::plan_sync(manifest, &state, &scope, None) {
         Ok(items) => items,
         Err(e) => return config_error(e),
     };
@@ -345,20 +345,34 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
         Err(e) => return config_error(e),
     };
     let to: InstallMode = args.to.into();
-    let items = match plan::plan_convert(&manifest, &state, &skills, &hosts, to) {
+    let explicit_host = matches!(args.host.as_deref(), Some(name) if name != "all");
+    let (active_hosts, skipped_hosts) =
+        plan::filter_convert_hosts(&manifest, &hosts, to, explicit_host);
+    let items = match plan::plan_convert(&manifest, &state, &skills, &active_hosts, to) {
         Ok(items) => items,
         Err(e) => return config_error(e),
     };
     if args.dry_run {
         println!("Dry run — planned actions (nothing written):");
         print_plan(&items);
+        print_skipped_convert_hosts(&skipped_hosts);
         return ExitCode::SUCCESS;
     }
-    if !confirm_multi_host_write(&hosts, args.yes) {
+    if !confirm_multi_host_write(&active_hosts, args.yes) {
         return ExitCode::from(2);
     }
+    print_skipped_convert_hosts(&skipped_hosts);
     let (_, blocked) = apply_plan(&items, &mut state, &BTreeMap::new(), false, State::save);
     exit(blocked)
+}
+
+fn print_skipped_convert_hosts(skipped: &[(String, InstallMode)]) {
+    for (host, mode) in skipped {
+        println!(
+            "  skipped host {host} ([targets.{host}] install_mode = \"{}\")",
+            mode_label(*mode)
+        );
+    }
 }
 
 // ---------------------------------------------------------------- bootstrap
