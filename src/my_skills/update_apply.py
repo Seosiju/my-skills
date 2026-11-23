@@ -12,7 +12,8 @@ VersionRunner = Callable[
     [Sequence[str], int | None],
     subprocess.CompletedProcess[str],
 ]
-V1_FILES = "https://github.com/Seosiju/my-skills/blob/main"
+# Links are built from the migration tag, which always contains these files.
+V1_FILES = "https://github.com/Seosiju/my-skills/blob"
 V1_SPEC = "docs/2026-11-23-skill-drive-rust-v1-spec.md"
 
 
@@ -64,6 +65,9 @@ def _check_exit_code(status: update_commands.UpdateStatus) -> int:
         return 2
     if status.state == "current":
         print("Already up to date")
+        return 0
+    if status.state == "migrate":
+        print("Python updates have moved to the Rust v1 binary")
         return 0
     print("Installed version is ahead of the latest stable release")
     return 0
@@ -123,10 +127,11 @@ def cmd_update(args: UpdateArgs) -> int:
     status = update_commands.check_update(args.channel)
     print(f"Current: my-skills {status.current.version}")
     if status.migration is not None and not args.check:
+        files = f"{V1_FILES}/{status.migration.name}"
         print(f"my-skills {status.migration.name} is available. Install the Rust binary with:")
-        print(f"  macOS/Linux: {V1_FILES}/scripts/install.sh")
-        print(f"  Windows:     {V1_FILES}/scripts/install.ps1")
-        print(f"  Migration spec: {V1_FILES}/{V1_SPEC}")
+        print(f"  macOS/Linux: {files}/scripts/install.sh")
+        print(f"  Windows:     {files}/scripts/install.ps1")
+        print(f"  Migration spec: {files}/{V1_SPEC}")
         return 0
     _print_target(status)
 

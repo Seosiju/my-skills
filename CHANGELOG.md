@@ -7,6 +7,21 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-23
+
+### Changed
+
+- `my-skills update` no longer installs a Rust v1 tag through uv. On the
+  stable channel, when a `v1.*` release exists, it stays on the newest
+  compatible 0.4.x release and prints the Rust binary install steps instead.
+  On the main channel, once any `v1.*` tag exists (prereleases included), it
+  stops installing from `main` and prints the same steps. Existing installs
+  are left untouched.
+- The install links in that notice point at the release tag, so they resolve
+  before and after the Rust code reaches `main`.
+- `my-skills doctor` notes on its `Update:` line when a Rust v1 release is
+  available.
+
 ## [0.4.1] - 2026-11-14
 
 ### Removed
