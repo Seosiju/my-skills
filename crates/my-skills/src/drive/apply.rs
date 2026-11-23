@@ -45,7 +45,8 @@ pub struct AuditMeta {
     pub audit_threshold: String,
 }
 
-/// Apply one plan item and update `state` in memory. The caller saves state.
+/// Apply one plan item and update `state`. `Outcome::Converted` means state
+/// was already saved. The caller saves state after other successful writes.
 /// Blocked and informational items are not applied.
 pub fn apply(item: &PlanItem, state: &mut State, audit: Option<&AuditMeta>) -> Result<Outcome> {
     match item.action {
