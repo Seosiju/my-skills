@@ -23,8 +23,8 @@ const SEED_SKILLS: [(&str, bool); 3] = [
     ("my-jira", false),
 ];
 const SEED_HOSTS: &str = r#"["claude", "codex", "hermes", "agy"]"#;
-// This is the version of the embedded seed payload.
-const SEED_REVISION: &str = "1.0.0-alpha.0";
+// Record the package version that supplied the embedded seeds.
+const SEED_REVISION: &str = env!("CARGO_PKG_VERSION");
 
 macro_rules! seed_file {
     ($path:literal) => {

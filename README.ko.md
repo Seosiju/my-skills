@@ -73,23 +73,24 @@ frontmatter(`name`, `description`)를 가진 `SKILL.md`를 포함합니다 —
 맞춰 연결을 조정하고, 더 이상 필요한 상태가 아닌 관리 설치본은 기본적으로
 제거합니다. 로컬에서 수정된 복사본은 덮어쓰지 않습니다.
 
-registry의 `skills/`가 소스이고, 각 호스트 디렉터리가 빌드 결과물입니다.
+registry의 `skills/`에는 정규 스킬이 있습니다. 호스트 디렉터리에는 에이전트가
+발견할 수 있는 정규 스킬의 링크나 복사본이 있습니다.
 
 ```mermaid
 flowchart LR
     edit["✏️ 당신"] --> src["registry skills/&lt;name&gt;<br/><b>소스 (canonical)</b>"]
     ext["외부 스킬"] -.->|import / share| src
-    src -->|"install (링크 또는 복사)"| out
-    src -->|"sync (연결 상태 조정)"| out
+    src -->|"install (링크 또는 복사)"| hosts
+    src -->|"sync (연결 상태 조정)"| hosts
 
-    subgraph out["빌드 결과물 (각 호스트)"]
+    subgraph hosts["호스트 디렉터리"]
         c["Claude Code"]
         x["Codex"]
         h["Hermes"]
         a["Antigravity CLI (agy)"]
     end
 
-    out -. "복사본을 직접 수정하면" .-> drift["⚠️ DRIFTED<br/>sync가 덮어쓰지 않음"]
+    hosts -. "복사본을 직접 수정하면" .-> drift["⚠️ DRIFTED<br/>sync가 덮어쓰지 않음"]
 ```
 
 ## CLI 설치
@@ -147,8 +148,10 @@ my-skills skills --json
 
 소스에서 설치한 Rust 버전을 갱신하려면 `dev`의 최신 변경 사항을 받은 뒤
 tool repo에서 `cargo install --locked --path .`을 다시 실행합니다. `main`의
-현재 릴리스는 Python 0.4.2입니다. Rust v1 릴리스가 나오면 이 버전의
-`my-skills update`가 이전 절차를 출력합니다.
+현재 릴리스는 Python 0.4.2입니다. 기본 안정 채널인 `my-skills update`는
+`v1.0.0`처럼 접미사가 없는 v1 릴리스 태그에만 Rust 이전 절차를
+출력합니다. Python 0.4.2의 `my-skills update --channel main`은
+`v1.0.0-alpha.1` 같은 프리릴리스 태그도 확인합니다.
 [CHANGELOG.md](CHANGELOG.md#042---2026-11-23)의 0.4.2 항목을 참고하세요.
 
 Rust CLI의 `my-skills doctor`는 더 최신 안정 v1 릴리스가 있는지 확인합니다.
@@ -269,13 +272,14 @@ enabled = true
 hosts = ["claude", "codex", "hermes", "agy"]
 ```
 
-agent host에 쓰기 전에는 항상 미리 봅니다:
+registry를 검증하고 새 스킬의 설치 계획을 검토한 뒤 여러 호스트에 쓰기를
+확정합니다.
 
 ```bash
 my-skills validate
 my-skills audit --all --json
-my-skills install --dry-run
-my-skills install
+my-skills install my-private-skill --dry-run
+my-skills install my-private-skill --yes
 ```
 
 ## 포함된 스킬
@@ -337,10 +341,11 @@ my-skills install cli-inventory --host <host>
 # 또는 가져오면서 바로 활성 상태로 등록한다.
 my-skills import ~/.hermes/skills/cli-inventory --enable
 
-# 또는 호스트의 로컬 스킬을 검토한 뒤 하나를 my-skills로 승격한다.
+# 또는 registry에 아직 없는 Claude Code 스킬을 가져온다.
 my-skills share --from claude --plan --json
-my-skills share --from claude cli-inventory --enable
-my-skills sync cli-inventory --host claude
+my-skills share --from claude example-skill --enable
+my-skills sync example-skill --dry-run
+my-skills sync example-skill --yes
 ```
 
 `import`는 스킬을 `my-skills.toml`에 자동 등록합니다. 기본 등록 상태는
@@ -387,7 +392,8 @@ my-skills install cli-inventory --host claude --mode link
 | `BROKEN` | 관리 링크가 사라진 정규 디렉터리를 가리킴 |
 | `UNSUPPORTED` | 스킬의 호스트 목록에 이 호스트가 포함되지 않음 |
 
-`sync`는 안전한 경우만 씁니다. `DRIFTED`, `CONFLICT`, `UNMANAGED`는 비정상 종료코드로 차단됩니다.
+`sync`가 매니페스트에 따라 스킬을 연결할 때 `DRIFTED`, `CONFLICT`,
+`UNMANAGED`, `BROKEN`은 해당 연결을 차단하며 비정상 종료코드를 반환합니다.
 
 ### 머신-로컬 데이터
 
