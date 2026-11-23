@@ -547,10 +547,11 @@ fn parse_counts(counts: &str) -> anyhow::Result<(usize, usize)> {
     }
 }
 
-/// Return a Windows-only warning when Antigravity CLI (`agy`) is enabled and
-/// either its effective install mode is `link` or it has recorded link
-/// connections. Takes `os` (for example `std::env::consts::OS`) so the decision
-/// logic is testable on any platform.
+/// Return a Windows-only warning when Antigravity CLI (`agy`) is enabled with
+/// effective install mode `link`, or when `state.json` still has recorded `agy`
+/// link connections (even if `agy` is disabled or already configured as `copy`).
+/// Takes `os` (for example `std::env::consts::OS`) so the decision logic is
+/// testable on any platform.
 pub fn agy_windows_link_warning(
     os: &str,
     manifest: Option<&Manifest>,
@@ -559,26 +560,33 @@ pub fn agy_windows_link_warning(
     if os != "windows" {
         return None;
     }
-    let manifest = manifest?;
-    if !manifest.targets.get("agy").is_some_and(|t| t.enabled) {
-        return None;
-    }
-    let effective_is_link = manifest.effective_install_mode("agy") == InstallMode::Link;
+    let agy_enabled =
+        manifest.is_some_and(|manifest| manifest.targets.get("agy").is_some_and(|t| t.enabled));
+    let effective_is_link = manifest
+        .is_some_and(|manifest| manifest.effective_install_mode("agy") == InstallMode::Link);
     let has_link_connection = state.is_some_and(|state| {
         state
             .records()
             .any(|record| record.host == "agy" && record.mode == InstallMode::Link)
     });
-    if !effective_is_link && !has_link_connection {
+    if !(agy_enabled && effective_is_link) && !has_link_connection {
         return None;
     }
-    let message = if has_link_connection {
-        "Antigravity CLI (agy) on Windows may not discover junction-linked skills; \
-         set `[targets.agy] install_mode = \"copy\"` in my-skills.local.toml \
-         and convert existing agy links with `my-skills convert --to copy --host agy`."
-    } else {
-        "Antigravity CLI (agy) on Windows may not discover junction-linked skills; \
-         set `[targets.agy] install_mode = \"copy\"` in my-skills.local.toml."
+    let message = match (effective_is_link, has_link_connection) {
+        (true, true) => {
+            "Antigravity CLI (agy) on Windows may not discover junction-linked skills; \
+             set `[targets.agy] install_mode = \"copy\"` in my-skills.local.toml \
+             and convert existing agy links with `my-skills convert --to copy --host agy`."
+        }
+        (true, false) => {
+            "Antigravity CLI (agy) on Windows may not discover junction-linked skills; \
+             set `[targets.agy] install_mode = \"copy\"` in my-skills.local.toml."
+        }
+        (false, true) => {
+            "Antigravity CLI (agy) on Windows may not discover junction-linked skills; \
+             convert existing agy links with `my-skills convert --to copy --host agy`."
+        }
+        (false, false) => unreachable!(),
     };
     Some(message.to_owned())
 }
