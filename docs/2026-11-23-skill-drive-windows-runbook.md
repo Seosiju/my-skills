@@ -242,7 +242,7 @@ foreach ($d in ".claude\skills", ".agents\skills", ".gemini\config\skills") {
 |---|---|
 | Claude Code | 새 세션에서 "사용 가능한 스킬 중에 skill-drive-probe가 있나? 있으면 그 스킬의 지시대로 답해 줘"라고 묻는다. `PROBE-OK`가 나오면 발견한 것이다 |
 | Codex | 같은 방법으로 묻는다 |
-| agy (Antigravity CLI) | 먼저 `agy -p '/skills' --output-format json`으로 목록을 본다. 이 비대화형 조회는 모델을 호출하지 않으며, macOS에서 Antigravity CLI 1.2.16으로 검증됐다(`docs/release-checklist.md`). 이어서 새 세션에서 같은 질문으로 한 번 더 확인한다 |
+| agy (Antigravity CLI) | 먼저 **PowerShell에서** `agy -p '/skills' --output-format json`으로 목록을 본다(Git Bash에서는 `/skills`가 Windows 경로로 변환되므로 반드시 PowerShell에서 실행한다). 이 비대화형 조회는 모델을 호출하지 않으며, macOS에서 Antigravity CLI 1.2.16으로 검증됐다(`docs/release-checklist.md`). 이어서 새 세션에서 같은 질문으로 한 번 더 확인한다 |
 
 어떤 에이전트가 발견하지 못하면 다음을 차례로 확인하고 결과를 적는다. 이것이 스펙 Q1의 경로 실측이다.
 1. 그 에이전트의 문서나 설정에서 사용자 스킬 폴더 위치를 찾는다. 위치가 다르면 임시 manifest의 `[targets.<host>]`에 `path = '...'`를 넣고 3.2를 다시 한다.
@@ -375,12 +375,15 @@ Test-Path .gitattributes                               # 현재 레지스트리�
 줄바꿈은 스펙 §12 항목 5의 확인 대상이다. 지금 레지스트리에는 `.sh` 스크립트가 없고 Python 스크립트는 CRLF여도 대체로 동작하므로, 문제가 보이지 않으면 기록만 한다.
 
 레지스트리의 `my-skills.toml`에는 지금 `install_mode = "copy"`가 명시돼 있다. 맥 전환(인계 문서 §7 G)에서 바뀔 예정이다.
-**이 PC에서는 기기별 설정 파일로 link를 지정한다.** 이 파일은 레지스트리 `.gitignore`에 있어서 다른 기기에 영향이 없다.
+**이 PC에서는 기기별 설정 파일로 기본은 link, `agy`만 copy로 지정한다.** Windows에서 Antigravity CLI(`agy`)는 junction으로 연결된 스킬을 발견하지 못하므로 `agy`만 `[targets.agy] install_mode = "copy"`로 두고 나머지 호스트는 link를 쓴다. 이 파일은 레지스트리 `.gitignore`에 있어서 다른 기기에 영향이 없으며, `convert --to link --host all`은 명시된 `[targets.agy] install_mode = "copy"`를 보고 `agy`를 자동으로 건너뛴다.
 
 ```powershell
 Write-Utf8 (Join-Path (Get-Location) "my-skills.local.toml") @"
 [defaults]
 install_mode = "link"
+
+[targets.agy]
+install_mode = "copy"
 "@
 ```
 

@@ -48,12 +48,19 @@ agy -p '/skills' --output-format json
 ```
 
 프로젝트 경로는 `.agents/skills`입니다. 전역 경로의 일반 폴더·symlink 발견은
-**Antigravity CLI 1.2.16**에서 확인했으며, 해당 `/skills` 검증은 모델 턴·토큰이
-0이었습니다. IDE나 모든 CLI 버전을 검증한 의미는 아닙니다. 공식 문서에는
-`~/.gemini/antigravity-cli/skills`도 있으므로 다른 버전에서는 발견을 재확인하고
-필요하면 대상 경로를 덮어쓰세요. 기존 미관리 스킬은 비교 후 발견 경로 밖에 백업하고
-기존 충돌 검사 절차로 이행합니다. 공개 Hermes 지원은 유지하며 개인 레지스트리에서
-필요에 따라 비활성화할 수 있습니다.
+macOS의 **Antigravity CLI 1.2.16**에서 확인했으며, 해당 `/skills` 검증은 모델
+턴·토큰이 0이었습니다. Windows에서 `my-skills`는 기본적으로 디렉터리 junction으로
+연결하는데, **Antigravity CLI 1.5.14**에서는 일반 폴더는 발견되지만 junction은
+발견되지 않았습니다. Windows에서는 다른 호스트는 링크로 유지하면서
+`my-skills.local.toml`의 `[targets.agy]`에 `install_mode = "copy"`를 설정할 수
+있으며, Windows에서 `agy`가 링크 모드로 활성화되어 있거나 링크 연결이 남아 있으면
+`my-skills doctor`가 경고를 출력합니다. Windows에서
+`agy -p '/skills' --output-format json`은 Git Bash가 `/skills`를 Windows 경로로
+바꾸므로 PowerShell에서 실행하세요. IDE나 모든 CLI 버전을 검증한 의미는 아닙니다.
+공식 문서에는 `~/.gemini/antigravity-cli/skills`도 있으므로 다른 버전에서는 발견을
+재확인하고 필요하면 대상 경로를 덮어쓰세요. 기존 미관리 스킬은 비교 후 발견 경로
+밖에 백업하고 기존 충돌 검사 절차로 이행합니다. 공개 Hermes 지원은 유지하며 개인
+레지스트리에서 필요에 따라 비활성화할 수 있습니다.
 
 ## 어떻게 동작하나요
 
@@ -361,14 +368,20 @@ my-skills install cli-inventory --host claude --mode link
 ```
 
 링크 모드는 Unix에서 심볼릭 링크를, Windows에서는 우선 junction을 사용합니다.
-`uninstall`은 관리 링크를 제거하고 registry의 원본을 보존합니다. 기존 설치본은
-기록된 모드를 유지합니다. 기존 복사본을 링크로 전환하려면
-`my-skills convert --to link`에 `--dry-run`을 붙여 미리 봅니다.
+`uninstall`은 관리 링크를 제거하고 registry의 원본을 보존합니다. `my-skills.toml`이나
+`my-skills.local.toml`의 `[targets.<host>]` 아래에 `install_mode = "link" | "copy"`를
+호스트별로 지정할 수 있습니다(새 연결의 우선순위: `install --mode` >
+`[targets.<host>] install_mode` > `[defaults] install_mode`). 기존 설치본은 기록된
+모드를 유지합니다. 기존 복사본을 링크로 전환하려면 `my-skills convert --to link`에
+`--dry-run`을 붙여 미리 봅니다. `convert --to <mode> --host all`은 명시된
+`[targets.<host>] install_mode`가 `--to`와 다른 호스트를 건너뛰며, `--host <name>`을
+직접 지정하면 요청대로 전환합니다.
 
 ## 안전성은 이렇게 지켜집니다
 
-- **기본은 링크.** 새 복사본을 만들려면 매니페스트에 `install_mode = "copy"`를
-  설정하거나 `install`에 `--mode copy`를 붙입니다.
+- **기본은 링크.** 새 복사본을 만들려면 `my-skills.toml` 또는 `my-skills.local.toml`의
+  `[defaults]`나 `[targets.<host>]`에 `install_mode = "copy"`를 설정하거나
+  `install`에 `--mode copy`를 붙입니다.
 - **다중 호스트 쓰기는 확인이 필요합니다.** 여러 호스트에서 `install` 또는
   `sync`에 `--yes`를 붙이기 전에 dry-run 계획을 검토합니다. 기본 경로에 내장
   시드 스킬만 설치하는 인자 없는 `install`은 예외입니다.

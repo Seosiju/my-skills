@@ -15,7 +15,11 @@ originals). Host directories (`~/.claude/skills`, `~/.agents/skills`,
 `~/.hermes/skills`, `~/.gemini/config/skills`) hold the host connections.
 New registries use links by default, and edits to canonical skills are visible
 through those links. In copy mode, the CLI detects local changes before
-replacing a copy. A registry can also work as a plain folder without Git.
+replacing a copy. You can also set `install_mode = "link" | "copy"` per host
+under `[targets.<host>]` in `my-skills.toml` or `my-skills.local.toml`
+(precedence for new connections: `install --mode` > `[targets.<host>] install_mode` >
+`[defaults] install_mode`; existing connections keep their recorded mode until
+converted with `convert`). A registry can also work as a plain folder without Git.
 
 ## Which registry am I operating on?
 
@@ -216,9 +220,16 @@ cross-host operations. An omitted target is disabled; an explicit `--host agy`
 still selects it, following the same explicit-host rules as other agents.
 
 The user-scope path is `~/.gemini/config/skills`; the project path is
-`.agents/skills`. Copy and symlink discovery were verified with Antigravity CLI
-1.2.16. This does not establish Antigravity IDE or other-version compatibility.
-After installation, start a new CLI session and use `/skills` to check discovery:
+`.agents/skills`. Copy and symlink discovery were verified on macOS with
+Antigravity CLI 1.2.16. On Windows, `my-skills` links with junctions by default,
+which Antigravity CLI 1.5.14 did not discover; Windows users can set
+`[targets.agy] install_mode = "copy"` in `my-skills.local.toml` so `agy` uses
+copies while other hosts keep links (`convert --to link --host all` will skip
+`agy` automatically, while `--host agy` still converts as requested). This does
+not establish Antigravity IDE or other-version compatibility. After installation,
+start a new CLI session and use `/skills` to check discovery (on Windows, run
+`agy -p '/skills' --output-format json` from PowerShell rather than Git Bash,
+which rewrites `/skills` into a Windows path):
 
 ```bash
 my-skills install <skill> --host agy --dry-run --json
