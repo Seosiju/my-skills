@@ -20,7 +20,7 @@
 |---|---|
 | 목표 | **개인 스킬 드라이브**: 원본은 한 곳에 두고, 모든 기기와 에이전트는 바로가기(link)로 연결한다 (스펙 제품 정의) |
 | Rust v1 구현 | 19개 명령 모두 연결됨 |
-| 테스트 | Rust 209개, Python 308개 모두 통과 |
+| 테스트 | Rust 209개 통과(Windows 기준, `b28a3d9`). Python 테스트 모음은 §7 D에서 지웠다 |
 | CI (`dev`) | Rust 검사와 테스트를 Ubuntu, macOS, Windows에서 실행. 최신 결과는 §9 명령으로 확인 |
 | 릴리스 | **Python v0.4.2** (태그 `v0.4.2`, GitHub Release "Latest"). Rust v1 릴리스는 아직 없고, Rust 릴리스 workflow도 실행되지 않았다 |
 | `main` | v0.4.2 (`ca41abd`, `release/v0.4.2` 병합). Rust 코드는 아직 없다. `main`은 `dev`에 다시 병합했다(`382a19a`) |
@@ -61,6 +61,8 @@ flowchart LR
 | 이후 | **§7 C 완료**: `release/v0.4.2`에서 main 채널 guard, 태그 기준 이전 링크, doctor 안내를 추가하고 v0.4.2로 배포. `main`을 `dev`에 병합 | `f97a065`, `ca41abd`, 태그 `v0.4.2`, `382a19a` |
 | 이후 | **Windows PC 점검**(H의 준비 절과 1~2단계 일부): Rust 환경 준비됨. 테스트가 실제 사용자 위치에 쓰는 문제 발견(Python은 host 폴더와 `%LOCALAPPDATA%`, Rust는 1건이 `%LOCALAPPDATA%`)(§6.5). 같은 날 Codex 독립 검토를 반영해 보고서 개정 | `docs/2026-11-23-skill-drive-windows-python-tests-report.md` |
 | 이후 | **Windows 1차 병렬 작업(wave1)**: 이 PC에서만 작업하기로 하고 G(맥 전환)는 미룸. Herdr pane 3개에서 Codex(`gpt-6.2-sol`, `--yolo`)가 §7 L (5) high, (2) medium, (1) medium을 각자의 worktree와 브랜치에서 처리. pane마다 `LOCALAPPDATA`와 `XDG_*`를 작업 전용 임시 폴더로 돌림. 통합 담당이 diff를 검토하고 합친 상태에서 Windows fmt, clippy, 테스트 207개 통과, 사용자 위치 변화 없음을 확인한 뒤 병합 | `ce4e5b4`(L5), `c3d9b2c`(L2), `4f4508a`(L1) |
+| 이후 | **wave2: §7 D 완료**. Codex(xhigh) 하나가 Python 제거와 crate 루트 이동을 처리. 병합 전에 독립 검토 두 개를 둠: Codex 체크리스트 검토(작업자 보고를 검증할 주장으로만 다룸)와 agy(Gemini 4 Neon xhigh) 블라인드 검토(작업 정의와 안전 규칙만 받음). 둘 다 병합 판정. 테스트 약화 없음, golden 데이터는 경로만 바뀜, 통과한 테스트 이름 207개가 작업 전과 같음. 블라인드 검토가 tool repo `skills/` 검증 범위가 빠진 것을 찾아 wave3 T로 이어짐 | `24b905e`, `8a91dae`, `d88f7db`, CI `45109052085` |
+| 이후 | **wave3: §7 E 완료와 T(범위 복원)**. Codex 두 개(E high, T medium)를 병렬로 돌림. 같은 두 검토를 했고, 1차에서 Codex는 문서 사실 오류 2건, agy는 고칠 것 10건을 냄. 작업자가 지적마다 사실인지 먼저 확인한 뒤 고침(`SEED_REVISION`은 Python판처럼 패키지 버전에서 가져오기로 결정, `.venv/`는 의도적으로 남김). 재검토에서 둘 다 병합 판정. 테스트 209개 통과, 사용자 위치 변화 없음. 같은 worktree에서 두 검토자가 동시에 빌드하면 MSVC `LNK1104`가 날 수 있다(빌드 폴더를 따로 쓰면 통과) | `5309157`, `71f1cdc`(E), `de4f63f`, `7186fda`(T), `b28a3d9` |
 
 Codex 운영:
 - 1단계: `gpt-6.2-sol` `xhigh` 5개. 5시간 한도의 약 51%포인트를 썼다(99% → 48%).
@@ -230,9 +232,9 @@ Codex 운영:
 | A | ~~Rust를 기능별로 재배치하고 Python 폴더 의존을 끊음~~ **완료** (`b1113e8`, `2368f93`) | — | — |
 | B | ~~쓰기 명령에 `--dry-run` 추가, §6.1 보류 항목 결정~~ **완료** (`ee2ad94`). `set-root`도 포함했다. `share --dry-run`은 `--plan`과 같다 | — | — |
 | C | ~~Python 0.4.2~~ **완료** (태그 `v0.4.2`). stable과 main 채널 모두 v1 태그가 생기면 설치하지 않고 이전 안내를 출력한다. 안내 링크는 이전 대상 태그를 가리키므로 `main`에 Rust가 들어가기 전에도 동작한다. 배포 전 검증: 릴리스 브랜치 CI, `main` CI, 격리된 폴더에서 GitHub 설치 경로 확인 | — | — |
-| D | `dev`에서 Python 제거, Rust를 루트 `src/`, `tests/`로 이동, CI에서 Python 작업 제거, §6.3의 루트 기준 경로 조정, `builtin_rules.yaml` 비교 테스트 삭제 | C | 필요 없음 |
-| E | tool repo 문서: `README.md`, `README.ko.md`, `AGENTS.md`("host directory = install output", `uv` 명령), seed `skills/my-skills/SKILL.md`, `seeds.rs`의 README 템플릿과 `SEED_REVISION`, `docs/release-checklist.md`의 Python 절차 | D | 필요 없음 |
-| F | `v1.0.0-alpha.1` pre-release: `Cargo.toml` 버전을 `1.0.0-alpha.1`로 올림 → 태그와 버전을 비교하는 CI 단계 추가 → `workflow_dispatch`로 시험 실행(binary, `--version`, 설치 스크립트) → 태그 | — (A·D 뒤가 깔끔하지만 필수는 아님) | **필요 (태그)** |
+| D | ~~`dev`에서 Python 제거, Rust를 루트로 이동~~ **완료**(`d88f7db`). 지워진 Python smoke가 하던 tool repo `skills/` 검증은 `tests/repo_skills_smoke.rs`로 복원했다(`de4f63f`, `7186fda`) | C | — |
+| E | ~~tool repo 문서~~ **완료**(`5309157`, `71f1cdc`). `SEED_REVISION`은 `CARGO_PKG_VERSION`을 따른다. v1.0.0 때 바꿀 `--branch dev` 위치 목록은 `docs/release-checklist.md`에 있다 | D | — |
+| F | `v1.0.0-alpha.1` pre-release: `Cargo.toml` 버전을 `1.0.0-alpha.1`로 올림 → 태그와 버전을 비교하는 CI 단계 추가 → 태그. 주의: **Release Rust의 `workflow_dispatch`는 workflow 파일이 기본 브랜치(`main`)에 있어야 수동 실행된다. 지금 `main`에는 없으므로, 태그 전 시험 실행은 할 수 없고 첫 태그 실행이 첫 전체 실행이 된다**(`docs/release-checklist.md`) | — (A·D 뒤가 깔끔하지만 필수는 아님) | **필요 (태그)** |
 | G | **(2026-11-23 미룸: 당분간 Windows PC에서만 작업)** **맥 전환**: binary 설치 → `convert --to link` dry-run → 승인 → 전환. 레지스트리 `install_mode` 수정, `hooks install`. 에이전트가 읽는 문서 수정: 레지스트리의 `skills/my-skills/SKILL.md`, `AGENTS.md`(동기화 단계, agy 복사 설치 문구, 그룹 비활성화 시 uninstall 안내), `instructions/global.md`, `README.md`, 그리고 Claude·Codex·agy 전역 안내의 "동기화" 절차 | binary 하나 (F 또는 직접 빌드) | **필요 (dry-run과 문서 diff 확인 후)** |
 | H | Windows 실기기: 설치 → clone → `bootstrap` → `hooks install` → 스펙 §12 체크리스트 | binary 하나 (F 또는 그 PC에서 빌드) | 사용자가 Windows PC에서 진행 |
 | I | v1.0.0: `dev`를 `main`에 병합, README를 binary 설치 방식으로, 태그 | C, G, H | **필요** |
@@ -244,7 +246,7 @@ Codex 운영:
 
 ```mermaid
 flowchart LR
-  AB["A · B (완료)"] --> C["C (완료)"] --> DE["D · E"] --> F["F"]
+  AB["A · B (완료)"] --> C["C (완료)"] --> DE["D · E (완료)"] --> F["F"]
   F --> G["G 맥"]
   F --> H["H Windows"]
   G --> I["I v1.0.0"]
@@ -252,7 +254,7 @@ flowchart LR
   I --> J["J"]
 ```
 
-- A·B·C가 끝났으므로 다음은 D·E다. 맥 전환을 서둘러야 하면 G를 먼저 할 수 있다. 이때는 직접 빌드한 binary를 쓰고, 나중에 F의 binary로 한 번 더 교체한다.
+- A~E가 끝났다(2026-11-23). G(맥 전환)는 미뤘으므로 다음 후보는 F(태그, 승인 필요)와 H(이 Windows PC의 runbook 3단계 이후)다. H는 직접 빌드한 binary로 F보다 먼저 할 수 있다. 맥 전환을 서둘러야 하면 G를 먼저 할 수 있다. 이때는 직접 빌드한 binary를 쓰고, 나중에 F의 binary로 한 번 더 교체한다.
 - G는 실제 스킬 폴더와 전역 안내를 바꾼다. dry-run과 바뀔 문서의 diff를 먼저 보여 주고 승인을 받는다.
 - 태그(C, F, I)는 공개 저장소에 영구적으로 남는다. 실패하면 태그를 옮기거나 지우지 않고 번호를 올린다(예: `alpha.2`).
 
