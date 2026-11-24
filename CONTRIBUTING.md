@@ -1,6 +1,7 @@
 # Contributing
 
-The `dev` branch contains the Rust `my-skills` CLI.
+Use the [release installers](README.md#install-the-cli) to install the Rust
+`my-skills` CLI. Use the source setup below when contributing changes.
 
 ## Development Setup
 
@@ -10,7 +11,7 @@ Windows, use the MSVC toolchain and build tools.
 Clone the repository and run the test suite:
 
 ```bash
-git clone --branch dev https://github.com/Seosiju/my-skills.git
+git clone https://github.com/Seosiju/my-skills.git
 cd my-skills
 cargo test --all-targets
 ```

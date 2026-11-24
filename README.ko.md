@@ -103,34 +103,37 @@ flowchart LR
 
 ## CLI 설치
 
-`dev` 브랜치에는 개발 중인 Rust v1이 들어 있습니다. Rust v1 릴리스는 아직
-게시되지 않았습니다. Git과 안정 버전의 Rust 툴체인으로 소스에서 빌드합니다.
-Windows에서는 MSVC 툴체인과 빌드 도구를 사용합니다.
+설치 스크립트는 GitHub Releases에서 최신 안정 버전의 바이너리를 내려받고
+`SHA256SUMS`로 아카이브를 검증합니다.
+
+### macOS와 Linux
+
+Apple silicon 또는 Intel Mac과 x86-64 GNU/Linux에서 실행합니다.
 
 ```bash
-git clone --branch dev https://github.com/Seosiju/my-skills.git
-cd my-skills
-cargo install --locked --path .
+curl -fsSL https://raw.githubusercontent.com/Seosiju/my-skills/main/scripts/install.sh -o my-skills-install.sh
+sh ./my-skills-install.sh
+```
+
+기본 설치 디렉터리는 `$HOME/.local/bin`입니다. 필요하면 PATH에 추가한 뒤
+`my-skills --version`을 실행합니다.
+
+### Windows
+
+x86-64 Windows의 PowerShell에서 실행합니다.
+
+```powershell
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Seosiju/my-skills/main/scripts/install.ps1' -OutFile '.\my-skills-install.ps1'
+.\my-skills-install.ps1 -AddToPath
 my-skills --version
 ```
 
-Cargo의 bin 디렉터리가 PATH에 있어야 합니다. 다른 `my-skills`가 이미 설치되어
-있으면 PATH에서 Rust 실행 파일이 선택되는지 확인합니다. 설치 없이 빌드하려면
-tool repo에서 `cargo build --locked --release`를 실행합니다. 실행 파일은
-`target/release/my-skills`에 생깁니다(Windows는 `target\release\my-skills.exe`).
+기본 설치 디렉터리는 `%LOCALAPPDATA%\Programs\my-skills\bin`입니다.
+`-AddToPath`는 사용자 PATH와 현재 PowerShell 세션의 PATH에 이 경로를 추가합니다.
 
-Rust v1 바이너리가 게시되면 Rust tool repo 체크아웃에서 설치 스크립트를 실행합니다.
-macOS(Apple silicon 또는 Intel)와 Linux(x86-64 GNU)에서는 `sh scripts/install.sh`를,
-Windows(x86-64)에서는 `powershell -File scripts/install.ps1`을 실행합니다.
-두 스크립트 모두 릴리스의 `SHA256SUMS`로 아카이브를 검증합니다.
-
-스크립트는 기본적으로 GitHub의 최신 릴리스 URL을 사용합니다. 안정 Rust 릴리스가
-최신 릴리스가 되기 전이나 프리릴리스 등 특정 버전을 설치하려면
-`MY_SKILLS_VERSION`에 게시된 Rust 태그를 정확히 지정합니다. 기본 설치 디렉터리는
-macOS와 Linux에서 `$HOME/.local/bin`, Windows에서
-`%LOCALAPPDATA%\Programs\my-skills\bin`입니다. 필요하면 설치 디렉터리를 PATH에
-추가합니다. PowerShell에서 `./scripts/install.ps1 -AddToPath`를 실행하면 사용자
-PATH와 현재 PowerShell 세션의 PATH가 갱신됩니다.
+특정 릴리스를 설치하려면 스크립트 실행 전에 `MY_SKILLS_VERSION`에 해당 태그를
+지정합니다. 기존 `my-skills`가 있다면 PATH에서 새 실행 파일이 선택되는지 확인합니다.
+소스 빌드 방법은 [CONTRIBUTING.md](CONTRIBUTING.md)를 참고하세요.
 
 ## 빠른 시작
 
@@ -154,18 +157,13 @@ my-skills skills --json
 
 ## CLI 업데이트
 
-소스에서 설치한 Rust 버전을 갱신하려면 `dev`의 최신 변경 사항을 받은 뒤
-tool repo에서 `cargo install --locked --path .`을 다시 실행합니다. `main`의
-현재 릴리스는 Python 0.4.2입니다. 기본 안정 채널인 `my-skills update`는
-`v1.0.0`처럼 접미사가 없는 v1 릴리스 태그에만 Rust 이전 절차를
-출력합니다. Python 0.4.2의 `my-skills update --channel main`은
-`v1.0.0-alpha.1` 같은 프리릴리스 태그도 확인합니다.
-[CHANGELOG.md](CHANGELOG.md#042---2026-11-23)의 0.4.2 항목을 참고하세요.
+Python v0.4.2에서 `my-skills update`를 실행하면 안정 v1 릴리스로 이전하는 데
+필요한 설치 스크립트 링크가 나옵니다.
+[변경 기록의 v0.4.2 항목](CHANGELOG.md#042---2026-11-23)을 참고하세요.
 
 Rust CLI의 `my-skills doctor`는 더 최신 안정 v1 릴리스가 있는지 확인합니다.
-안정 v1 릴리스가 게시된 뒤 현재 버전보다 최신이면 `my-skills update`로
-설치합니다. 업데이트 명령은 아카이브 체크섬을 검증하고 실행 중인 CLI 파일을
-교체합니다.
+`my-skills update`로 설치할 수 있습니다. 업데이트 명령은 아카이브 체크섬을
+검증하고 실행 중인 CLI 파일을 교체합니다.
 
 ```bash
 my-skills doctor
@@ -180,8 +178,8 @@ my-skills update --check
 my-skills update --dry-run
 ```
 
-v1 릴리스가 게시된 뒤에는 `--channel main`으로 게시된 프리릴리스를 선택할 수도
-있습니다. 이 채널은 게시된 릴리스 중 버전이 가장 높은 것을 선택합니다.
+`--channel main`은 프리릴리스를 포함해 게시된 릴리스 중 버전이 가장 높은 것을
+선택합니다.
 
 ```bash
 my-skills update --channel main

@@ -9,21 +9,16 @@
 - Select the intended `v1.*` tag and verify that its version without the
   leading `v` matches the package version in `Cargo.toml`. The updater
   expects the installed executable's `--version` to match the release tag.
-- When Rust v1.0.0 moves to `main`, switch the source checkout examples
-  using `--branch dev` in `README.md`, `README.ko.md`, `CONTRIBUTING.md`,
-  `docs/release-checklist.md`, `skills/my-skills/SKILL.md`, and the generated
-  registry README in `src/registry/seeds.rs`. Update the `/tree/dev` install
-  links in `skills/my-skills/SKILL.md` and `src/registry/seeds.rs` to the
-  `main` README. The handoff's `gh run list --branch dev` commands query
-  development CI.
+- Keep the [binary installation instructions](../README.md#install-the-cli)
+  on `main` and check the links in the `my-skills` seed skill and the generated
+  registry README in `src/registry/seeds.rs`.
 
 ## 2. Source Verification
 
-Use a clean checkout of the candidate commit. For the current Rust source
-build, clone `dev`.
+Use a clean checkout of the candidate commit.
 
 ```bash
-git clone --branch dev https://github.com/Seosiju/my-skills.git
+git clone https://github.com/Seosiju/my-skills.git
 cd my-skills
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
@@ -58,12 +53,7 @@ GitHub requires `.github/workflows/release-rust.yml` on the default branch
 (`main`) before **Release Rust** can be dispatched manually.
 [GitHub's manual workflow requirements](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow#configuring-a-workflow-to-run-manually)
 
-While the workflow is absent from `main`, run the source checks in §2 before
-tagging and compare the local release binary's `--version` with the planned
-tag. If `main` still lacks the workflow when the first Rust tag is pushed,
-that tag run will be the first full hosted build and packaging run.
-
-Once the workflow is on `main`, use the following pre-tag artifact checks.
+Use the following pre-tag artifact checks once `main` CI passes.
 
 1. Run **Release Rust** with `workflow_dispatch` on the candidate commit. The
    run builds and uploads the `rust-release` artifact.
@@ -85,7 +75,7 @@ Once the workflow is on `main`, use the following pre-tag artifact checks.
 
 1. Create and push the approved `v1.*` tag. The tag-triggered **Release Rust**
    run publishes the GitHub Release with the four archives and `SHA256SUMS`.
-   Tags ending in `-alpha.N`, `-beta.N`, or `-rc.N` publish as prereleases.
+   Tags with a hyphen publish as prereleases. Stable tags are marked Latest.
 2. Repeat the installer smoke test using the published assets. Clear
    `MY_SKILLS_RELEASE_BASE_URL` and set `MY_SKILLS_VERSION` to the exact
    published tag. With neither override, the installers use the latest

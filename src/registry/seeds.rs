@@ -84,17 +84,9 @@ const GITIGNORE: &str =
 
 const README_BODY: &str = r#"This repository is your canonical source for private Agent Skills.
 
-Install the public Rust `my-skills` CLI from a separate tool repo checkout
-with Git and stable Rust:
-
-```bash
-git clone --branch dev https://github.com/Seosiju/my-skills.git
-cd my-skills
-cargo install --locked --path .
-```
-
-Once v1 binaries are published, see the release installer instructions in the
-[tool repo README](https://github.com/Seosiju/my-skills/tree/dev#install-the-cli).
+Install the public Rust `my-skills` CLI using the release installer for your
+platform. See the [tool repo README](https://github.com/Seosiju/my-skills/tree/main#install-the-cli).
+Run `my-skills --version` to check the installation.
 
 Return to this registry. Add skills under `skills/<name>/SKILL.md`, then
 preview and install them. Add `--yes` after reviewing a plan for multiple hosts.

@@ -104,35 +104,37 @@ flowchart LR
 
 ## Install the CLI
 
-The `dev` branch contains Rust v1 in development. A Rust v1 release has yet to
-be published. Build from source with Git and a stable Rust toolchain. On
-Windows, use the MSVC toolchain and build tools.
+The installers download the latest stable binary from GitHub Releases and
+verify the archive against `SHA256SUMS`.
+
+### macOS and Linux
+
+For Apple silicon or Intel Macs and x86-64 GNU/Linux:
 
 ```bash
-git clone --branch dev https://github.com/Seosiju/my-skills.git
-cd my-skills
-cargo install --locked --path .
+curl -fsSL https://raw.githubusercontent.com/Seosiju/my-skills/main/scripts/install.sh -o my-skills-install.sh
+sh ./my-skills-install.sh
+```
+
+The default install directory is `$HOME/.local/bin`. Add it to PATH if needed,
+then run `my-skills --version`.
+
+### Windows
+
+From PowerShell on x86-64 Windows:
+
+```powershell
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Seosiju/my-skills/main/scripts/install.ps1' -OutFile '.\my-skills-install.ps1'
+.\my-skills-install.ps1 -AddToPath
 my-skills --version
 ```
 
-Ensure Cargo's bin directory is on PATH. If another `my-skills` is already
-installed, check that PATH selects the Rust binary. To build without installing,
-run `cargo build --locked --release` from the tool repo. The executable is
-`target/release/my-skills` (`target\release\my-skills.exe` on Windows).
+The default install directory is `%LOCALAPPDATA%\Programs\my-skills\bin`.
+`-AddToPath` adds it to your user PATH and the current PowerShell session.
 
-Once Rust v1 binaries are published, run the installer from a Rust tool repo
-checkout. On macOS (Apple silicon or Intel) and Linux (x86-64 GNU), run
-`sh scripts/install.sh`. On Windows (x86-64), run
-`powershell -File scripts/install.ps1`. Each installer verifies the archive
-against the release's `SHA256SUMS`.
-
-The scripts default to the latest GitHub release URL. Set `MY_SKILLS_VERSION`
-to the exact published Rust tag until a stable Rust release is the latest
-release, or whenever you want a specific tag such as a prerelease. The default
-install directories are `$HOME/.local/bin` on macOS and Linux and
-`%LOCALAPPDATA%\Programs\my-skills\bin` on Windows. Add the directory to PATH if
-needed. In PowerShell, run `./scripts/install.ps1 -AddToPath` to update the user
-PATH and the current PowerShell session.
+For a specific release, set `MY_SKILLS_VERSION` to its tag before running the
+installer. If another `my-skills` is already installed, check that PATH selects
+the new binary. See [CONTRIBUTING.md](CONTRIBUTING.md) for source builds.
 
 ## Quick start
 
@@ -156,18 +158,13 @@ my-skills skills --json
 
 ## Updating the CLI
 
-For a Rust build from source, pull the latest `dev` changes and rerun
-`cargo install --locked --path .` from the tool repo. On `main`, the current
-release is Python 0.4.2. Its default stable command, `my-skills update`, prints
-the Rust migration steps only for unsuffixed v1 release tags such as `v1.0.0`.
-In Python 0.4.2, `my-skills update --channel main` also considers prerelease
-tags such as `v1.0.0-alpha.1`. See the 0.4.2 entry in
-[CHANGELOG.md](CHANGELOG.md#042---2026-11-23).
+In Python v0.4.2, run `my-skills update` for the Rust migration instructions.
+The Python command prints the installer links for a stable v1 release.
+See the [v0.4.2 changelog entry](CHANGELOG.md#042---2026-11-23).
 
-The Rust CLI's `my-skills doctor` checks for a newer stable v1 release.
-After a stable v1 release is published, run `my-skills update` to install it
-if it is newer than your current version. The updater verifies the archive
-checksum and replaces the executable you ran.
+The Rust CLI's `my-skills doctor` checks for a newer stable v1 release. Run
+`my-skills update` to install it. The updater verifies the archive checksum
+and replaces the executable you ran.
 
 ```bash
 my-skills doctor
@@ -182,8 +179,8 @@ my-skills update --check
 my-skills update --dry-run
 ```
 
-Once v1 releases are published, `--channel main` can select a published
-prerelease. It chooses the highest version among published releases:
+`--channel main` chooses the highest version among published releases,
+including prereleases:
 
 ```bash
 my-skills update --channel main

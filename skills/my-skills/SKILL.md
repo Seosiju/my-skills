@@ -47,18 +47,9 @@ the user explicitly wants to make a registry active.
 
 ## First-time setup (the front door)
 
-If the Rust CLI is missing, install it from the tool repo with Git and stable
-Rust. On Windows, use the MSVC toolchain and build tools.
-
-```bash
-git clone --branch dev https://github.com/Seosiju/my-skills.git
-cd my-skills
-cargo install --locked --path .
-my-skills --version
-```
-
-Once v1 binaries are published, follow the release installer instructions in
-the [tool repo README](https://github.com/Seosiju/my-skills/tree/dev#install-the-cli).
+If the Rust CLI is missing, follow the release installer instructions in the
+[tool repo README](https://github.com/Seosiju/my-skills/tree/main#install-the-cli).
+Run `my-skills --version` to check the installation.
 
 Create the registry from outside the tool repo. `init-registry` prompts for a location (default
 `~/my-agent-skills`), seeds the public-safe default skills, and runs `git init`:
