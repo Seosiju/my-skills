@@ -13,7 +13,7 @@ use crate::drive::link::{EntryKind, entry_kind};
 use crate::{Error, Result};
 
 pub fn set_skill_enabled(path: &Path, name: &str, enabled: bool) -> Result<()> {
-    prepare_enabled(path, name, enabled)?.commit()
+    prepare_enabled(path, &[name], enabled)?.commit()
 }
 
 pub fn register_skill(path: &Path, name: &str, enabled: bool, hosts: &[String]) -> Result<()> {
@@ -92,17 +92,24 @@ impl ManifestEdit {
     }
 }
 
-pub(crate) fn prepare_enabled(path: &Path, name: &str, enabled: bool) -> Result<ManifestEdit> {
+pub(crate) fn prepare_enabled(
+    path: &Path,
+    names: &[impl AsRef<str>],
+    enabled: bool,
+) -> Result<ManifestEdit> {
     prepare(path, |lines| {
-        let (start, end) = skill_section(lines, name)
-            .ok_or_else(|| Error::Manifest(format!("unknown skill: {name}")))?;
-        set_key(
-            lines,
-            start + 1,
-            end,
-            "enabled",
-            format!("enabled = {enabled}"),
-        );
+        for name in names {
+            let name = name.as_ref();
+            let (start, end) = skill_section(lines, name)
+                .ok_or_else(|| Error::Manifest(format!("unknown skill: {name}")))?;
+            set_key(
+                lines,
+                start + 1,
+                end,
+                "enabled",
+                format!("enabled = {enabled}"),
+            );
+        }
         Ok(true)
     })
 }

@@ -66,10 +66,12 @@ fn update_returns_two_when_stable_check_cannot_resolve_releases() {
 #[test]
 fn update_dry_run_prints_main_channel_downloads_and_writes_nothing() {
     let fixture = Fixture::new();
+    // Prereleases of NEXT stay ahead of the package version at every release.
+    let (rc2, rc10) = (format!("v{NEXT}-rc.2"), format!("v{NEXT}-rc.10"));
     fixture.release_list(&[
         ("v1.1.0", false, false),
-        ("v1.2.0-rc.2", true, false),
-        ("v1.2.0-rc.10", true, false),
+        (&rc2, true, false),
+        (&rc10, true, false),
     ]);
     let before = fs::read(&fixture.exe).unwrap();
     let asset_url = fixture.asset_url();
@@ -79,7 +81,7 @@ fn update_dry_run_prints_main_channel_downloads_and_writes_nothing() {
         .run(&["update", "--channel", "main", "--dry-run"])
         .success()
         .stdout(format!(
-            "Current: my-skills {CURRENT}\nChannel: main\nLatest:  v1.2.0-rc.10\n\
+            "Current: my-skills {CURRENT}\nChannel: main\nLatest:  {rc10}\n\
              Would download: {checksums}\nWould download: {archive}\nWould replace:  {}\n",
             my_skills::platform::paths::display_path(&fixture.exe.canonicalize().unwrap())
         ))

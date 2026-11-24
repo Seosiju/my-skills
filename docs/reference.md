@@ -6,37 +6,60 @@ Detailed reference for commands, registry lookup, install modes, safety checks, 
 
 | Command | What it does |
 | --- | --- |
-| `my-skills skills` | List registered skills (`--json`, `--host <HOST>`, `--enabled`, `--disabled`, `--with-status`). |
+| `my-skills skills` | List registered skills (`--json`, `--brief`, `--host <HOST>`, `--enabled`, `--disabled`, `--group <GROUP>`, `--with-governance`). |
 | `my-skills status` | Show connection status for every skill and host (`--json`). |
-| `my-skills install [SKILL]` | Connect enabled skills to host folders (`--host <HOST>`, `--all`, `--mode link\|copy`, `--dry-run`, `--json`, `--skip-audit`, `--yes`). |
-| `my-skills sync [SKILL]` | Match host folders to `my-skills.toml` (your manifest) and remove unwanted managed installs (`--host <HOST>`, `--all`, `--check`, `--no-prune`, `--dry-run`, `--json`, `--quiet`, `--skip-audit`, `--yes`). |
-| `my-skills uninstall [SKILL]` | Remove managed host connections without touching the source skill (`--host <HOST>`, `--dry-run`, `--yes`). |
-| `my-skills enable <SKILL>` / `disable <SKILL>` | Turn a registered skill on or off in `my-skills.toml` (`--dry-run`). |
+| `my-skills diff <SKILL>` | Compare a registered skill with host entries without writing (`--host <HOST>`, `--patch`, `--json`). |
+| `my-skills install [SKILL...]` | Connect skills to host folders (`--group <GROUP>`, `--host <HOST>`, `--all`, `--mode link\|copy`, `--dry-run`, `--json`, `--skip-audit`, `--yes`). |
+| `my-skills sync [SKILL...]` | Reconcile host connections with `my-skills.toml` (`--group <GROUP>`, `--host <HOST>`, `--all`, `--check`, `--no-prune`, `--dry-run`, `--json`, `--quiet`, `--skip-audit`, `--yes`). |
+| `my-skills uninstall [SKILL...]` | Remove managed host connections (`--group <GROUP>`, `--host <HOST>`, `--dry-run`, `--yes`). |
+| `my-skills enable [SKILL...]` / `disable [SKILL...]` | Turn selected skills on or off in `my-skills.toml` (`--group <GROUP>`, `--dry-run`). |
+| `my-skills validate [SKILL...]` | Apply the pre-commit validation gate (`--group <GROUP>`, `--host <HOST>`, `--json`). |
+| `my-skills audit [SKILL...]` | Audit canonical skills for security risks (`--group <GROUP>`, `--all`, `--json`). |
 | `my-skills import <SOURCE>` | Copy an external skill folder into `skills/` and register it as disabled (`--enable`, `--force`, `--skip-audit`, `--dry-run`). |
 | `my-skills share --from <HOST> [SKILL]` | Promote a skill from a host folder into your registry (`--plan` / `--dry-run`, `--json`, `--enable`, `--disable`, `--force`, `--skip-audit`). |
 | `my-skills convert --to link\|copy [SKILL]` | Switch existing managed connections between link and copy (`--host <HOST>`, `--all`, `--dry-run`, `--yes`). |
 | `my-skills data-path <SKILL>` | Print a skill's machine-local data folder (`--create` to create it). |
 | `my-skills update` | Update the `my-skills` binary from GitHub Releases (`--check`, `--dry-run`, `--channel stable\|main`). |
-| `my-skills doctor` | Check your environment, hosts, active registry, Git hooks, and manifest (`--no-update-check`, `--json`). |
+| `my-skills doctor` | Check your environment, hosts, active registry, Git hooks, and manifest (`--quick`, `--no-update-check`, `--json`). |
 
-Two small details to keep in mind:
+### Skill selection
 
-- `import` rejects source folders that contain symlinks so audits and copies cover the same file tree.
-- A bare `sync` checks disabled and unregistered skills too so it can remove old installs. Pass `--no-prune` to keep them, or `--check` to report changes without writing. `sync --check` takes precedence over `--dry-run` and cannot be combined with `--json`. Both `install --json` and `sync --json` require `--dry-run`.
-- JSON outputs emit plain UTF-8 (no `\uXXXX` escapes), and `skills --json`, `share --plan|--dry-run --json`, and `install|sync --dry-run --json` include `registry: {path, source}`. On Windows, displayed paths strip `\\?\` and use `\`. Audit `result_hash` fingerprints are unchanged.
+Commands that accept `SKILL...` take the union of the supplied registered names
+and members of each repeatable `--group <GROUP>`. Each selected skill runs once.
+`uninstall`, `enable`, and `disable` require a name or group. A single name on
+`uninstall` can also target a managed connection for a skill you removed from
+the manifest. `enable` and `disable` validate all names before committing one
+atomic manifest edit.
+
+A bare `sync` reconciles every registered skill and can prune managed orphan
+connections. With a selection, `sync` can prune only unwanted connections for
+the selected skills. `--no-prune` preserves unwanted connections. `sync --check`
+takes precedence over `--dry-run` and cannot be combined with `--json`. Both
+`install --json` and `sync --json` require `--dry-run`.
+
+`install` defaults to enabled skills and accepts explicitly selected disabled
+skills. `install --all` includes disabled skills in the default selection.
+`sync --all` also connects disabled skills within its current scope.
+`import` rejects source folders that contain symlinks so audits and copies
+cover the same file tree.
 
 ## How my-skills finds your registry
 
 Most commands look for your registry in this order:
 
-1. The `MY_SKILLS_ROOT` environment variable, for a single-command override.
-2. A `my-skills.toml` file in the current folder or a parent folder.
-3. The saved active registry recorded by `init-registry`, `set-root`, or the first real write.
+1. Global `--root <PATH>` for the current invocation.
+2. The `MY_SKILLS_ROOT` environment variable.
+3. A `my-skills.toml` file in the current folder or a parent folder.
+4. The saved active registry recorded by `init-registry`, `set-root`, or the first real write.
 
-If you already have a saved active registry and run a command inside a different registry folder:
+`--root` never saves the active root. Registry metadata reports `source: "flag"`.
+A path without `my-skills.toml` gives a usage error and exit `2`. `set-root` and
+`init-registry` take the path as a positional argument and reject `--root`.
 
-- **Read-only and preview commands** (`validate`, `audit`, `status`, `skills`, `data-path`, `share --plan`/`--dry-run`, `sync --check`, and every `--dry-run`) use the current folder for that run and print a note to stderr without changing your saved active registry.
-- **Commands that write** (`install`, `sync`, `enable`, `disable`, `import`, `share`, `uninstall`, `convert`, `bootstrap` without `--dry-run` or `--skip-skill-install`, and `hooks install`/`uninstall`) **refuse with exit code `2`** and write nothing. The error names both registries and the three ways out: run from the active registry, switch permanently with `my-skills set-root <path>`, or set `MY_SKILLS_ROOT=<path>` for one command.
+If lookup picks a cwd registry other than the saved active registry:
+
+- **Read-only and preview commands** use the cwd registry for that run. Commands that load it for inspection or a preview, such as `validate`, `diff`, and `sync --dry-run`, print a note to stderr.
+- **Commands that write** (`install`, `sync`, `enable`, `disable`, `import`, `share`, `uninstall`, `convert`, `bootstrap` without `--dry-run` or `--skip-skill-install`, and `hooks install`/`uninstall`) refuse with exit `2` before writing. Run from the active registry, select a registry for one command with `--root` or `MY_SKILLS_ROOT`, or switch permanently with `my-skills set-root <PATH>`.
 - Managed Git hooks installed by `my-skills hooks install` export `MY_SKILLS_ROOT` for their own registry; running `my-skills hooks run post-merge|post-rewrite|post-checkout` without `MY_SKILLS_ROOT` inside a non-active clone skips syncing with a warning instead of writing.
 
 To switch your saved active registry permanently:
@@ -47,6 +70,135 @@ my-skills doctor
 ```
 
 On a machine with no saved active registry yet, only the **first real write** from a registry (`install`, `sync`, `enable`, `disable`, `import`, `share`, `uninstall`, `convert`, `bootstrap` unless `--dry-run` or `--skip-skill-install`, or `hooks install`/`uninstall`) saves that folder automatically so later commands work from anywhere. Read-only commands, `sync --check`, every `--dry-run`, and usage errors never write or change the saved active registry; previews print `would remember <path> as the active registry` instead. Run `my-skills doctor` and check the `Registry:` line whenever you want to be sure which registry a command will use.
+
+## JSON output
+
+JSON is UTF-8. On Windows, displayed paths strip `\\?\` and use `\`. The
+`registry` object in `skills`, `share` previews, `install` and `sync` previews,
+`validate`, and `diff` has `path` and `source`. Source labels are `flag`,
+`env`, `cwd`, and `cache`.
+
+### Errors
+
+Usage and configuration errors with `--json` exit `2` and write one error object
+to stdout. The human diagnostic goes to stderr. Validation, audit, and dry-run
+checks that reach a result still return their normal report when blocked.
+
+```json
+{"error":{"code":"unknown_group","message":"unknown group: example","hint":null}}
+```
+
+Codes are `usage` (including argument parsing), `inactive_registry` (a refused
+cwd write), `unknown_skill`, `unknown_group`, `unknown_host`, and `config`.
+`hint` is a string when guidance is available and `null` otherwise.
+
+### Skill catalog
+
+`skills --json` includes the absolute `canonical_path` and the manifest `group`
+(or `null`) in each row. Repeatable `--group` matches any of the supplied groups
+and combines with the host and enabled-state filters.
+
+`skills --json --brief` returns the top-level `registry` and `skills` keys.
+Each row has `name`, `enabled`, `hosts`, `group`, and `status`, plus `error`
+if skill metadata is missing or invalid. With `--with-governance`, brief rows
+nest `audit` and `provenance` under `governance`. Full rows put `audit` and
+`provenance` at the row level. `--with-status` is an alias for
+`--with-governance`. `--brief` applies to JSON output.
+
+### Validation and audit
+
+`validate` runs the same gate as pre-commit and doctor's full validation. This
+includes standard validation, the fixed security floor, applicable enabled
+host limits, and manifest audit policy. With no selection, it checks all
+directories under the skills root, including unregistered skills. Use
+`--host <HOST>` to check only the named host's constraints. An over-limit
+description fails validation.
+
+```json
+{
+  "registry": {"path": "/path/to/registry", "source": "flag"},
+  "ok": false,
+  "skills": [
+    {
+      "skill": "example",
+      "ok": false,
+      "errors": ["codex description exceeds 768 characters"],
+      "warnings": []
+    }
+  ]
+}
+```
+
+`validate --json` exits `0` when all checks pass, `1` on a failed check, or `2`
+on a configuration error. `audit --json` returns a single result for one
+explicitly selected skill. For a default or multi-skill selection it returns
+`blocked`, `bundle_findings`, and `skills`.
+
+### Diff
+
+`my-skills diff <SKILL>` compares the canonical skill with each enabled host
+where the manifest wants a connection or an install record exists. Passing
+`--host <HOST>` checks that host even if it is disabled or the manifest does
+not want the connection. A destination without an install record shows
+`UNMANAGED` if an entry exists and `MISSING` otherwise.
+
+Diff uses the install record's destination when available. A directory
+comparison lists files only on the host (`added`), only in the registry
+(`removed`), and with changed contents (`modified`), using the drive's ignore
+rules. Paths are relative to the skill root and use `/` separators. For links,
+diff shows the target path and whether it matches the canonical skill without
+walking the linked directory.
+
+`--patch` shows unified diffs from canonical to host for changed UTF-8 text files
+up to 1 MiB. It notes binary, oversized, and empty-file changes. `diff` exits
+`0` when compared entries match, `1` for differences or missing entries, and
+`2` on error. A `FOREIGN` entry counts as different even when its files or link
+target match. Diff leaves the registry, host files, state, and root cache alone.
+
+```json
+{
+  "registry": {"path": "/path/to/registry", "source": "flag"},
+  "skill": "example",
+  "different": true,
+  "hosts": [
+    {
+      "host": "codex",
+      "status": "DRIFTED",
+      "mode": "copy",
+      "destination": "/path/to/host/example",
+      "owner": null,
+      "files": {"added": [], "removed": [], "modified": ["SKILL.md"]},
+      "patch": null,
+      "link_target": null,
+      "link_matches": null
+    }
+  ]
+}
+```
+
+`owner` is the owning registry's skills root for `FOREIGN` connections and
+`null` otherwise. `patch` is a string when a requested patch has output.
+For a link, `link_target` is its display path and `link_matches` records
+whether it points to the canonical skill. Both fields are `null` for other
+entries. For copies, status tracks both sides against their recorded install
+hashes. Identical edits to a managed copy and its canonical skill can yield
+`CONFLICT` with `different: false` and empty file lists.
+
+## Doctor
+
+Run `my-skills doctor --quick --json` for registry metadata, manifest health,
+and host and connection diagnostics. It skips the update lookup, Git and hook
+diagnostics, full validation, and the link probe. In quick JSON, `update` and
+`link_capability.kind` are `not_checked`. `registry_git`, `hooks`,
+`hooks_error`, and `full_validation` are `null`.
+
+Each built-in host row includes `configured_mode` (`link`, `copy`, or `null`
+when the manifest is unavailable) and `connections: {link, copy, fallback}`
+for records owned by the current registry. `configured_mode` describes a new
+connection. A recorded copy fallback contributes to both `copy` and `fallback`.
+Use `--no-update-check` or set `MY_SKILLS_NO_UPDATE_CHECK=1` to skip only the
+network lookup. If diagnostics find an invalid manifest, doctor exits `1` with
+the health report.
 
 ## Link or copy
 
@@ -92,9 +244,9 @@ Install state is stored locally per machine (under `$XDG_STATE_HOME` or `~/.loca
 
 | State | Meaning |
 | --- | --- |
-| `FRESH` | The host install matches the source skill in your registry. |
+| `FRESH` | The managed link points to the canonical skill, or both copy hashes match the install record. |
 | `STALE` | The source skill changed after this copy was installed; `sync` can update it. |
-| `DRIFTED` | The host copy was edited locally; `sync` will not overwrite it. |
+| `DRIFTED` | The host entry changed locally. `sync` protects the local change. |
 | `CONFLICT` | Both the source skill and the host copy changed; resolve it manually. |
 | `MISSING` | The skill is registered for this host, but not installed yet. |
 | `UNMANAGED` | A folder already exists at the host path with no managed install record. |

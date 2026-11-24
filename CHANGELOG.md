@@ -7,6 +7,57 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-24
+
+### Added
+
+- Global `--root <PATH>` selects a registry for one command. It takes
+  precedence over `MY_SKILLS_ROOT`, the current directory or parent manifest,
+  and the saved active registry. It never saves the selection and reports
+  registry source `flag`. A path without `my-skills.toml` is a usage error
+  (exit `2`). Pass the path directly to `set-root` or `init-registry`, which
+  reject combinations with `--root`.
+- `install`, `sync`, `uninstall`, `enable`, `disable`, `audit`, and `validate`
+  accept multiple skill names (`SKILL...`) and repeatable `--group` selections.
+  An explicit `sync` selection limits pruning to the selected skills and
+  preserves managed orphans. `enable` and `disable` apply each selection in
+  one atomic manifest edit.
+- `skills --json` adds `canonical_path` and `group`. Repeatable `--group`
+  filters the catalog. `--brief` returns compact JSON rows and retains `error`
+  when present. With `--with-governance` it nests `audit` and `provenance`
+  under `governance`. In a synthetic ten-skill registry, `--brief` reduced
+  stdout from 4,098 to 1,978 bytes (51.7%).
+- `validate --host <HOST>` checks that host's constraints. `validate --json`
+  reports `registry`, overall `ok`, and per-skill `ok`, `errors`, and `warnings`.
+- Usage and configuration errors with `--json` emit an `error` object on
+  stdout with `code`, `message`, and `hint`. Codes are `usage`,
+  `inactive_registry`, `unknown_skill`, `unknown_group`, `unknown_host`,
+  and `config`. Human diagnostics still go to stderr.
+- `doctor` reports each host's `configured_mode` and owned `connections`
+  counts (`link`, `copy`, `fallback`). `--quick` skips the update lookup,
+  Git and hook diagnostics, full validation, and the link probe.
+  `MY_SKILLS_NO_UPDATE_CHECK=1` skips only the update lookup.
+- `diff <SKILL>` compares live host content with the canonical skill without
+  writing. An explicit `--host` checks that target even when it is disabled
+  or the manifest does not want the connection. Diff uses the install record's
+  destination when available and lists file changes or shows the link target.
+  `--patch` adds unified diffs for changed UTF-8 text files up to 1 MiB.
+  Exit `0` means a match, `1` means a difference or missing entry, and `2`
+  means an error. A `FOREIGN` entry counts as different even if its content
+  matches. JSON returns `{registry, skill, different, hosts}`, with host fields
+  `host`, `status`, `mode`, `destination`, `owner`, `files`
+  (`{added, removed, modified}`), `patch`, `link_target`, and `link_matches`.
+  Status tracks changes against install records, so identical edits on both
+  sides can show `CONFLICT` with no live file differences.
+
+### Changed
+
+- **Deliberate behaviour change in `validate`.** It now applies the pre-commit
+  gate, including host limits and the manifest audit policy. A description
+  that exceeds an applicable host's 768-character limit now fails validation.
+- `skills --with-governance` is the new name for `--with-status`. The old flag
+  remains an alias.
+
 ## [1.1.0] - 2026-11-24
 
 ### Added

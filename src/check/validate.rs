@@ -190,8 +190,7 @@ fn get<'a>(metadata: &'a Mapping, name: &str) -> Option<&'a Node> {
 
 /// v0.4.1 `checks.compose_validation`: standard validation plus a security
 /// audit with every rule enabled. Findings at `High` or above become errors
-/// (`security: <file>: <message>`); lower findings become warnings. Used by
-/// `validate`, `install`/`sync`, and the pre-commit hook.
+/// (`security: <file>: <message>`); lower findings become warnings.
 pub fn compose_validation(path: &Path) -> ValidationResult {
     use crate::check::audit::{AuditPolicy, Severity, run_audit};
 
@@ -230,10 +229,21 @@ pub fn gate_errors(
     name: &str,
     manifest: Option<&crate::registry::manifest::Manifest>,
 ) -> Vec<String> {
+    gate_validation(path, name, manifest, None).errors
+}
+
+/// The full gate result for the CLI. An explicit host replaces the default
+/// enabled and listed host filter, while all other gate rules still apply.
+pub fn gate_validation(
+    path: &Path,
+    name: &str,
+    manifest: Option<&crate::registry::manifest::Manifest>,
+    only_host: Option<&str>,
+) -> ValidationResult {
     use crate::check::audit::{policy_from_settings, run_audit};
     use crate::registry::manifest::AuditSettings;
 
-    let mut errors = compose_validation(path).errors;
+    let mut result = compose_validation(path);
     let skill = manifest.and_then(|m| m.skills.get(name));
     for host in crate::drive::hosts::ALL {
         let enabled = manifest
@@ -241,10 +251,16 @@ pub fn gate_errors(
             .map_or(host.default_enabled, |target| target.enabled);
         let listed =
             skill.is_none_or(|s| s.hosts.is_empty() || s.hosts.iter().any(|h| h == host.name));
-        if enabled && listed {
-            for error in validate_skill_for_host(path, host).errors {
-                if !errors.contains(&error) {
-                    errors.push(error);
+        if only_host.map_or(enabled && listed, |name| name == host.name) {
+            let check = validate_skill_for_host(path, host);
+            for error in check.errors {
+                if !result.errors.contains(&error) {
+                    result.errors.push(error);
+                }
+            }
+            for warning in check.warnings {
+                if !result.warnings.contains(&warning) {
+                    result.warnings.push(warning);
                 }
             }
         }
@@ -253,12 +269,13 @@ pub fn gate_errors(
     let settings = manifest.map_or_else(AuditSettings::default, |m| m.audit.clone());
     match policy_from_settings(&settings) {
         Ok(policy) if policy.enabled => match run_audit(path, &policy) {
-            Ok(result) => {
-                if let Some(threshold) = result.threshold {
-                    for finding in result.findings.iter().filter(|f| f.severity >= threshold) {
+            Ok(audit) => {
+                if let Some(threshold) = audit.threshold {
+                    for finding in audit.findings.iter().filter(|f| f.severity >= threshold) {
                         let floor = format!("security: {}: {}", finding.file, finding.message);
-                        if !errors.contains(&floor) {
-                            errors.push(format!(
+                        result.warnings.retain(|warning| warning != &floor);
+                        if !result.errors.contains(&floor) {
+                            result.errors.push(format!(
                                 "audit ({}): {}: {}: {}",
                                 finding.severity.label(),
                                 finding.rule_id,
@@ -269,12 +286,12 @@ pub fn gate_errors(
                     }
                 }
             }
-            Err(err) => errors.push(format!("audit failed: {err}")),
+            Err(err) => result.errors.push(format!("audit failed: {err}")),
         },
         Ok(_) => {}
-        Err(err) => errors.push(format!("audit policy: {err}")),
+        Err(err) => result.errors.push(format!("audit policy: {err}")),
     }
-    errors
+    result
 }
 
 #[cfg(test)]

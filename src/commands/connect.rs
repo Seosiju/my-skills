@@ -25,7 +25,8 @@ use crate::drive::plan::{self, Action, PlanItem, SyncScope};
 use crate::drive::state::State;
 use crate::platform::paths::display_path;
 use crate::registry::manifest::{
-    CliOverrides, InstallMode, Manifest, Skill, expand_path, load_manifest,
+    CliOverrides, InstallMode, Manifest, Skill, expand_path, load_manifest, select_names,
+    selected_skills,
 };
 use crate::registry::root::{self, confirm_multi_host_write, resolve_hosts};
 
@@ -43,18 +44,16 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         Ok(loaded) => loaded,
         Err(e) => return config_error(e),
     };
-    let (skills, hosts) = match root::select_requested(
-        &manifest,
-        args.skill.as_deref(),
-        args.all,
-        args.host.as_deref(),
-    ) {
-        Ok(selection) => selection,
+    let skills = match select_names(&manifest, &args.skills, &args.groups)
+        .and_then(|names| selected_skills(&manifest, &names, args.all))
+    {
+        Ok(skills) => skills,
         Err(e) => return config_error(e),
     };
-    if let Err(error) = remember_write_root(Some(&resolution), !args.dry_run) {
-        return config_error(error);
-    }
+    let hosts = match resolve_hosts(&manifest, args.host.as_deref()) {
+        Ok(hosts) => hosts,
+        Err(e) => return config_error(e),
+    };
     let validation = validate_selected(&manifest, &skills, &hosts);
     let allow = is_builtin_seed_default_install(args, &manifest, &skills, &hosts);
     let needs_yes = !allow && hosts.len() > 1 && !args.yes;
@@ -122,6 +121,9 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         return code;
     }
     let audit = audit_meta_by_skill(&gate);
+    if let Err(error) = remember_write_root(Some(&resolution), &items) {
+        return config_error(error);
+    }
     let (_, blocked) = apply_plan(&items, &mut state, &audit, false);
     exit(blocked)
 }
@@ -134,7 +136,8 @@ fn is_builtin_seed_default_install(
     skills: &[&Skill],
     hosts_: &[String],
 ) -> bool {
-    if args.skill.is_some()
+    if !args.skills.is_empty()
+        || !args.groups.is_empty()
         || args.host.is_some()
         || args.all
         || args.mode.is_some()
@@ -185,21 +188,19 @@ fn sync_manifest_with_resolution(
         Ok(h) => h,
         Err(e) => return config_error(e),
     };
-    // Prune needs disabled skills in scope too, so sync always looks at every
-    // registered skill. `--all` keeps its v0.4.1 meaning: connect disabled
-    // skills as well.
-    let scoped: Vec<Skill> = match &args.skill {
-        Some(name) => match manifest.skills.get(name) {
-            Some(skill) => vec![skill.clone()],
-            None => return config_error(format!("unknown skill(s): {name}")),
-        },
-        None => manifest.skills.values().cloned().collect(),
+    // By default, sync looks at every registered skill so prune sees disabled
+    // skills too. `--all` connects disabled skills within the selected scope.
+    let requested = match select_names(manifest, &args.skills, &args.groups) {
+        Ok(requested) => requested,
+        Err(e) => return config_error(e),
     };
-    if let Err(error) = remember_write_root(resolution, !args.dry_run && !args.check) {
-        return config_error(error);
-    }
+    let scoped = match selected_skills(manifest, &requested, true) {
+        Ok(skills) => skills,
+        Err(e) => return config_error(e),
+    };
     let scoped: Vec<Skill> = scoped
         .into_iter()
+        .cloned()
         .map(|mut s| {
             if args.all {
                 s.enabled = true;
@@ -216,7 +217,7 @@ fn sync_manifest_with_resolution(
     let scope = SyncScope {
         skills: &skills,
         hosts: &hosts,
-        include_orphans: args.skill.is_none(),
+        include_orphans: requested.is_empty(),
         prune: !args.no_prune,
     };
     let items = match plan::plan_sync(manifest, &state, &scope, None) {
@@ -325,6 +326,9 @@ fn sync_manifest_with_resolution(
     }
     let mut state = state;
     let audit = audit_meta_by_skill(&gate);
+    if let Err(error) = remember_write_root(resolution, &items) {
+        return config_error(error);
+    }
     let (_, blocked) = apply_plan(&items, &mut state, &audit, args.quiet);
     exit(blocked)
 }
@@ -338,30 +342,35 @@ fn print_plan_results_noop(items: &[PlanItem]) {
 // ---------------------------------------------------------------- uninstall
 
 pub fn uninstall(args: &UninstallArgs) -> ExitCode {
-    let Some(skill) = args.skill.as_deref() else {
+    if args.skills.is_empty() && args.groups.is_empty() {
         return config_error("uninstall requires a skill name");
-    };
+    }
     let (manifest, resolution) =
         match load_connect_manifest(&CliOverrides::default(), !args.dry_run) {
             Ok(loaded) => loaded,
             Err(e) => return config_error(e),
         };
+    let names = match select_names(&manifest, &args.skills, &args.groups) {
+        Ok(names) => names,
+        // A v1.1 single-name uninstall can remove a managed orphan record.
+        Err(_) if args.skills.len() == 1 && args.groups.is_empty() => args.skills.clone(),
+        Err(e) => return config_error(e),
+    };
     let hosts = match resolve_hosts(&manifest, args.host.as_deref()) {
         Ok(h) => h,
         Err(e) => return config_error(e),
     };
-    if let Err(error) = remember_write_root(Some(&resolution), !args.dry_run) {
-        return config_error(error);
-    }
     let mut state = match State::load(None) {
         Ok(s) => s,
         Err(e) => return config_error(e),
     };
     let mut items = Vec::new();
-    for host in &hosts {
-        match plan::plan_uninstall_one(&manifest, skill, host, &state) {
-            Ok(item) => items.push(item),
-            Err(e) => return config_error(e),
+    for name in &names {
+        for host in &hosts {
+            match plan::plan_uninstall_one(&manifest, name, host, &state) {
+                Ok(item) => items.push(item),
+                Err(e) => return config_error(e),
+            }
         }
     }
     if args.dry_run {
@@ -374,6 +383,9 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
     }
     if !confirm_multi_host_write(&hosts, args.yes) {
         return ExitCode::from(2);
+    }
+    if let Err(error) = remember_write_root(Some(&resolution), &items) {
+        return config_error(error);
     }
     let mut warned = false;
     let mut failed = false;
@@ -428,9 +440,6 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
         Ok(selection) => selection,
         Err(e) => return config_error(e),
     };
-    if let Err(error) = remember_write_root(Some(&resolution), !args.dry_run) {
-        return config_error(error);
-    }
     let mut state = match State::load(None) {
         Ok(s) => s,
         Err(e) => return config_error(e),
@@ -456,6 +465,9 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
         return ExitCode::from(2);
     }
     print_skipped_convert_hosts(&skipped_hosts);
+    if let Err(error) = remember_write_root(Some(&resolution), &items) {
+        return config_error(error);
+    }
     let (_, blocked) = apply_plan(&items, &mut state, &BTreeMap::new(), false);
     exit(blocked)
 }
@@ -554,13 +566,14 @@ fn resolve_write_root() -> crate::Result<root::RootResolution> {
     Ok(resolution)
 }
 
-// Resolve with the write guard up front, then remember the registry after
-// manifest-dependent argument checks have passed.
+// After all checks pass, remember the registry only for a plan that will write.
 fn remember_write_root(
     resolution: Option<&root::RootResolution>,
-    writes: bool,
+    items: &[PlanItem],
 ) -> crate::Result<()> {
-    if let Some(resolution) = resolution.filter(|resolution| writes && resolution.would_cache()) {
+    if let Some(resolution) = resolution.filter(|resolution| resolution.would_cache())
+        && items.iter().any(|item| item.action.writes())
+    {
         root::resolve_root(Some(&resolution.root), true)?;
     }
     Ok(())
