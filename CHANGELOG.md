@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 This project follows a GitHub-first release flow. Git tags and GitHub Releases
 are the release source of truth while PyPI publishing remains undecided.
 
-## [Unreleased]
+## [1.3.0] - 2026-11-25
 
 ### Added
 
