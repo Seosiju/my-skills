@@ -286,6 +286,7 @@ fn doctor_json_reports_git_default_branch_dirty_rename_links_and_hook_status() {
         report["hooks"]["entries"],
         json!([
             {"name": "pre-commit", "status": "installed", "version": "v1"},
+            {"name": "post-commit", "status": "installed", "version": "v1"},
             {"name": "post-merge", "status": "foreign", "version": null},
             {"name": "post-rewrite", "status": "installed", "version": "v1"},
             {"name": "post-checkout", "status": "missing", "version": null},

@@ -59,17 +59,31 @@ fn text_output_creates_a_disabled_draft_and_lists_the_next_steps() {
         .success()
         .stderr("");
     let text = String::from_utf8(output.get_output().stdout.clone()).unwrap();
-    assert!(text.contains(&format!("created: {}", display_path(&dir))), "{text}");
-    assert!(text.contains(&format!("created: {}", display_path(&path))), "{text}");
-    assert!(text.contains(&format!("1. Edit {}", display_path(&path))), "{text}");
+    assert!(
+        text.contains(&format!("created: {}", display_path(&dir))),
+        "{text}"
+    );
+    assert!(
+        text.contains(&format!("created: {}", display_path(&path))),
+        "{text}"
+    );
+    assert!(
+        text.contains(&format!("1. Edit {}", display_path(&path))),
+        "{text}"
+    );
     assert!(text.contains("2. my-skills enable draft"), "{text}");
     assert!(
         text.contains("3. my-skills sync draft --dry-run --json, then commit"),
         "{text}"
     );
 
-    let skill = fs::read_to_string(&path).unwrap().replace(char::from(13), "");
-    assert!(skill.starts_with("---\nname: draft\ndescription: \"TODO: replace"), "{skill}");
+    let skill = fs::read_to_string(&path)
+        .unwrap()
+        .replace(char::from(13), "");
+    assert!(
+        skill.starts_with("---\nname: draft\ndescription: \"TODO: replace"),
+        "{skill}"
+    );
     let config = fixture.config();
     let section = config["skills"]["draft"].as_table().unwrap();
     assert_eq!(section["enabled"].as_bool(), Some(false));
@@ -138,10 +152,19 @@ fn the_new_skill_passes_validate_and_is_a_listed_disabled_skill() {
     let fixture = fixture();
     fixture
         .command()
-        .args(["new", "valid-one", "--description", "Has: colon, \"quotes\", and # hash."])
+        .args([
+            "new",
+            "valid-one",
+            "--description",
+            "Has: colon, \"quotes\", and # hash.",
+        ])
         .assert()
         .success();
-    fixture.command().args(["new", "valid-two"]).assert().success();
+    fixture
+        .command()
+        .args(["new", "valid-two"])
+        .assert()
+        .success();
     for name in ["valid-one", "valid-two"] {
         fixture
             .command()
@@ -184,7 +207,12 @@ fn dry_run_writes_nothing_and_reports_dry_run_true() {
         .stdout(contains("Dry run"))
         .stdout(contains("would create:"));
     assert_eq!(tree(&fixture.registry), before);
-    assert!(!fixture.config()["skills"].as_table().unwrap().contains_key("draft"));
+    assert!(
+        !fixture.config()["skills"]
+            .as_table()
+            .unwrap()
+            .contains_key("draft")
+    );
     // A real write never reports dry_run.
     assert!(new_json(&fixture, &["draft"], 0).get("dry_run").is_none());
 }
@@ -215,7 +243,14 @@ fn an_existing_directory_file_or_broken_link_blocks_the_name() {
     // An unregistered draft directory.
     fs::create_dir_all(fixture.canonical("sketch")).unwrap();
     assert_conflict(&fixture, &["sketch"], "skill already exists");
-    assert!(fixture.canonical("sketch").read_dir().unwrap().next().is_none());
+    assert!(
+        fixture
+            .canonical("sketch")
+            .read_dir()
+            .unwrap()
+            .next()
+            .is_none()
+    );
 
     // A plain file.
     fs::write(fixture.canonical("note"), "not a dir").unwrap();
@@ -258,8 +293,16 @@ fn invalid_names_unknown_hosts_and_bad_descriptions_are_usage_errors() {
     assert_conflict(&fixture, &["fine", "--host", "mars"], "unknown host: mars");
     let json = new_json(&fixture, &["fine", "--host", "mars"], 2);
     assert_eq!(json["error"]["code"], "unknown_host");
-    assert_conflict(&fixture, &["fine", "--group", "Bad Group"], "invalid group name");
-    assert_conflict(&fixture, &["fine", "--description", "  "], "must not be empty");
+    assert_conflict(
+        &fixture,
+        &["fine", "--group", "Bad Group"],
+        "invalid group name",
+    );
+    assert_conflict(
+        &fixture,
+        &["fine", "--description", "  "],
+        "must not be empty",
+    );
     let long = "x".repeat(1025);
     assert_conflict(&fixture, &["fine", "--description", &long], "exceeds 1024");
     // A new group is fine.
