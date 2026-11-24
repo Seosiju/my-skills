@@ -81,6 +81,22 @@ Codex 운영:
 - 2단계: `gpt-6.2-sol` `high` 3개. 약 47%포인트를 썼다(48% → 1%).
 - 감사 이후에는 Codex를 쓰지 않았다.
 
+**wave13: 에이전트 사용성 P0 (2026-11-24, Windows PC, 통합 Claude)**
+
+Claude, Codex, agy가 my-skills를 에이전트 입장에서 직접 써 보고 사용성 기획에 합의했다(P0는 wave13, P1은 wave14, P2와 보류 항목은 §7 M). 이번에 들어간 것은 P0다.
+
+1. 조회·미리보기 명령과 사용법 오류는 root 캐시를 쓰지 않는다.
+2. cwd의 레지스트리가 활성 레지스트리와 다르면 쓰기 명령(`hooks install`/`uninstall`, `bootstrap` 포함)을 exit 2로 거부한다. `MY_SKILLS_ROOT`로 명시하면 허용한다.
+3. state 기록의 레지스트리 소유권을 확인한다. 다른 레지스트리가 만든 연결은 `FOREIGN`/`BLOCK_FOREIGN`이 되어 prune하거나 덮어쓰지 않는다. 그전에는 copy 연결이 지워질 수 있었다.
+4. `sync --dry-run`이 실제 sync와 같은 검증·감사를 거친다. dry-run JSON에는 `registry`, `blocked`, `applicable`, `block_reasons`, `validation`이 들어간다.
+5. JSON을 UTF-8 그대로 출력한다. 한국어 설명 기준으로 `skills --json`이 약 44% 줄었고, audit 해시는 바뀌지 않는다. Windows 경로 표시도 정리했다.
+6. `--help`에 모든 옵션을 설명했다.
+
+진행 방식:
+- Codex 두 개(S1 `xhigh`, S2 `high`)가 병렬로 구현했다. agy가 블라인드 검토에서 11건(High 3)을 찾았고, Codex 두 개가 각 지적을 재현한 뒤 고쳤으며, agy 재검토를 통과했다. 문서는 agy가 썼다.
+- Codex는 `--yolo` 대신 `--approve-for-me`(작업 폴더 쓰기 샌드박스)로 실행했다. 샌드박스가 worktree의 git index 잠금을 막아 커밋은 통합 담당이 했고, 샌드박스 계정에서는 `repo_skills_smoke`가 git 소유권 검사에 걸린다(샌드박스 밖에서는 통과).
+- 테스트 278개 통과(Windows). 실제 사용자 상태(state, root 캐시, 레지스트리, host 폴더)는 작업 전후로 같음을 hash로 확인했다.
+
 ---
 
 ## 3. 작업 단위별 결과
@@ -285,6 +301,7 @@ Windows PC의 Claude가 정적으로 검토했다. 맥 명령은 Windows에서 �
 | J | 자동 pull (macOS launchd, Windows 작업 스케줄러). **보류(2026-11-24)**: 지금도 `git pull` 한 번이면 hook이 모든 host에 반영한다. 백그라운드 pull은 편집 중인 레지스트리와 충돌할 수 있으므로 필요해지면 스펙부터 쓴다 | I | 스펙 작성 후 승인 |
 | K | ~~worktree 정리 (`dev-stream-*` 8개와 그 브랜치. 디스크 약 12GB)~~ **완료(2026-11-24)**. worktree마다 커밋하지 않은 변경이 없고 브랜치가 `dev`에 병합됐음을 확인한 뒤 `git worktree remove`(강제 없음)와 `git branch -d`로 지웠다. 원격 브랜치는 없었다. 루트 이동 뒤 남은 빈 `crates/` 폴더도 지웠다(추적되지 않는 파일만 있었음) | — | — |
 | L | 작은 코드 정리: (1) ~~`ETXTBSY` 재시도~~ **완료**(`80cd32e`): `support_i.rs`의 `assert_with_busy_retry`를 `update_cli.rs`, `hooks_git.rs`, `registry_init.rs`가 함께 씀. Windows에서는 재현할 수 없어 Linux CI에서 확인해야 한다. 남은 경로: `src/update.rs`가 새 binary를 직접 실행해 버전을 확인하는 부분은 테스트 쪽 재시도로 막을 수 없다, (2) ~~convert의 state 이중 저장~~ **완료**(`cf64428`): `Outcome::Converted`이면 `apply_plan`이 다시 저장하지 않음. §6.6 순서는 그대로이고, 회귀 테스트를 추가함, (3) **완료(2026-11-24, `a3f54c1`)**. 처음에는 유지로 정했으나 잘못이었다. `--dry-run`이 "nothing written"이라고 하면서 첫 실행에 root 캐시를 썼다. 이제 `--dry-run`은 캐시를 쓰지 않고 `would remember <path> as the active registry`로 미리 보여 주며, 다른 레지스트리가 활성이면 기존 note도 낸다. 실제 명령의 첫 실행 캐시(이미 있는 기록은 바꾸지 않음)는 그대로다. `import --dry-run`은 판정이 실제 import와 같도록 레지스트리 안의 staging 복사본과 편집 잠금을 잠깐 쓰고 지우는 기존 동작을 유지한다(§6.3). 원래 질문: 읽기 전용 명령과 `--dry-run`이 활성 레지스트리 기록을 쓰지 않게 할지, (4) **결정(2026-11-24): 유지**(`HOME` 우선). H, G 6.1, 릴리스 전환에서 문제가 없었다. 원래 질문: H 결과에 따라 Windows에서 `HOME`보다 `USERPROFILE`을 우선할지. 바꾸면 `HOME`만 지정하는 테스트 환경은 실제 홈에 쓰게 된다. `12524a6` 이후 CLI 테스트 환경은 `HOME`과 `USERPROFILE`을 함께 지정하므로, 바꿀 때는 새로 생기는 테스트 환경도 같은 규칙을 지키는지 확인한다, (5) ~~Windows 테스트 격리~~ **완료**. 아래 (b)(c)의 비교 범위 보강도 2026-11-24에 CI에 넣었다(`HOME`이 다를 때의 host 폴더, root·state·data 기본 위치, XDG 위치). Rust 부분(`12524a6`, `22b85cd`): CLI 테스트 환경이 `HOME`, `USERPROFILE`, `LOCALAPPDATA`, `APPDATA`, `XDG_*`를 모두 임시 폴더로 돌린다. `data-path` 테스트에 Windows 위치 검사를 넣었다. Windows CI는 Rust 테스트 전후로 사용자 위치 목록을 비교한다. CI `45102239347`(`cf3489b`)에서 네 작업이 모두 통과했고, Windows 비교 단계도 실행되어 통과했다. 확인한 범위는 "다섯 곳(`%USERPROFILE%` 기준 host 폴더 4곳과 `%LOCALAPPDATA%\my-skills`)의 경로와 파일 종류 목록에 차이가 없음"이다. 확인 범위의 한계(이번 변경을 되돌릴 결함은 아님): (a) 파일 내용 변경과, 비교 사이에 생겼다가 지워진 것은 잡지 못한다. (b) host 기준이 `USERPROFILE`인데 Rust는 `HOME`을 먼저 읽으므로, runner의 `HOME`이 `USERPROFILE`과 다르면 `HOME` 쪽에 쓴 것을 놓친다. (c) XDG 기반 root, state 경로(`~/.config/my-skills`, `~/.local/state/my-skills`)는 비교 대상이 아니다. 보강이 필요한 조건: (b)는 `HOME`이 정의되어 있고 `USERPROFILE`과 다를 때, (c)는 언제나. 보강하려면 `HOME` 기준 경로와 root, state 기본 경로를 비교 목록에 추가한다. 참고: 임시 폴더를 tool repo 안에 두면 `doctor_report.rs`가 실패한다(레지스트리를 찾다가 tool repo를 잡음). Python 0.4.x는 고치지 않고 D에서 지운다(D1 결정), (6) **완료**(`a76fdfa`, 보고서 경로를 `/`로 통일): Windows에서 audit 보고서의 파일 경로 표기를 `/`로 통일할지 결정한다. Python은 `\`로 나오고, Rust는 코드상 그럴 가능성이 있다. 해시 입력은 두 판 모두 이미 `/`, (7) **완료**(`b3ec26c`): doctor 문구: 레지스트리를 읽지 못하는 상태에서 agy link 기록이 있으면, 경고가 정상 manifest가 필요한 `convert`를 안내한다. "먼저 레지스트리를 찾거나 고치라"는 말을 덧붙인다(`src/commands/doctor.rs` convert-only 분기, `tests/doctor_report.rs`의 manifest 없는 경우 기대값), (8) 참고: wave4에서 라이브러리 함수 `plan_sync`의 인자가 `Option<InstallMode>`로 바뀌었다(저장소 안의 호출은 모두 고침), (9) **완료**(`a76fdfa`): hook 설치 메시지의 경로가 `/`와 `\`를 섞어 출력한다(표시만의 문제), (10) **완료**(`a76fdfa`): `set-root`(실행과 `--dry-run`)의 출력에 `\\?\` 접두어가 남는다(doctor와 같은 표시 수정이 필요), (11) **완료**(`b3ec26c`, 미리보기 문구를 실제 동작에 맞춤): `bootstrap --dry-run`은 "then: my-skills hooks install"이라고 보여 주지만 실제 bootstrap은 hook을 설치하지 않고 안내만 한다. 미리보기 문구를 실제 동작에 맞출지, bootstrap이 hook까지 설치하게 할지 결정한다, (12) **완료**(`b3ec26c`, 같은 동작의 단순한 식으로 바꿈): `src/commands/doctor.rs`의 agy 경고 조건식이 Rust 1.96의 clippy에서 `nonminimal_bool`로 걸린다. CI의 1.100에서는 통과하고 동작에는 영향이 없다. 2026-11-24 결정으로 그때는 고치지 않았다(§6.6) | (4)는 H | 필요 없음 (동작 변경인 (3), (4)는 결정 후) |
+| M | 에이전트 사용성 P1(wave14, P0 병합 뒤): 전역 `--root`, `validate --json`과 host 검사, `--json` 구조화 에러, doctor `hosts[]`의 설정·실제 연결 방식, `skills --json`의 `canonical_path`·`group`·`--brief`·`--group`, 복수 스킬 인자, 읽기 전용 `diff`, `--with-governance` 별칭과 my-skills SKILL.md 경량화. P2(후속 검토): manifest 편집 CLI, `new`, opt-in `--fail-on-block` | wave13 | 필요 없음 |
 
 ### 권장 순서
 
