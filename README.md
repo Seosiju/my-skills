@@ -6,20 +6,19 @@ _One canonical home for your skills — installed, synced, and shared across Cla
 
 **English** | [한국어](README.ko.md)
 
-[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
-[![built with uv](https://img.shields.io/badge/built%20with-uv-purple.svg)](https://docs.astral.sh/uv/)
+[![Rust](https://img.shields.io/badge/built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 [![spec: Agent Skills](https://img.shields.io/badge/spec-Agent%20Skills-green.svg)](https://agentskills.io/specification)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
 `my-skills` is a small CLI that keeps your [Agent Skills](https://agentskills.io/specification)
 in a single place and installs the same skill into every AI coding agent you use.
-Edit a skill once; `sync` propagates it everywhere — and tells you when a copy has
-drifted instead of silently clobbering your work.
+Edits to a linked skill are visible in each host. For copy installs, `sync`
+propagates canonical edits and flags locally edited copies.
 
 ## Why
 
 - **Author once, run anywhere** — the same skill works in Claude Code, Codex, Hermes, and Antigravity CLI.
-- **No silent overwrites** — installs copy by default and detect local edits (drift) before touching them.
+- **Live links by default** — new registries use links, and copy mode detects local edits before replacing a copy.
 - **Machine-local stays local** — secrets, paths, and accounts never land in a canonical skill or in git.
 - **CI-friendly** — `validate`, `install`, and `sync --check` exit non-zero on errors or drift.
 
@@ -49,8 +48,16 @@ agy -p '/skills' --output-format json
 ```
 
 The project path is `.agents/skills`. Global-path discovery for both regular
-folders and symlinks was verified with **Antigravity CLI 1.2.16**; `/skills`
-used zero model turns and tokens in that verification. This does not validate
+folders and symlinks was verified on macOS with **Antigravity CLI 1.2.16**; `/skills`
+used zero model turns and tokens in that verification. On Windows, `my-skills`
+links skills with directory junctions by default, which **Antigravity CLI 1.5.14**
+did not discover while regular folders worked. Windows users can set
+`install_mode = "copy"` under `[targets.agy]` in `my-skills.local.toml` while
+other hosts keep links; `my-skills doctor` warns on Windows when `agy` is
+enabled with effective mode `link`, or when recorded `agy` link connections
+remain (even if `agy` is disabled or already set to `copy`). On Windows, run
+`agy -p '/skills' --output-format json` from PowerShell rather than Git Bash
+(Git Bash rewrites `/skills` into a Windows path). This does not validate
 Antigravity IDE or every CLI version. Official documentation has also described
 `~/.gemini/antigravity-cli/skills`, so recheck discovery on other versions and use
 a target path override if needed. Preserve existing unmanaged skills: compare,
@@ -63,47 +70,77 @@ Public Hermes support remains unchanged; personal registries may disable it.
 
 The tool repo (this repository) is what you install. Your registry (default
 `~/my-agent-skills`, created by `init-registry`) is where your skills live.
-Cloning this repository is only for contributors; it is not your registry.
+The source checkout provides the CLI and its public seed files. Keep your registry in a separate directory.
 
 A skill is just a directory under your registry's `skills/<name>/` with a
 `SKILL.md` that carries YAML frontmatter (`name`, `description`) — the
 [Agent Skills](https://agentskills.io/specification) standard. Your registry's
 `skills/` directory is the **canonical** source of truth.
 
-Each agent (Claude Code, Codex, Hermes, Antigravity CLI) is a **host**. `install` copies a canonical
-skill into a host; `sync` keeps those copies up to date. Because copies can be edited
-in place, `my-skills` tracks **drift** so a `sync` never overwrites local changes
-without telling you.
+Each agent (Claude Code, Codex, Hermes, Antigravity CLI) is a **host**.
+`install` connects canonical skills to hosts using links or copies. `sync`
+reconciles configured connections and removes managed installs that are no
+longer wanted by default. It protects locally edited copies from overwrites.
 
-Think of your registry's `skills/` as your source and each host copy as a build
-output:
+The registry's `skills/` directory holds the canonical skills. Host directories
+hold links to those skills or copies that the agent can discover.
 
 ```mermaid
 flowchart LR
     edit["✏️ You"] --> src["registry skills/&lt;name&gt;<br/><b>source (canonical)</b>"]
     ext["external skill"] -.->|import / share| src
-    src -->|"install (first deploy)"| out
-    src -->|"sync (re-deploy)"| out
+    src -->|"install (link or copy)"| hosts
+    src -->|"sync (reconcile)"| hosts
 
-    subgraph out["build output (each host)"]
+    subgraph hosts["Host directories"]
         c["Claude Code"]
         x["Codex"]
         h["Hermes"]
         a["Antigravity CLI (agy)"]
     end
 
-    out -. "if edited directly" .-> drift["⚠️ DRIFTED<br/>sync won't overwrite"]
+    hosts -. "if a copy is edited directly" .-> drift["⚠️ DRIFTED<br/>sync won't overwrite"]
 ```
+
+## Install the CLI
+
+The installers download the latest stable binary from GitHub Releases and
+verify the archive against `SHA256SUMS`.
+
+### macOS and Linux
+
+For Apple silicon or Intel Macs and x86-64 GNU/Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Seosiju/my-skills/main/scripts/install.sh -o my-skills-install.sh
+sh ./my-skills-install.sh
+```
+
+The default install directory is `$HOME/.local/bin`. Add it to PATH if needed,
+then run `my-skills --version`.
+
+### Windows
+
+From PowerShell on x86-64 Windows:
+
+```powershell
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Seosiju/my-skills/main/scripts/install.ps1' -OutFile '.\my-skills-install.ps1'
+.\my-skills-install.ps1 -AddToPath
+my-skills --version
+```
+
+The default install directory is `%LOCALAPPDATA%\Programs\my-skills\bin`.
+`-AddToPath` adds it to your user PATH and the current PowerShell session.
+
+For a specific release, set `MY_SKILLS_VERSION` to its tag before running the
+installer. If another `my-skills` is already installed, check that PATH selects
+the new binary. See [CONTRIBUTING.md](CONTRIBUTING.md) for source builds.
 
 ## Quick start
 
-Requirements: **Python 3.11+** and [uv](https://docs.astral.sh/uv/).
-
-Install the CLI from GitHub, then create your private registry:
+After installing the CLI, run the following from outside the tool repo:
 
 ```bash
-uv tool install git+https://github.com/Seosiju/my-skills.git
-
 my-skills init-registry        # prompts for a location; default: ~/my-agent-skills
 my-skills doctor               # confirm the Registry line points at your registry
 my-skills install --dry-run    # preview seeded default skill installs
@@ -121,24 +158,29 @@ my-skills skills --json
 
 ## Updating the CLI
 
-`my-skills doctor` reports when a newer stable CLI release is available.
-Updates are never applied automatically; run the update command explicitly when
-you want to replace the installed tool:
+In Python v0.4.2, run `my-skills update` for the Rust migration instructions.
+The Python command prints the installer links for a stable v1 release.
+See the [v0.4.2 changelog entry](CHANGELOG.md#042---2026-11-23).
+
+The Rust CLI's `my-skills doctor` checks for a newer stable v1 release. Run
+`my-skills update` to install it. The updater verifies the archive checksum
+and replaces the executable you ran.
 
 ```bash
 my-skills doctor
 my-skills update
 ```
 
-By default, `update` installs the latest `vMAJOR.MINOR.PATCH` release tag. To
-check without changing anything:
+Use `--check` to check for an update or `--dry-run` to preview the downloads
+and executable replacement for a newer release:
 
 ```bash
 my-skills update --check
 my-skills update --dry-run
 ```
 
-For development builds from the `main` branch:
+`--channel main` chooses the highest version among published releases,
+including prereleases:
 
 ```bash
 my-skills update --channel main
@@ -182,7 +224,6 @@ Create a private registry. With no path, the default is `~/my-agent-skills`;
 and runs `git init`:
 
 ```bash
-uv tool install git+https://github.com/Seosiju/my-skills.git
 my-skills init-registry
 ```
 
@@ -197,8 +238,9 @@ my-agent-skills/
 ```
 
 Pass `--no-defaults` for a blank registry, or `--no-git` if you want a plain
-folder with no git repository. `bootstrap` is now a contributor path for editable
-source checkouts, not the normal first-run setup.
+folder with no git repository. On another machine, clone an existing registry
+and run `my-skills bootstrap` from that clone to reconcile its host connections.
+Run `my-skills hooks install` separately to set up its Git hooks.
 
 ## Where commands look for your registry
 
@@ -240,13 +282,14 @@ enabled = true
 hosts = ["claude", "codex", "hermes", "agy"]
 ```
 
-Preview before writing to agent hosts:
+Validate the registry and review the install plan for the new skill before
+confirming the write to multiple hosts.
 
 ```bash
 my-skills validate
 my-skills audit --all --json
-my-skills install --dry-run
-my-skills install
+my-skills install my-private-skill --dry-run
+my-skills install my-private-skill --yes
 ```
 
 ## Included skills
@@ -282,17 +325,18 @@ my-skills skills              # add --json for agents/UIs
 my-skills status              # install status per skill and host
 
 # Install / update.
-my-skills install --dry-run   # preview the plan, write nothing
+my-skills install --dry-run   # preview host changes
 my-skills install             # enabled skills -> enabled hosts
 my-skills install cli-inventory --host claude
 my-skills install cli-inventory --host all --yes  # explicit multi-host write
-my-skills sync                # push canonical edits to managed installs
-my-skills sync --check        # detect drift only (non-zero exit if not fresh)
+my-skills sync --dry-run      # preview changes including removals
+my-skills sync --yes          # reconcile the reviewed plan across enabled hosts
+my-skills sync --check        # non-zero if reconciliation needs changes or is blocked
 
 # Remove a managed install (recorded destinations only).
 my-skills uninstall cli-inventory --host claude
 
-# Turn a skill on/off for default install/sync selection.
+# Turn a skill on/off in the manifest.
 my-skills enable cli-inventory
 my-skills disable cli-inventory
 ```
@@ -308,10 +352,11 @@ my-skills install cli-inventory --host <host>
 # Or register it as enabled immediately.
 my-skills import ~/.hermes/skills/cli-inventory --enable
 
-# Or review a host's local skills, then promote one into my-skills.
+# Or promote a Claude Code skill that is new to the registry.
 my-skills share --from claude --plan --json
-my-skills share --from claude cli-inventory --enable
-my-skills sync cli-inventory
+my-skills share --from claude example-skill --enable
+my-skills sync example-skill --dry-run
+my-skills sync example-skill --yes
 ```
 
 `import` registers the skill in `my-skills.toml` automatically. By default the
@@ -322,18 +367,28 @@ and copy boundaries stay the same directory tree.
 ### Develop a skill live
 
 ```bash
-# Symlink the host copy to canonical so edits show up without a sync.
+# Link the host directory to the canonical skill so edits show up immediately.
 my-skills install cli-inventory --host claude --mode link
 ```
 
-A linked install always reports `FRESH`; `uninstall` removes only the symlink and
-never the canonical source. Copy mode is the default.
+Link mode uses a symlink on Unix and prefers a junction on Windows. Uninstalling a
+managed link removes the link while leaving its target in the registry. You can
+override `install_mode = "link" | "copy"` per host under `[targets.<host>]` in
+`my-skills.toml` or `my-skills.local.toml` (precedence for new connections:
+`install --mode` > `[targets.<host>] install_mode` > `[defaults] install_mode`).
+Existing installs retain their recorded mode. Use `my-skills convert --to link`
+with `--dry-run` to preview converting existing copies; `convert --to <mode> --host all`
+skips hosts whose explicit `[targets.<host>] install_mode` differs from `--to`,
+while an explicit `--host <name>` still converts as requested.
 
 ## How it stays safe
 
-- **Copy by default.** Installs copy the canonical directory; nothing changes until the next `install` or `sync`.
-- **Multi-host writes require confirmation.** `--host all` and other multi-host writes
-  need `--yes` after you review a dry-run plan. Read-only checks still run without it.
+- **Link by default.** Set `install_mode = "copy"` under `[defaults]` or
+  `[targets.<host>]` in `my-skills.toml` / `my-skills.local.toml`, or pass
+  `--mode copy` to `install` to create new copies.
+- **Multi-host writes require confirmation.** Review a dry run before running
+  `install` or `sync` with `--yes` across multiple hosts. A plain `install` of
+  only built-in seeds at default host paths is exempt.
 - **Collision = block.** A pre-existing, unmanaged destination is never overwritten.
 - **Drift-protected.** A locally edited copy is reported, not clobbered.
 - **Atomic writes.** Installs stage to a temp dir and swap into place; failures roll back.
@@ -346,13 +401,16 @@ and never committed.
 | State | Meaning |
 |-------|---------|
 | `FRESH` | install matches canonical |
-| `STALE` | canonical changed; `sync` will update it |
+| `STALE` | canonical changed since the copy was installed |
 | `DRIFTED` | the install was edited locally; `sync` won't touch it |
 | `CONFLICT` | both sides changed — no auto-merge |
 | `MISSING` | registered but not installed |
-| `UNMANAGED` | a copy exists that my-skills did not install |
+| `UNMANAGED` | a destination exists without a managed install record |
+| `BROKEN` | a managed link points at a missing canonical directory |
+| `UNSUPPORTED` | the skill's host list excludes this host |
 
-`sync` only writes the safe cases; `DRIFTED`, `CONFLICT`, and `UNMANAGED` block with a non-zero exit.
+When `sync` tries to connect a wanted skill, `DRIFTED`, `CONFLICT`,
+`UNMANAGED`, and `BROKEN` block that connection and produce a non-zero exit.
 
 ### Machine-local data
 
@@ -385,8 +443,9 @@ tokens, or personal memory.
 
 ```text
 my-skills.toml            # dev/test manifest for this CLI project
-skills/<name>/SKILL.md    # public seed sources packaged into the wheel
-src/my_skills/            # CLI package
+skills/<name>/SKILL.md    # public seed sources embedded in the binary
+Cargo.toml                # Rust package manifest
+src/                      # Rust library and CLI
 tests/                    # unit + fixture-driven tests
 ```
 
@@ -403,29 +462,28 @@ my-agent-skills/
 └── README.md
 ```
 
-The manifest's `enabled` flag controls default selection: a bare `install` / `sync`
-targets only `enabled = true` skills; pass `--all` to target every registered skill.
+By default, `install` connects enabled skills. A bare `sync` also considers
+disabled and unregistered skills so it can remove their managed installs.
+Use `sync --no-prune` to skip removals. Pass `--all` to `install` or `sync` to
+include disabled skills among the connections to make.
 
 ## Tests
 
 ```bash
-uv run pytest
-uv build
+cargo fmt --all --check
+cargo clippy --all-targets -- -D warnings
+cargo test --all-targets
+cargo build --release
 ```
 
-Release hygiene also expects:
+Run the CLI from the working tree. Use a test registry and test host paths for
+smoke checks.
 
 ```bash
-uv run my-skills doctor
-uv run my-skills skills --json
-uv run my-skills bootstrap --dry-run
-uv run my-skills install my-skills --host hermes --dry-run
-
-uv tool install --force git+https://github.com/Seosiju/my-skills.git
-my-skills bootstrap --dry-run
-my-skills doctor
-my-skills skills --json
-my-skills install my-skills --host hermes --dry-run
+cargo run -- doctor --no-update-check
+cargo run -- skills --json
+cargo run -- bootstrap --dry-run
+cargo run -- install my-skills --host hermes --dry-run
 ```
 
 See [docs/release-checklist.md](docs/release-checklist.md) before tagging a

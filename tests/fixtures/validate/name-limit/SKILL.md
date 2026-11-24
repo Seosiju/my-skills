@@ -1,0 +1,4 @@
+---
+name: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+description: Name length and syntax fail together
+---

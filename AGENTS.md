@@ -12,7 +12,7 @@ Use these terms consistently:
 | CLI | The installed `my-skills` executable. |
 | registry | A user's canonical skill repository, default `~/my-agent-skills`. |
 | active root | The registry path cached under the user's XDG config directory. |
-| host directory | Agent install output, such as `~/.claude/skills`. |
+| host directory | Directory where an agent discovers skills, such as `~/.claude/skills`. It holds links to registry skills or installed copies. |
 
 When a task needs to inspect or modify a user's registry, run `my-skills doctor`
 first and read the `Registry:` line. If it points somewhere unexpected, ask for
@@ -21,9 +21,11 @@ or set the intended registry with `my-skills set-root <path>` before writing.
 Development commands:
 
 ```bash
-uv run pytest
-uv build
-uv run my-skills <cmd>
+cargo fmt --all --check
+cargo clippy --all-targets -- -D warnings
+cargo test --all-targets
+cargo build --release
+cargo run -- <cmd>
 ```
 
 Running commands inside this source checkout should not silently repoint an

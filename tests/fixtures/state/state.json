@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "installs": [
+    {
+      "skill": "alpha",
+      "host": "claude",
+      "mode": "link",
+      "source": "/fixture/\uc790\ub8cc-\ud83e\udd80/skills/alpha",
+      "destination": "/fixture/hosts/claude/alpha",
+      "source_hash": "sha256:aaaa",
+      "installed_hash": "sha256:bbbb",
+      "installed_at": "2026-01-02T03:04:05Z",
+      "source_type": "synthetic",
+      "source_url": "https://example.invalid/sample",
+      "source_revision": "example-revision",
+      "last_audit_at": "2026-01-02T03:04:06Z",
+      "last_audit_result_hash": "sha256:cccc",
+      "audit_profile": "fixture",
+      "audit_threshold": "high"
+    },
+    {
+      "skill": "alpha",
+      "host": "codex",
+      "mode": "copy",
+      "source": "/fixture/\uc790\ub8cc-\ud83e\udd80/skills/alpha",
+      "destination": "/fixture/hosts/codex/alpha",
+      "source_hash": "sha256:aaaa",
+      "installed_hash": "sha256:bbbb",
+      "installed_at": "2026-01-02T03:04:05Z",
+      "source_type": "synthetic",
+      "source_url": "https://example.invalid/sample",
+      "source_revision": "example-revision",
+      "last_audit_at": "2026-01-02T03:04:06Z",
+      "last_audit_result_hash": "sha256:cccc",
+      "audit_profile": "fixture",
+      "audit_threshold": "high"
+    },
+    {
+      "skill": "zeta",
+      "host": "claude",
+      "mode": "copy",
+      "source": "/fixture/\uc790\ub8cc-\ud83e\udd80/skills/zeta",
+      "destination": "/fixture/hosts/claude/zeta",
+      "source_hash": "sha256:aaaa",
+      "installed_hash": "sha256:bbbb",
+      "installed_at": "2026-01-02T03:04:05Z",
+      "source_type": "synthetic",
+      "source_url": "https://example.invalid/sample",
+      "source_revision": "example-revision",
+      "last_audit_at": "2026-01-02T03:04:06Z",
+      "last_audit_result_hash": "sha256:cccc",
+      "audit_profile": "fixture",
+      "audit_threshold": "high"
+    }
+  ]
+}

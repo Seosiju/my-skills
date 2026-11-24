@@ -22,7 +22,7 @@ Useful details include:
 - Exact reproduction steps.
 - Whether the issue can expose secrets, overwrite files, install untrusted
   content, or execute unintended commands.
-- The operating system, Python version, and `my-skills` version or commit.
+- The operating system, install method, and output of `my-skills --version`.
 
 ## Scope
 
@@ -39,20 +39,29 @@ Out of scope:
 
 - Vulnerabilities in a user's private local skills that are not part of this
   repository.
-- Host tools such as Claude Code, Codex, or Hermes outside the files written by
-  `my-skills`.
+- Host tools such as Claude Code, Codex, Hermes, or Antigravity CLI outside
+  the files written by `my-skills`.
 - Public information already intentionally committed to the repository.
 
 ## Release Hygiene
 
-Before a release, maintainers should run the checklist in
-`docs/release-checklist.md` and confirm:
+Before a Rust release, maintainers should run the checks in
+[docs/release-checklist.md](docs/release-checklist.md).
 
 ```bash
-uv run pytest
-uv build
-uv run my-skills doctor
-uv run my-skills skills --json
-uv run my-skills bootstrap --dry-run
-uv run my-skills install my-skills --host hermes --dry-run
+cargo fmt --all --check
+cargo clippy --all-targets -- -D warnings
+cargo test --all-targets
+cargo build --release
+```
+
+For CLI smoke checks, set `MY_SKILLS_ROOT` to a disposable seeded registry with
+test host paths and isolate config, state, and data from your own.
+
+```bash
+cargo run -- doctor --no-update-check
+cargo run -- skills --json
+cargo run -- bootstrap --dry-run
+cargo run -- install my-skills --host hermes --dry-run
+cargo run -- install my-skills --host agy --dry-run
 ```
