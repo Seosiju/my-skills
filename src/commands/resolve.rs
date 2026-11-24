@@ -45,17 +45,15 @@ struct Resolution {
 }
 
 impl Resolution {
-    fn resolved(
-        state: ResolutionState,
-        name: String,
-        registered: bool,
-        dir: PathBuf,
-        relative: &Path,
-    ) -> Self {
+    fn resolved(name: String, registered: bool, dir: PathBuf, relative: &Path) -> Self {
         let mut path = dir.clone();
         path.extend(relative.components());
         Self {
-            state,
+            state: if registered {
+                ResolutionState::Registered
+            } else {
+                ResolutionState::Unregistered
+            },
             skill: Some(name),
             registered: Some(registered),
             canonical_dir: Some(dir),
@@ -101,13 +99,7 @@ pub fn run(args: &ResolveArgs) -> ExitCode {
     {
         resolve_path(&manifest, target)
     } else if manifest.skills.contains_key(target) {
-        Ok(Resolution::resolved(
-            ResolutionState::Registered,
-            target.clone(),
-            true,
-            manifest.skill_dir(target),
-            Path::new(""),
-        ))
+        resolve_canonical(&manifest, target, Path::new(""))
     } else {
         Err(Error::Manifest(format!("unknown skill: {target}")))
     };
@@ -210,7 +202,7 @@ fn resolve_path(manifest: &Manifest, input: &str) -> Result<Resolution> {
     }
 
     if let Some(entry) = Entry::find(&skills_root, &path, None) {
-        return resolve_canonical(manifest, &entry);
+        return resolve_canonical(manifest, &entry.name, &entry.relative);
     }
     let mut entries = targets
         .iter()
@@ -239,7 +231,7 @@ fn resolve_path(manifest: &Manifest, input: &str) -> Result<Resolution> {
         }
         if let Ok(path) = fs::canonicalize(path) {
             if let Some(entry) = Entry::find(&root, &path_spelling(&path), None) {
-                return resolve_canonical(manifest, &entry);
+                return resolve_canonical(manifest, &entry.name, &entry.relative);
             }
         }
     }
@@ -249,36 +241,45 @@ fn resolve_path(manifest: &Manifest, input: &str) -> Result<Resolution> {
     ))
 }
 
-fn resolve_canonical(manifest: &Manifest, entry: &Entry) -> Result<Resolution> {
-    let registered = manifest
-        .skills
-        .keys()
-        .find(|name| same_component(OsStr::new(name), OsStr::new(&entry.name)));
-    let dir = manifest.skill_dir(registered.unwrap_or(&entry.name));
+fn resolve_canonical(manifest: &Manifest, name: &str, relative: &Path) -> Result<Resolution> {
+    let registered = manifest.skills.get(name).or_else(|| {
+        manifest
+            .skills
+            .values()
+            .find(|skill| same_component(OsStr::new(&skill.name), OsStr::new(name)))
+    });
+    let skill = registered.map_or(name, |skill| skill.name.as_str());
+    let dir = manifest.skill_dir(skill);
     let kind = link::entry_kind(&dir)?;
-    if matches!(kind, EntryKind::Link(_)) || escapes_entry(&dir, &entry.relative)? {
-        return Ok(Resolution::unresolved(
+    let linked = matches!(kind, EntryKind::Link(_));
+    if linked && !dir.is_dir() {
+        let mut result = Resolution::unresolved(
+            ResolutionState::Unmanaged,
+            "canonical skill link does not resolve to a directory",
+        );
+        result.skill = Some(skill.to_owned());
+        result.registered = Some(registered.is_some());
+        return Ok(result);
+    }
+    if escapes_entry(&dir, relative)? {
+        let mut result = Resolution::unresolved(
             ResolutionState::Unsafe,
             "a link escapes the canonical skill entry",
-        )
-        .at_entry(entry, None));
+        );
+        result.skill = Some(name.to_owned());
+        return Ok(result);
     }
-    if registered.is_none() && kind != EntryKind::Dir {
+    if registered.is_none() && kind != EntryKind::Dir && !linked {
         return Ok(Resolution::unresolved(
             ResolutionState::Unmanaged,
             "path is outside any registered skill or draft directory",
         ));
     }
     Ok(Resolution::resolved(
-        if registered.is_some() {
-            ResolutionState::Registered
-        } else {
-            ResolutionState::Unregistered
-        },
-        registered.unwrap_or(&entry.name).clone(),
+        skill.to_owned(),
         registered.is_some(),
         dir,
-        &entry.relative,
+        relative,
     ))
 }
 
@@ -335,9 +336,27 @@ fn resolve_host(manifest: &Manifest, entries: &[Entry]) -> Result<Resolution> {
             .file_name()
             .expect("an owned source has an entry name"),
     );
+    let registered = manifest.skills.contains_key(&record.skill);
+    let unmanaged = |reason| {
+        let mut result = Resolution::unresolved(ResolutionState::Unmanaged, reason)
+            .at_entry(entry, Some(record));
+        result.registered = Some(registered);
+        Ok(result)
+    };
     let kind = link::entry_kind(&entry.path)?;
-    if (matches!(kind, EntryKind::Link(_))
-        && (record.mode != InstallMode::Link || !link::is_managed_link(&entry.path, &dir)))
+    match (record.mode, kind) {
+        (InstallMode::Link, EntryKind::Link(_)) | (InstallMode::Copy, EntryKind::Dir) => {}
+        (InstallMode::Link, _) => {
+            return unmanaged("host entry no longer matches its recorded link connection");
+        }
+        (InstallMode::Copy, _) => {
+            return unmanaged("host entry no longer matches its recorded copy connection");
+        }
+    }
+    if !dir.is_dir() {
+        return unmanaged("canonical skill directory is missing or no longer a directory");
+    }
+    if (record.mode == InstallMode::Link && !link::is_managed_link(&entry.path, &dir))
         || escapes_entry(&entry.path, &entry.relative)?
         || escapes_entry(&dir, &entry.relative)?
     {
@@ -347,15 +366,11 @@ fn resolve_host(manifest: &Manifest, entries: &[Entry]) -> Result<Resolution> {
         )
         .at_entry(entry, Some(record)));
     }
-    let registered = manifest.skills.contains_key(&record.skill);
-    let resolution = Resolution::resolved(
-        ResolutionState::Registered,
-        record.skill.clone(),
-        registered,
-        dir,
-        &entry.relative,
-    )
-    .at_entry(entry, Some(record));
+    if record.mode == InstallMode::Link && !entry.path.is_dir() {
+        return unmanaged("recorded host link does not resolve to a directory");
+    }
+    let resolution = Resolution::resolved(record.skill.clone(), registered, dir, &entry.relative)
+        .at_entry(entry, Some(record));
     if record.mode == InstallMode::Copy
         && !entry.relative.as_os_str().is_empty()
         && resolution
@@ -368,10 +383,7 @@ fn resolve_host(manifest: &Manifest, entries: &[Entry]) -> Result<Resolution> {
         } else {
             "relative path is missing from the canonical skill and its managed copy"
         };
-        let mut unresolved = Resolution::unresolved(ResolutionState::Unmanaged, reason)
-            .at_entry(entry, Some(record));
-        unresolved.registered = Some(registered);
-        return Ok(unresolved);
+        return unmanaged(reason);
     }
     Ok(resolution)
 }
