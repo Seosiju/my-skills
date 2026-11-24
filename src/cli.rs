@@ -108,6 +108,8 @@ pub enum Command {
     Diff(DiffArgs),
     /// Find the canonical source behind a skill name or a skill path (read-only)
     Resolve(ResolveArgs),
+    /// Create a skill draft in skills/<name>/ and register it, disabled
+    New(NewArgs),
 }
 
 #[derive(Debug, Args)]
@@ -237,7 +239,9 @@ pub struct InstallArgs {
     /// Exits 1 only on validation failure
     #[arg(long)]
     pub dry_run: bool,
-    /// Machine-readable plan with `blocked` and `applicable`; requires --dry-run
+    /// Machine-readable output. With --dry-run: the plan, with `blocked` and
+    /// `applicable`. Without it: the plan is applied and the result is
+    /// reported per action (`result`), with `applied` and `summary`
     #[arg(long)]
     pub json: bool,
     /// Connect even if the security audit would block
@@ -365,7 +369,9 @@ pub struct SyncArgs {
     /// Exits 1 only on validation failure
     #[arg(long)]
     pub dry_run: bool,
-    /// Machine-readable plan with `blocked` and `applicable`; requires --dry-run
+    /// Machine-readable output. With --dry-run: the plan, with `blocked` and
+    /// `applicable`. Without it: the plan is applied and the result is
+    /// reported per action (`result`), with `applied` and `summary`
     #[arg(long)]
     pub json: bool,
     /// Print only changes and problems; for git hooks (v1)
@@ -472,6 +478,27 @@ pub struct ResolveArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct NewArgs {
+    /// Skill name: lowercase letters, digits, and hyphens
+    pub name: String,
+    /// Manifest group for the new skill
+    #[arg(long)]
+    pub group: Option<String>,
+    /// Host the skill targets (repeatable; default: every enabled host)
+    #[arg(long = "host", value_name = "HOST")]
+    pub hosts: Vec<String>,
+    /// Frontmatter description (default: a placeholder to replace)
+    #[arg(long)]
+    pub description: Option<String>,
+    /// Show what would be created; write nothing
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Machine-readable output
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct HooksArgs {
     #[command(subcommand)]
     pub action: HooksAction,
@@ -506,7 +533,7 @@ pub struct HooksUninstallArgs {
 
 #[derive(Debug, Args)]
 pub struct HooksRunArgs {
-    /// pre-commit | post-merge | post-rewrite | post-checkout
+    /// pre-commit | post-commit | post-merge | post-rewrite | post-checkout
     pub hook: String,
     /// Arguments git passed to the hook
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -532,6 +559,7 @@ impl Command {
             Command::Sync(args) => args.json,
             Command::Diff(args) => args.json,
             Command::Resolve(args) => args.json,
+            Command::New(args) => args.json,
             _ => false,
         }
     }
@@ -570,5 +598,6 @@ pub fn run(cli: Cli) -> ExitCode {
         Command::Hooks(args) => commands::hooks::run(&args),
         Command::Diff(args) => commands::diff::run(&args),
         Command::Resolve(args) => commands::resolve::run(&args),
+        Command::New(args) => commands::registry::new_skill(&args),
     }
 }

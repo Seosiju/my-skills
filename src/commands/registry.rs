@@ -377,3 +377,10 @@ fn print_hint(name: &str, enabled: bool) {
         println!("Next: `my-skills enable {name}`, then `my-skills sync {name} --host <host>`.");
     }
 }
+
+// ---------------------------------------------------------------- new (W16 S2)
+
+/// `new <name>`: create `skills/<name>/SKILL.md` and register it disabled.
+pub fn new_skill(_args: &NewArgs) -> ExitCode {
+    super::not_implemented("new")
+}
