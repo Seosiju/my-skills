@@ -544,9 +544,9 @@ skills/                    빌드 시 바이너리에 포함하는 시드 원본
 |---|---|---|
 | Q1 | Windows에서 세 host의 실제 스킬 경로와 junction 발견 여부 | **확인(2026-11-23)**: 경로는 §7.1과 같다. Claude Code와 Codex는 junction을 발견하고, agy 1.5.14는 발견하지 못한다. Windows에서는 `[targets.agy] install_mode = "copy"`를 쓴다(§12) |
 | Q2 | pre-commit 검사 범위 | **결정(2026-11-23)**: 이번 커밋에서 바뀐 스킬과 manifest만, staged 내용 기준. 전체 검사는 `doctor` (§6.7) |
-| Q3 | Windows state 경로를 `%LOCALAPPDATA%`로 옮길지 | Windows에 0.4.1 설치 기록이 없으면 v1부터 `%LOCALAPPDATA%\my-skills\state`로 옮기고, 있으면 유지. 2026-11-23 실기기에는 0.4.1 기록(`%USERPROFILE%\.local\state\my-skills\state.json`)이 있어 그대로 썼고 문제없었다. 기록이 없는 PC의 이전 여부는 아직 결정하지 않음 |
+| Q3 | Windows state 경로를 `%LOCALAPPDATA%`로 옮길지 | Windows에 0.4.1 설치 기록이 없으면 v1부터 `%LOCALAPPDATA%\my-skills\state`로 옮기고, 있으면 유지. 2026-11-23 실기기에는 0.4.1 기록(`%USERPROFILE%\.local\state\my-skills\state.json`)이 있어 그대로 썼고 문제없었다. **결정(2026-11-24): 옮기지 않는다.** 모든 OS에서 `~/.local/state/my-skills`를 쓴다(§7.1과 코드가 같다). OS마다 위치를 나누면 이전 코드와 안내만 늘어난다 |
 | Q4 | sync의 해제를 기본으로 할지 | **결정(2026-11-23)**: 기본으로 해제. `--no-prune`으로 끔 (D3) |
-| Q5 | binary 코드 서명 | 1차는 서명 없이 설치 스크립트(curl/PowerShell)로 배포. 브라우저로 받으면 경고가 뜰 수 있음을 문서에 적음 |
-| Q6 | audit 규칙 YAML을 그대로 둘지 | Rust 구현 시점에 YAML crate 상태를 보고 결정 |
-| Q7 | Python 0.4.x에 Rust로 옮기라는 안내를 넣을지 | `v1.0.0`을 배포할 때 0.4.x 마지막 패치에 `doctor` 안내 한 줄을 추가 |
+| Q5 | binary 코드 서명 | 1차는 서명 없이 설치 스크립트(curl/PowerShell)로 배포. 브라우저로 받으면 경고가 뜰 수 있음을 문서에 적음. **결정(2026-11-24): 서명하지 않는다.** 개인 도구이고 설치 스크립트가 SHA-256을 확인한다 |
+| Q6 | audit 규칙 YAML을 그대로 둘지 | **결정**: YAML을 그대로 두고 `yaml-rust2`로 읽는다(`src/check/audit/builtin_rules.yaml`) |
+| Q7 | Python 0.4.x에 Rust로 옮기라는 안내를 넣을지 | `v1.0.0`을 배포할 때 0.4.x 마지막 패치에 `doctor` 안내 한 줄을 추가. **완료**: v0.4.2는 v1 태그가 있으면 설치하지 않고 이전 안내를 출력한다(인계 문서 §7 C) |
 | Q8 | **v1.0.0 태그가 생기면 Python 0.4.1 `update`가 깨진다** (stream F가 재현). **2026-11-23 v0.4.2로 해결**: stable·main 채널 guard 배포 | 0.4.1은 가장 높은 `vX.Y.Z` 태그로 `uv tool install git+...@v1.0.0`을 실행한다. 그 트리의 Python 패키지를 다시 설치한 뒤 버전이 맞지 않아 종료 코드 1로 끝난다(Python 패키지를 지운 트리라면 설치 자체가 실패한다). 해결: 0.4.2에 v1 태그를 만나면 설치하지 않고 이전 안내만 출력하는 guard를 넣는다(stream I). **0.4.2를 먼저 배포한 뒤에 v1.0.0 태그를 만든다.** 0.4.1에 남은 사용자는 수동 이전 안내가 필요하다 |

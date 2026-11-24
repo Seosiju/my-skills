@@ -46,13 +46,27 @@ jobs:
         run: |
           $snapshot = Join-Path $env:RUNNER_TEMP 'my-skills-user-paths.ps1'
           @'
-          $locations = @(
-            "$env:USERPROFILE\.claude\skills"
-            "$env:USERPROFILE\.agents\skills"
-            "$env:USERPROFILE\.gemini\config\skills"
-            "$env:USERPROFILE\.hermes"
-            "$env:LOCALAPPDATA\my-skills"
-          )
+          # Host folders and my-skills root/state/data locations, under USERPROFILE and,
+          # when it differs, HOME (the CLI reads HOME first). XDG overrides count too.
+          $homes = @($env:USERPROFILE)
+          if ($env:HOME -and $env:HOME -ne $env:USERPROFILE) { $homes += $env:HOME }
+          $locations = @()
+          foreach ($userHome in $homes) {
+            $locations += @(
+              "$userHome\.claude\skills"
+              "$userHome\.agents\skills"
+              "$userHome\.gemini\config\skills"
+              "$userHome\.hermes"
+              "$userHome\.config\my-skills"
+              "$userHome\.local\state\my-skills"
+              "$userHome\.local\share\my-skills"
+            )
+          }
+          $locations += "$env:LOCALAPPDATA\my-skills"
+          foreach ($name in 'XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'XDG_DATA_HOME') {
+            $base = [Environment]::GetEnvironmentVariable($name)
+            if ($base) { $locations += (Join-Path $base 'my-skills') }
+          }
           foreach ($location in $locations) {
             if (Test-Path -LiteralPath $location) {
               $(Get-Item -LiteralPath $location -Force
