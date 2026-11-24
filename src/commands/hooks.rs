@@ -176,7 +176,7 @@ fn post_commit() -> ExitCode {
         let changed: Vec<_> = dirty.iter().filter(|name| synced(name)).cloned().collect();
         if !changed.is_empty() {
             eprintln!(
-                "warning: post-commit: {} changed while syncing; the host copies may include                  uncommitted edits (the next commit or sync refreshes them)",
+                "warning: post-commit: {} changed while syncing; the host copies may include uncommitted edits (the next commit or sync refreshes them)",
                 changed.join(", ")
             );
         }

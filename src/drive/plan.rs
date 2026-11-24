@@ -426,7 +426,7 @@ fn guard_unselected_peers(
         let remedy = if manifest.targets.get(&peer.host).is_some_and(|t| t.enabled) {
             "select every host that shares it (omit --host) or handle that host first"
         } else {
-            "enable that host and include it, or uninstall it first"
+            "enable that host and include both hosts"
         };
         item.reason = format!(
             "destination is shared with {} -> {}, which this command does not include; {remedy}",

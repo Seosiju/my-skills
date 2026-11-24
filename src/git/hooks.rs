@@ -199,7 +199,7 @@ pub(crate) fn post_commit(
     ])?;
     if !manifest_status.is_empty() {
         return Ok(PostCommit::Skip(Some(format!(
-            "warning: post-commit skipped: {MANIFEST_FILE} has uncommitted changes;              commit it, then run `my-skills sync`"
+            "warning: post-commit skipped: {MANIFEST_FILE} has uncommitted changes; commit it, then run `my-skills sync`"
         ))));
     }
     let Some(skills_dir) = skills_dir(git, manifest) else {
