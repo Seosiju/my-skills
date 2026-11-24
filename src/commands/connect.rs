@@ -11,6 +11,7 @@ use std::process::ExitCode;
 use serde_json::{Value, json};
 
 use super::config_error;
+use crate::Error;
 use crate::check::audit::{
     AuditGateResult, audit_skills, format_gate, gate_json, policy_from_settings,
 };
@@ -33,8 +34,8 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         install_mode: args.mode.map(Into::into),
         ..CliOverrides::default()
     };
-    let manifest = match root::load_manifest_from_cwd(&cli) {
-        Ok(m) => m,
+    let (manifest, resolution) = match root::load_manifest_resolved(&cli, !args.dry_run) {
+        Ok(loaded) => loaded,
         Err(e) => return config_error(e),
     };
     let (skills, hosts) = match root::select_requested(
@@ -82,6 +83,7 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         println!("{}", format_gate(&gate, "AUDIT WOULD BLOCK"));
         println!("Dry run — planned actions (nothing written):");
         print_plan(&items);
+        super::print_would_cache_root(&resolution);
         return ExitCode::SUCCESS;
     }
 
@@ -93,7 +95,7 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         return code;
     }
     let audit = audit_meta_by_skill(&gate);
-    let (_, blocked) = apply_plan(&items, &mut state, &audit, false, State::save);
+    let (_, blocked) = apply_plan(&items, &mut state, &audit, false);
     exit(blocked)
 }
 
@@ -128,16 +130,25 @@ fn is_builtin_seed_default_install(
 // ---------------------------------------------------------------- sync
 
 pub fn sync(args: &SyncArgs) -> ExitCode {
-    let manifest = match root::load_manifest_from_cwd(&CliOverrides::default()) {
-        Ok(m) => m,
-        Err(e) => return config_error(e),
-    };
-    sync_manifest(&manifest, args)
+    let (manifest, resolution) =
+        match root::load_manifest_resolved(&CliOverrides::default(), !args.dry_run) {
+            Ok(loaded) => loaded,
+            Err(e) => return config_error(e),
+        };
+    sync_manifest_with_resolution(&manifest, args, Some(&resolution))
 }
 
 /// Sync against an already loaded manifest (also used by bootstrap and the
 /// git hooks).
 pub fn sync_manifest(manifest: &Manifest, args: &SyncArgs) -> ExitCode {
+    sync_manifest_with_resolution(manifest, args, None)
+}
+
+fn sync_manifest_with_resolution(
+    manifest: &Manifest,
+    args: &SyncArgs,
+    resolution: Option<&root::RootResolution>,
+) -> ExitCode {
     let hosts = match resolve_hosts(manifest, args.host.as_deref()) {
         Ok(h) => h,
         Err(e) => return config_error(e),
@@ -219,6 +230,9 @@ pub fn sync_manifest(manifest: &Manifest, args: &SyncArgs) -> ExitCode {
     if args.dry_run {
         println!("Dry run — planned actions (nothing written):");
         print_plan(&items);
+        if let Some(resolution) = resolution {
+            super::print_would_cache_root(resolution);
+        }
         return ExitCode::SUCCESS;
     }
     if !items.iter().any(|i| i.action.writes()) {
@@ -245,7 +259,7 @@ pub fn sync_manifest(manifest: &Manifest, args: &SyncArgs) -> ExitCode {
     }
     let mut state = state;
     let audit = audit_meta_by_skill(&gate);
-    let (_, blocked) = apply_plan(&items, &mut state, &audit, args.quiet, State::save);
+    let (_, blocked) = apply_plan(&items, &mut state, &audit, args.quiet);
     exit(blocked)
 }
 
@@ -258,10 +272,11 @@ fn print_plan_results_noop(items: &[PlanItem]) {
 // ---------------------------------------------------------------- uninstall
 
 pub fn uninstall(args: &UninstallArgs) -> ExitCode {
-    let manifest = match root::load_manifest_from_cwd(&CliOverrides::default()) {
-        Ok(m) => m,
-        Err(e) => return config_error(e),
-    };
+    let (manifest, resolution) =
+        match root::load_manifest_resolved(&CliOverrides::default(), !args.dry_run) {
+            Ok(loaded) => loaded,
+            Err(e) => return config_error(e),
+        };
     let Some(skill) = args.skill.as_deref() else {
         return config_error("uninstall requires a skill name");
     };
@@ -283,6 +298,7 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
     if args.dry_run {
         println!("Dry run — planned actions (nothing written):");
         print_plan(&items);
+        super::print_would_cache_root(&resolution);
         return ExitCode::SUCCESS;
     }
     if !confirm_multi_host_write(&hosts, args.yes) {
@@ -293,12 +309,8 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
     for item in &items {
         match item.action {
             Action::Remove => match apply::apply(item, &mut state, None) {
-                Ok(_) => {
-                    if let Err(e) = state.save() {
-                        return config_error(e);
-                    }
-                    println!("  removed: {} -> {}", item.skill, item.host);
-                }
+                Ok(_) => println!("  removed: {} -> {}", item.skill, item.host),
+                Err(Error::StateSave(e)) => return config_error(e),
                 Err(e) => {
                     failed = true;
                     println!("  FAILED: {} -> {} ({e})", item.skill, item.host);
@@ -325,10 +337,11 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
 // ---------------------------------------------------------------- convert
 
 pub fn convert(args: &ConvertArgs) -> ExitCode {
-    let manifest = match root::load_manifest_from_cwd(&CliOverrides::default()) {
-        Ok(m) => m,
-        Err(e) => return config_error(e),
-    };
+    let (manifest, resolution) =
+        match root::load_manifest_resolved(&CliOverrides::default(), !args.dry_run) {
+            Ok(loaded) => loaded,
+            Err(e) => return config_error(e),
+        };
     // Convert acts on existing connections, so every registered skill is in
     // scope unless one is named.
     let (skills, hosts) = match root::select_requested(
@@ -356,13 +369,14 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
         println!("Dry run — planned actions (nothing written):");
         print_plan(&items);
         print_skipped_convert_hosts(&skipped_hosts);
+        super::print_would_cache_root(&resolution);
         return ExitCode::SUCCESS;
     }
     if !confirm_multi_host_write(&active_hosts, args.yes) {
         return ExitCode::from(2);
     }
     print_skipped_convert_hosts(&skipped_hosts);
-    let (_, blocked) = apply_plan(&items, &mut state, &BTreeMap::new(), false, State::save);
+    let (_, blocked) = apply_plan(&items, &mut state, &BTreeMap::new(), false);
     exit(blocked)
 }
 
@@ -402,7 +416,7 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
                 );
             }
         }
-        println!("  then: my-skills hooks install");
+        println!("  would suggest: run `my-skills hooks install` to check commits");
         return ExitCode::SUCCESS;
     }
     if !args.skip_skill_install {
@@ -511,14 +525,13 @@ fn audit_meta_by_skill(gate: &AuditGateResult) -> BTreeMap<String, AuditMeta> {
         .collect()
 }
 
-/// Apply writes in order and print v0.4.1-style result lines. Save state for
-/// changes that `apply` did not already save. Returns (changed, blocked).
+/// Apply writes in order and print v0.4.1-style result lines.
+/// Returns (changed, blocked).
 fn apply_plan(
     items: &[PlanItem],
     state: &mut State,
     audit: &BTreeMap<String, AuditMeta>,
     quiet: bool,
-    save: impl Fn(&State) -> crate::Result<()>,
 ) -> (usize, bool) {
     let mut changed = 0;
     let mut blocked = false;
@@ -526,17 +539,12 @@ fn apply_plan(
         if item.action.writes() {
             match apply::apply(item, state, audit.get(&item.skill)) {
                 Ok(outcome) => {
-                    let save_result = match outcome {
-                        Outcome::Converted(_) => Ok(()),
-                        _ => save(state),
-                    };
-                    if let Err(e) = save_result {
-                        blocked = true;
-                        println!("  FAILED: {} -> {} (state: {e})", item.skill, item.host);
-                        continue;
-                    }
                     changed += 1;
                     print_result_line(item, Some(&outcome));
+                }
+                Err(Error::StateSave(e)) => {
+                    blocked = true;
+                    println!("  FAILED: {} -> {} (state: {e})", item.skill, item.host);
                 }
                 Err(e) => {
                     blocked = true;
@@ -669,22 +677,14 @@ mod tests {
         };
         let audit = BTreeMap::new();
         let items = std::slice::from_ref(&item);
-        assert_eq!(
-            apply_plan(items, &mut state, &audit, false, State::save),
-            (1, false)
-        );
+        assert_eq!(apply_plan(items, &mut state, &audit, false), (1, false));
         assert_eq!(State::load(Some(&state_path)).unwrap(), state);
 
         item.action = Action::Convert;
         for mode in [InstallMode::Link, InstallMode::Copy] {
             item.mode = mode;
             let items = std::slice::from_ref(&item);
-            assert_eq!(
-                apply_plan(items, &mut state, &audit, false, |_| {
-                    panic!("a successful conversion must save its own record")
-                }),
-                (1, false)
-            );
+            assert_eq!(apply_plan(items, &mut state, &audit, false), (1, false));
             let persisted = State::load(Some(&state_path)).unwrap();
             assert_eq!(persisted, state);
             assert_eq!(persisted.get("alpha", "claude").unwrap().mode, mode);

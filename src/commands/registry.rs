@@ -89,8 +89,8 @@ pub fn skills(args: &SkillsArgs) -> ExitCode {
 }
 
 pub fn share(args: &ShareArgs) -> ExitCode {
-    let manifest = match load() {
-        Ok(manifest) => manifest,
+    let (manifest, resolution) = match load_resolved(!args.dry_run) {
+        Ok(loaded) => loaded,
         Err(err) => return super::config_error(err),
     };
     if args.plan || args.dry_run {
@@ -102,6 +102,9 @@ pub fn share(args: &ShareArgs) -> ExitCode {
                     plan.table()
                 };
                 println!("{output}");
+                if args.dry_run && !args.json {
+                    super::print_would_cache_root(&resolution);
+                }
                 ExitCode::SUCCESS
             }
             Err(err) => super::config_error(err),
@@ -175,8 +178,8 @@ pub fn disable(args: &SkillNameArgs) -> ExitCode {
 
 fn set_enabled(name: &str, enabled: bool, dry_run: bool) -> ExitCode {
     if dry_run {
-        let manifest = match load() {
-            Ok(manifest) => manifest,
+        let (manifest, resolution) = match load_resolved(false) {
+            Ok(loaded) => loaded,
             Err(err) => return super::config_error(err),
         };
         let Some(skill) = manifest.skills.get(name) else {
@@ -187,6 +190,7 @@ fn set_enabled(name: &str, enabled: bool, dry_run: bool) -> ExitCode {
             enabled_label(enabled),
             enabled_label(skill.enabled)
         );
+        super::print_would_cache_root(&resolution);
         return ExitCode::SUCCESS;
     }
     let result = load().and_then(|manifest| {
@@ -202,8 +206,8 @@ fn set_enabled(name: &str, enabled: bool, dry_run: bool) -> ExitCode {
 }
 
 pub fn import(args: &ImportArgs) -> ExitCode {
-    let manifest = match load() {
-        Ok(manifest) => manifest,
+    let (manifest, resolution) = match load_resolved(!args.dry_run) {
+        Ok(loaded) => loaded,
         Err(err) => return super::config_error(err),
     };
     let source = seeds::expand_user(&args.source);
@@ -231,6 +235,7 @@ pub fn import(args: &ImportArgs) -> ExitCode {
                     println!("  would import to: {canonical}");
                 }
                 println!("  would register as: {}", enabled_label(result.enabled));
+                super::print_would_cache_root(&resolution);
                 return ExitCode::SUCCESS;
             }
             if result.identical {
@@ -284,6 +289,10 @@ pub fn import(args: &ImportArgs) -> ExitCode {
 
 fn load() -> Result<Manifest> {
     root::load_manifest_from_cwd(&CliOverrides::default())
+}
+
+fn load_resolved(write_cache: bool) -> Result<(Manifest, root::RootResolution)> {
+    root::load_manifest_resolved(&CliOverrides::default(), write_cache)
 }
 
 fn enabled_label(enabled: bool) -> &'static str {

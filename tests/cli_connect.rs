@@ -5,6 +5,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
+use my_skills::drive::link::{self, EntryKind};
+use my_skills::drive::state::State;
+use my_skills::platform::paths;
+use my_skills::registry::manifest::InstallMode;
 use predicates::prelude::*;
 use predicates::str::contains;
 
@@ -33,6 +37,21 @@ impl Env {
 
     fn host(&self, name: &str) -> PathBuf {
         self.tmp.path().join("hosts").join(name)
+    }
+
+    fn state_path(&self) -> PathBuf {
+        self.tmp.path().join("state/my-skills/state.json")
+    }
+
+    fn state(&self) -> State {
+        State::load(Some(&self.state_path())).unwrap()
+    }
+
+    fn block_state_save(&self) -> PathBuf {
+        let blocker = self.state_path().with_file_name("state.json.tmp");
+        fs::create_dir_all(blocker.parent().unwrap()).unwrap();
+        fs::write(&blocker, "busy").unwrap();
+        blocker
     }
 
     fn write_skill(&self, name: &str, description: &str) {
@@ -311,12 +330,22 @@ fn data_path_uses_xdg_data_home_and_rejects_bad_names() {
 #[test]
 fn set_root_records_the_registry() {
     let env = Env::new();
-    env.cmd()
+    let expected_display = paths::display_path(&env.root().canonicalize().unwrap());
+    let result = env
+        .cmd()
         .env_remove("MY_SKILLS_ROOT")
         .args(["set-root", &env.root().display().to_string()])
         .assert()
-        .success()
-        .stdout(contains("Active registry root set to"));
+        .success();
+    let stdout = String::from_utf8_lossy(&result.get_output().stdout);
+    assert_eq!(
+        stdout.trim(),
+        format!("Active registry root set to {expected_display}")
+    );
+    assert!(
+        !stdout.contains(r"\\?\"),
+        "set-root output should not contain verbatim prefix: {stdout}"
+    );
     let cached = fs::read_to_string(env.tmp.path().join("config/my-skills/root")).unwrap();
     assert!(cached.trim().ends_with("registry"), "{cached}");
 }
@@ -329,7 +358,11 @@ fn bootstrap_dry_run_previews_sync_and_hooks() {
         .assert()
         .success()
         .stdout(
-            contains("would run: my-skills sync --yes --dry-run").and(contains("hooks install")),
+            contains("would run: my-skills sync --yes --dry-run")
+                .and(contains(
+                    "would suggest: run `my-skills hooks install` to check commits",
+                ))
+                .and(contains("then: my-skills hooks install").not()),
         );
 }
 
@@ -345,6 +378,191 @@ fn bootstrap_connects_enabled_skills() {
 }
 
 // ---- regressions from the 2026-11-23 audit review (handoff §6) ----
+
+fn assert_install_retries_after_state_save_failure(mode: &str, expected_mode: InstallMode) {
+    let env = Env::new();
+    let args = ["install", "alpha", "--host", "claude", "--mode", mode];
+    let host = env.host("claude");
+    fs::create_dir_all(&host).unwrap();
+    let dest = host.join("alpha");
+    let blocker = env.block_state_save();
+    env.cmd()
+        .args(args)
+        .assert()
+        .code(1)
+        .stdout(contains("FAILED: alpha -> claude (state:"))
+        .stdout(contains("state.json.tmp"));
+    assert_eq!(fs::read_dir(&host).unwrap().count(), 0);
+    assert!(env.state().records().next().is_none());
+    assert!(!env.state_path().exists());
+    assert_eq!(fs::read_to_string(&blocker).unwrap(), "busy");
+
+    fs::remove_file(blocker).unwrap();
+    env.cmd()
+        .args(args)
+        .assert()
+        .success()
+        .stdout(contains("created: alpha -> claude"));
+    assert!(dest.join("SKILL.md").is_file());
+    assert_eq!(is_link(&dest), expected_mode == InstallMode::Link);
+    assert_eq!(
+        env.state().get("alpha", "claude").unwrap().mode,
+        expected_mode
+    );
+}
+
+#[test]
+fn link_install_retries_after_state_save_failure() {
+    assert_install_retries_after_state_save_failure("link", InstallMode::Link);
+}
+
+#[test]
+fn copy_install_retries_after_state_save_failure() {
+    assert_install_retries_after_state_save_failure("copy", InstallMode::Copy);
+}
+
+#[test]
+fn copy_update_retries_after_state_save_failure() {
+    let env = Env::new();
+    env.cmd()
+        .args(["install", "alpha", "--host", "claude", "--mode", "copy"])
+        .assert()
+        .success();
+    let host = env.host("claude");
+    let dest = host.join("alpha");
+    let old_skill = fs::read(dest.join("SKILL.md")).unwrap();
+    let old_state = fs::read(env.state_path()).unwrap();
+    // Ignored files do not count as drift, but are part of the old copy.
+    fs::write(dest.join(".DS_Store"), "local").unwrap();
+    env.write_skill("alpha", "Updated alpha.");
+    let blocker = env.block_state_save();
+    let args = ["sync", "alpha", "--host", "claude"];
+    env.cmd()
+        .args(args)
+        .assert()
+        .code(1)
+        .stdout(contains("FAILED: alpha -> claude (state:"));
+    assert_eq!(fs::read(dest.join("SKILL.md")).unwrap(), old_skill);
+    assert_eq!(fs::read_to_string(dest.join(".DS_Store")).unwrap(), "local");
+    assert_eq!(fs::read(env.state_path()).unwrap(), old_state);
+    assert_eq!(fs::read_dir(host).unwrap().count(), 1);
+
+    fs::remove_file(blocker).unwrap();
+    env.cmd()
+        .args(args)
+        .assert()
+        .success()
+        .stdout(contains("updated: alpha -> claude"));
+    assert_eq!(
+        fs::read(dest.join("SKILL.md")).unwrap(),
+        fs::read(env.root().join("skills/alpha/SKILL.md")).unwrap(),
+    );
+    assert_ne!(fs::read(env.state_path()).unwrap(), old_state);
+}
+
+#[test]
+fn link_uninstall_retries_after_state_save_failure() {
+    let env = Env::new();
+    env.cmd()
+        .args(["install", "alpha", "--host", "claude", "--mode", "link"])
+        .assert()
+        .success();
+    let host = env.host("claude");
+    let dest = host.join("alpha");
+    let old_state = fs::read(env.state_path()).unwrap();
+    // A broken link must be restored even when the canonical path is absent.
+    let source = env.root().join("skills/alpha");
+    let moved_source = source.with_file_name("moved-alpha");
+    fs::rename(&source, &moved_source).unwrap();
+    let old_kind = link::entry_kind(&dest).unwrap();
+    let old_target = link::link_target(&dest).unwrap();
+    let blocker = env.block_state_save();
+    let args = ["uninstall", "alpha", "--host", "claude"];
+    env.cmd()
+        .args(args)
+        .assert()
+        .code(2)
+        .stderr(contains("error:").and(contains("state.json.tmp")));
+    assert_eq!(link::entry_kind(&dest).unwrap(), old_kind);
+    assert_eq!(link::link_target(&dest).unwrap(), old_target);
+    assert_eq!(fs::read(env.state_path()).unwrap(), old_state);
+    assert_eq!(fs::read_dir(&host).unwrap().count(), 1);
+
+    fs::remove_file(blocker).unwrap();
+    env.cmd()
+        .args(args)
+        .assert()
+        .success()
+        .stdout(contains("removed: alpha -> claude"));
+    assert_eq!(link::entry_kind(&dest).unwrap(), EntryKind::Missing);
+    assert_eq!(fs::read_dir(&host).unwrap().count(), 0);
+    assert!(env.state().get("alpha", "claude").is_none());
+    assert!(moved_source.join("SKILL.md").is_file());
+}
+
+#[test]
+fn copy_prune_retries_after_state_save_failure() {
+    let env = Env::new();
+    env.cmd()
+        .args(["install", "alpha", "--host", "claude", "--mode", "copy"])
+        .assert()
+        .success();
+    let host = env.host("claude");
+    let dest = host.join("alpha");
+    let old_skill = fs::read(dest.join("SKILL.md")).unwrap();
+    let old_state = fs::read(env.state_path()).unwrap();
+    env.write_manifest(false);
+    let blocker = env.block_state_save();
+    let args = ["sync", "alpha", "--host", "claude"];
+    env.cmd()
+        .args(args)
+        .assert()
+        .code(1)
+        .stdout(contains("FAILED: alpha -> claude (state:"));
+    assert_eq!(fs::read(dest.join("SKILL.md")).unwrap(), old_skill);
+    assert_eq!(fs::read(env.state_path()).unwrap(), old_state);
+    assert_eq!(fs::read_dir(&host).unwrap().count(), 1);
+
+    fs::remove_file(blocker).unwrap();
+    env.cmd()
+        .args(args)
+        .assert()
+        .success()
+        .stdout(contains("removed: alpha -> claude"));
+    assert_eq!(fs::read_dir(&host).unwrap().count(), 0);
+    assert!(env.state().get("alpha", "claude").is_none());
+    assert!(env.root().join("skills/alpha/SKILL.md").is_file());
+}
+
+#[test]
+fn uninstall_retries_record_removal_when_host_entry_is_already_missing() {
+    let env = Env::new();
+    env.cmd()
+        .args(["install", "alpha", "--host", "claude", "--mode", "link"])
+        .assert()
+        .success();
+    let dest = env.host("claude").join("alpha");
+    link::remove_link(&dest).unwrap();
+    let old_state = fs::read(env.state_path()).unwrap();
+    let blocker = env.block_state_save();
+    let args = ["uninstall", "alpha", "--host", "claude"];
+    env.cmd()
+        .args(args)
+        .assert()
+        .code(2)
+        .stderr(contains("error:").and(contains("state.json.tmp")));
+    assert_eq!(link::entry_kind(&dest).unwrap(), EntryKind::Missing);
+    assert_eq!(fs::read(env.state_path()).unwrap(), old_state);
+
+    fs::remove_file(blocker).unwrap();
+    env.cmd()
+        .args(args)
+        .assert()
+        .success()
+        .stdout(contains("removed: alpha -> claude"));
+    assert_eq!(link::entry_kind(&dest).unwrap(), EntryKind::Missing);
+    assert!(env.state().get("alpha", "claude").is_none());
+}
 
 #[test]
 fn sync_check_reports_prune_drift() {
