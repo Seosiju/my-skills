@@ -14,7 +14,7 @@ use walkdir::WalkDir;
 use crate::drive::hash::hash_directory;
 use crate::drive::ignore::is_ignored;
 use crate::drive::link::{self, Created, EntryKind, LinkKind};
-use crate::drive::plan::{Action, PlanItem};
+use crate::drive::plan::{Action, PlanItem, physical_destination};
 use crate::drive::state::{InstallRecord, State};
 use crate::platform::paths::display_path;
 use crate::registry::manifest::InstallMode;
@@ -267,8 +267,25 @@ pub(crate) fn apply_prepared_group(
     }
 }
 
+/// True when another recorded connection uses the same physical entry, so
+/// removing this one must leave the entry in place for it.
+fn entry_shared_with_peer(item: &PlanItem, state: &State) -> bool {
+    let Ok(physical) = physical_destination(&item.destination) else {
+        return false;
+    };
+    state.records().any(|other| {
+        (other.skill.as_str(), other.host.as_str()) != (item.skill.as_str(), item.host.as_str())
+            && physical_destination(Path::new(&other.destination)).is_ok_and(|p| p == physical)
+    })
+}
+
 fn remove(item: &PlanItem, state: &mut State) -> Result<Applied> {
     let dest = &item.destination;
+    if entry_shared_with_peer(item, state) {
+        let key = (item.skill.clone(), item.host.clone());
+        commit_record_change(state, key, None).map_err(|err| Error::StateSave(Box::new(err)))?;
+        return Ok(Applied::new(Outcome::Removed, None));
+    }
     let backup = match link::entry_kind(dest)? {
         EntryKind::Missing => None,
         EntryKind::Link(_) | EntryKind::Dir => Some(move_to_backup(dest)?),
