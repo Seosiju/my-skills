@@ -449,7 +449,10 @@ fn print_skipped_convert_hosts(skipped: &[(String, InstallMode)]) {
 // ---------------------------------------------------------------- bootstrap
 
 pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
-    let root = match root::resolve_root(None, false) {
+    // Connecting skills is a real write: refuse a non-active cwd registry and
+    // record a first-ever registry, like install and sync.
+    let writes = !args.dry_run && !args.skip_skill_install;
+    let root = match root::resolve_root(None, writes) {
         Ok(r) => r.root,
         Err(e) => return config_error(e),
     };
@@ -797,10 +800,7 @@ impl DryRun<'_> {
                     "destination": display_path(&item.destination),
                 })).collect::<Vec<_>>(),
                 "audit": gate_json(self.audit.unwrap_or(&audit_not_run)),
-                "registry": self.resolution.map(|resolution| json!({
-                    "path": display_path(&resolution.root),
-                    "source": resolution.source.label(),
-                })),
+                "registry": self.resolution.map(root::RootResolution::meta),
                 "dry_run": true,
                 "blocked": count != 0,
                 "applicable": count == 0 && !self.needs_yes,

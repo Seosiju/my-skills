@@ -138,6 +138,7 @@ fn a_different_cwd_registry_requires_explicit_selection_for_writes() {
         &["enable", "beta"],
         &["disable", "beta"],
         &["import", incoming.to_str().unwrap()],
+        &["bootstrap"],
     ] {
         let check = from_cwd(&fixture, &b).args(args).assert().code(2);
         let stderr = String::from_utf8_lossy(&check.get_output().stderr);
