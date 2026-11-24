@@ -54,9 +54,6 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         Ok(hosts) => hosts,
         Err(e) => return config_error(e),
     };
-    if let Err(error) = remember_write_root(Some(&resolution), !args.dry_run) {
-        return config_error(error);
-    }
     let validation = validate_selected(&manifest, &skills, &hosts);
     let allow = is_builtin_seed_default_install(args, &manifest, &skills, &hosts);
     let needs_yes = !allow && hosts.len() > 1 && !args.yes;
@@ -124,6 +121,9 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         return code;
     }
     let audit = audit_meta_by_skill(&gate);
+    if let Err(error) = remember_write_root(Some(&resolution), &items) {
+        return config_error(error);
+    }
     let (_, blocked) = apply_plan(&items, &mut state, &audit, false);
     exit(blocked)
 }
@@ -198,9 +198,6 @@ fn sync_manifest_with_resolution(
         Ok(skills) => skills,
         Err(e) => return config_error(e),
     };
-    if let Err(error) = remember_write_root(resolution, !args.dry_run && !args.check) {
-        return config_error(error);
-    }
     let scoped: Vec<Skill> = scoped
         .into_iter()
         .cloned()
@@ -329,6 +326,9 @@ fn sync_manifest_with_resolution(
     }
     let mut state = state;
     let audit = audit_meta_by_skill(&gate);
+    if let Err(error) = remember_write_root(resolution, &items) {
+        return config_error(error);
+    }
     let (_, blocked) = apply_plan(&items, &mut state, &audit, args.quiet);
     exit(blocked)
 }
@@ -360,9 +360,6 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
         Ok(h) => h,
         Err(e) => return config_error(e),
     };
-    if let Err(error) = remember_write_root(Some(&resolution), !args.dry_run) {
-        return config_error(error);
-    }
     let mut state = match State::load(None) {
         Ok(s) => s,
         Err(e) => return config_error(e),
@@ -386,6 +383,9 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
     }
     if !confirm_multi_host_write(&hosts, args.yes) {
         return ExitCode::from(2);
+    }
+    if let Err(error) = remember_write_root(Some(&resolution), &items) {
+        return config_error(error);
     }
     let mut warned = false;
     let mut failed = false;
@@ -440,9 +440,6 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
         Ok(selection) => selection,
         Err(e) => return config_error(e),
     };
-    if let Err(error) = remember_write_root(Some(&resolution), !args.dry_run) {
-        return config_error(error);
-    }
     let mut state = match State::load(None) {
         Ok(s) => s,
         Err(e) => return config_error(e),
@@ -468,6 +465,9 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
         return ExitCode::from(2);
     }
     print_skipped_convert_hosts(&skipped_hosts);
+    if let Err(error) = remember_write_root(Some(&resolution), &items) {
+        return config_error(error);
+    }
     let (_, blocked) = apply_plan(&items, &mut state, &BTreeMap::new(), false);
     exit(blocked)
 }
@@ -566,13 +566,14 @@ fn resolve_write_root() -> crate::Result<root::RootResolution> {
     Ok(resolution)
 }
 
-// Resolve with the write guard up front, then remember the registry after
-// manifest-dependent argument checks have passed.
+// After all checks pass, remember the registry only for a plan that will write.
 fn remember_write_root(
     resolution: Option<&root::RootResolution>,
-    writes: bool,
+    items: &[PlanItem],
 ) -> crate::Result<()> {
-    if let Some(resolution) = resolution.filter(|resolution| writes && resolution.would_cache()) {
+    if let Some(resolution) = resolution.filter(|resolution| resolution.would_cache())
+        && items.iter().any(|item| item.action.writes())
+    {
         root::resolve_root(Some(&resolution.root), true)?;
     }
     Ok(())

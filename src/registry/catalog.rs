@@ -175,6 +175,8 @@ impl Catalog {
             summary: &'a Summary,
             #[serde(skip_serializing_if = "Option::is_none")]
             governance: Option<&'a Governance>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            error: Option<&'a str>,
         }
 
         #[derive(Serialize)]
@@ -189,6 +191,7 @@ impl Catalog {
                 .map(|row| BriefRow {
                     summary: &row.summary,
                     governance: row.governance.as_ref(),
+                    error: row.error.as_deref(),
                 })
                 .collect(),
         }

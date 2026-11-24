@@ -52,10 +52,22 @@ pub fn validate(args: &ValidateArgs) -> ExitCode {
     let dirs = if args.skills.is_empty() && args.groups.is_empty() {
         skill_dirs(&manifest)
     } else {
-        match select_names(&manifest, &args.skills, &args.groups) {
-            Ok(names) => names.iter().map(|name| manifest.skill_dir(name)).collect(),
+        // Authors can validate draft directories before registering them.
+        let (drafts, requested): (Vec<_>, Vec<_>) = args.skills.iter().cloned().partition(|name| {
+            !manifest.skills.contains_key(name)
+                && Path::new(name)
+                    .file_name()
+                    .is_some_and(|part| part == name.as_str())
+                && manifest.skill_dir(name).is_dir()
+        });
+        let mut names = match select_names(&manifest, &requested, &args.groups) {
+            Ok(names) => names,
             Err(e) => return config_error(e),
-        }
+        };
+        names.extend(drafts);
+        names.sort_unstable();
+        names.dedup();
+        names.iter().map(|name| manifest.skill_dir(name)).collect()
     };
     if let Err(error) = policy_from_settings(&manifest.audit) {
         return config_error(error);

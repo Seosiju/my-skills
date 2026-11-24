@@ -51,6 +51,16 @@ fn command(fixture: &Fixture, root: &Path) -> Command {
     command
 }
 
+fn from_cwd(fixture: &Fixture) -> Command {
+    let mut command = fixture.command();
+    command.env_remove("MY_SKILLS_ROOT");
+    command
+}
+
+fn root_cache(fixture: &Fixture) -> PathBuf {
+    fixture.root.join("config/my-skills/root")
+}
+
 fn names(data: &Value, key: &str, field: &str) -> Vec<String> {
     data[key]
         .as_array()
@@ -629,4 +639,207 @@ fn ten_skill_catalog_brief_size() {
         brief.len()
     );
     assert!(brief.len() < full.len());
+}
+
+#[test]
+fn missing_multi_host_confirmation_leaves_the_root_cache_absent() {
+    let mut cached = Vec::new();
+    for (args, installed) in [
+        (&["install", "--group", "batch"][..], false),
+        (&["sync", "--group", "batch"][..], false),
+        (&["uninstall", "--group", "batch"][..], true),
+        (&["convert", "alpha", "--to", "link"][..], true),
+    ] {
+        let fixture = batch();
+        if installed {
+            fixture
+                .command()
+                .args(["install", "alpha", "--yes"])
+                .assert()
+                .success();
+        }
+        let state = fs::read(fixture.state()).ok();
+        from_cwd(&fixture)
+            .args(args)
+            .assert()
+            .code(2)
+            .stderr(contains("writes to multiple hosts"));
+        assert_eq!(fs::read(fixture.state()).ok(), state);
+        if root_cache(&fixture).exists() {
+            cached.push(args[0]);
+        }
+    }
+    assert!(cached.is_empty(), "commands that cached a root: {cached:?}");
+}
+
+#[test]
+fn validation_failure_leaves_the_root_cache_absent() {
+    let mut cached = Vec::new();
+    for cmd in ["install", "sync", "bootstrap"] {
+        let fixture = batch();
+        skill(
+            &fixture.registry.join("skills"),
+            "alpha",
+            &"a".repeat(800),
+            "Example.",
+        );
+        from_cwd(&fixture)
+            .args([cmd, "--host", "claude"])
+            .assert()
+            .code(1)
+            .stdout(contains("description exceeds 768 characters"));
+        assert!(!fixture.host("claude").exists());
+        if root_cache(&fixture).exists() {
+            cached.push(cmd);
+        }
+    }
+    assert!(cached.is_empty(), "commands that cached a root: {cached:?}");
+}
+
+#[test]
+fn audit_block_leaves_the_root_cache_absent() {
+    let mut cached = Vec::new();
+    for cmd in ["install", "sync", "bootstrap"] {
+        let fixture = batch();
+        fixture.write_manifest(&format!("{BATCH}\n[audit]\nthreshold = 'medium'\n"));
+        skill(
+            &fixture.registry.join("skills"),
+            "alpha",
+            "Fixture skill.",
+            "![Sample](https://example.invalid/sample.png)",
+        );
+        from_cwd(&fixture)
+            .args([cmd, "--host", "claude"])
+            .assert()
+            .code(1)
+            .stdout(contains("AUDIT BLOCKED"));
+        assert!(!fixture.host("claude").exists());
+        if root_cache(&fixture).exists() {
+            cached.push(cmd);
+        }
+    }
+    assert!(cached.is_empty(), "commands that cached a root: {cached:?}");
+}
+
+#[test]
+fn noop_connections_leave_the_root_cache_absent() {
+    let mut cached = Vec::new();
+    for args in [
+        &["install", "--yes"][..],
+        &["sync", "--yes"],
+        &["uninstall", "beta", "--yes"],
+        &["convert", "--to", "copy", "--yes"],
+        &["bootstrap"],
+    ] {
+        let fixture = batch();
+        fixture
+            .command()
+            .args(["install", "--yes"])
+            .assert()
+            .success();
+        let state = fs::read(fixture.state()).unwrap();
+        from_cwd(&fixture).args(args).assert().success();
+        assert_eq!(fs::read(fixture.state()).unwrap(), state);
+        if root_cache(&fixture).exists() {
+            cached.push(args[0]);
+        }
+    }
+    assert!(cached.is_empty(), "commands that cached a root: {cached:?}");
+}
+
+#[test]
+fn first_successful_cwd_install_records_the_root_cache() {
+    let fixture = batch();
+    let cache = root_cache(&fixture);
+    assert!(!cache.exists());
+    from_cwd(&fixture)
+        .args(["install", "--yes"])
+        .assert()
+        .success();
+    assert!(fixture.host("claude").join("alpha/SKILL.md").is_file());
+    let contents = fs::read_to_string(cache).unwrap();
+    assert_eq!(
+        Path::new(contents.trim()),
+        fixture.registry.canonicalize().unwrap()
+    );
+}
+
+#[test]
+fn validate_accepts_a_named_unregistered_directory() {
+    let fixture = batch();
+    skill(
+        &fixture.registry.join("skills"),
+        "draft",
+        "Fixture skill.",
+        "Example.",
+    );
+    let report = support_h::json(fixture.command().args(["validate", "draft", "--json"]));
+    assert_eq!(report["ok"], true);
+    assert_eq!(names(&report, "skills", "skill"), ["draft"]);
+}
+
+#[test]
+fn validate_sorts_and_deduplicates_manifest_groups_and_named_drafts() {
+    let fixture = batch();
+    skill(
+        &fixture.registry.join("skills"),
+        "draft",
+        "Fixture skill.",
+        "Example.",
+    );
+    let report = support_h::json(fixture.command().args([
+        "validate", "gamma", "draft", "alpha", "draft", "--group", "batch", "--json",
+    ]));
+    assert_eq!(
+        names(&report, "skills", "skill"),
+        ["alpha", "beta", "draft", "gamma"]
+    );
+
+    fs::write(fixture.canonical("file-only"), "Fixture file.").unwrap();
+    let output = fixture
+        .command()
+        .args([
+            "validate",
+            "draft",
+            "absent",
+            "file-only",
+            "--group",
+            "batch",
+            "--json",
+        ])
+        .assert()
+        .code(2);
+    let error: Value = serde_json::from_slice(&output.get_output().stdout).unwrap();
+    assert_eq!(error["error"]["code"], "unknown_skill");
+    assert_eq!(
+        error["error"]["message"],
+        "unknown skill(s): absent, file-only"
+    );
+    let output = fixture
+        .command()
+        .args(["validate", "draft", "--group", "missing", "--json"])
+        .assert()
+        .code(2);
+    let error: Value = serde_json::from_slice(&output.get_output().stdout).unwrap();
+    assert_eq!(error["error"]["code"], "unknown_group");
+}
+
+#[test]
+fn skills_brief_includes_the_same_error_as_full_json_for_broken_rows() {
+    let fixture = batch();
+    fs::remove_file(fixture.canonical("beta").join("SKILL.md")).unwrap();
+    fs::write(
+        fixture.canonical("gamma").join("SKILL.md"),
+        "Missing frontmatter.",
+    )
+    .unwrap();
+    let full = support_h::json(fixture.command().args(["skills", "--json"]));
+    let brief = support_h::json(fixture.command().args(["skills", "--json", "--brief"]));
+    let full_rows = full["skills"].as_array().unwrap();
+    let brief_rows = brief["skills"].as_array().unwrap();
+    assert_eq!(brief_rows[0].get("error"), None);
+    for row in 1..=2 {
+        assert!(full_rows[row]["error"].is_string());
+        assert_eq!(brief_rows[row]["error"], full_rows[row]["error"]);
+    }
 }
