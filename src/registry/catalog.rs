@@ -9,9 +9,9 @@ use serde::Serialize;
 use crate::Result;
 use crate::check::audit::{self, AuditPolicy, Severity};
 use crate::check::frontmatter::{Mapping, Node, parse_document};
-use crate::drive::plan::status_of;
+use crate::drive::plan::{status_of, wants};
 use crate::drive::state::State;
-use crate::registry::manifest::{Manifest, Skill, select_names};
+use crate::registry::manifest::{Manifest, Skill};
 
 #[derive(Serialize)]
 pub(crate) struct Catalog {
@@ -68,10 +68,9 @@ pub(crate) fn rows(
     host: Option<&str>,
     enabled: Option<bool>,
     status_hosts: &[String],
-    groups: &[String],
+    selected: Option<&[String]>,
     with_governance: bool,
 ) -> Result<Catalog> {
-    let selected = select_names(manifest, &[], groups)?;
     let policy = with_governance
         .then(|| audit::policy_from_settings(&manifest.audit))
         .transpose()?;
@@ -79,7 +78,7 @@ pub(crate) fn rows(
     for skill in manifest.skills.values() {
         if enabled.is_some_and(|enabled| enabled != skill.enabled)
             || host.is_some_and(|host| !supports(&skill.hosts, host))
-            || (!selected.is_empty() && selected.binary_search(&skill.name).is_err())
+            || selected.is_some_and(|names| names.binary_search(&skill.name).is_err())
         {
             continue;
         }
@@ -123,6 +122,69 @@ pub(crate) fn rows(
         });
     }
     Ok(Catalog { skills })
+}
+
+#[derive(Default, Serialize)]
+pub(crate) struct CatalogCost {
+    pub(crate) skills: usize,
+    pub(crate) description_chars: usize,
+    pub(crate) longest: Vec<DescriptionLength>,
+    pub(crate) invalid: usize,
+}
+
+#[derive(Serialize)]
+pub(crate) struct DescriptionLength {
+    pub(crate) name: String,
+    pub(crate) chars: usize,
+}
+
+pub(crate) fn costs(
+    manifest: &Manifest,
+    hosts: impl IntoIterator<Item = &'static str>,
+) -> BTreeMap<&'static str, CatalogCost> {
+    let mut costs = hosts
+        .into_iter()
+        .filter(|host| {
+            manifest
+                .targets
+                .get(*host)
+                .is_some_and(|target| target.enabled)
+        })
+        .map(|host| (host, CatalogCost::default()))
+        .collect::<BTreeMap<_, _>>();
+    for skill in manifest.skills.values() {
+        let mut targets = costs
+            .iter_mut()
+            .filter(|(host, _)| wants(manifest, skill, host))
+            .peekable();
+        if targets.peek().is_none() {
+            continue;
+        }
+        let description_chars = metadata(&manifest.skill_dir(&skill.name))
+            .ok()
+            .and_then(|meta| match field(&meta, "description") {
+                Some(Node::String(description)) if !description.is_empty() => {
+                    Some(description.chars().count())
+                }
+                _ => None,
+            });
+        for (_, cost) in targets {
+            cost.skills += 1;
+            if let Some(chars) = description_chars {
+                cost.description_chars += chars;
+                cost.longest.push(DescriptionLength {
+                    name: skill.name.clone(),
+                    chars,
+                });
+                cost.longest
+                    .sort_by(|a, b| b.chars.cmp(&a.chars).then_with(|| a.name.cmp(&b.name)));
+                cost.longest.truncate(2);
+            } else {
+                cost.invalid += 1;
+            }
+        }
+    }
+    costs
 }
 
 fn supports(hosts: &[String], host: &str) -> bool {

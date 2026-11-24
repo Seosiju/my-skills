@@ -81,22 +81,19 @@
     "agy": {
       "errors": [],
       "warnings": [
-        "'allowed-tools' has inconsistent host support and may be ignored",
-        "agy may ignore unsupported frontmatter fields: allowed_tools"
+        "'allowed-tools' has inconsistent host support and may be ignored"
       ]
     },
     "claude": {
       "errors": [],
       "warnings": [
-        "'allowed-tools' has inconsistent host support and may be ignored",
-        "claude may ignore unsupported frontmatter fields: allowed_tools"
+        "'allowed-tools' has inconsistent host support and may be ignored"
       ]
     },
     "codex": {
       "errors": [],
       "warnings": [
-        "'allowed-tools' has inconsistent host support and may be ignored",
-        "codex may ignore unsupported frontmatter fields: allowed_tools"
+        "'allowed-tools' has inconsistent host support and may be ignored"
       ]
     },
     "standard": {
@@ -111,21 +108,21 @@
       "errors": [],
       "warnings": [
         "'allowed-tools' has inconsistent host support and may be ignored",
-        "agy may ignore unsupported frontmatter fields: a-extra, allowed-tools, allowed_tools, z-extra"
+        "agy may ignore unsupported frontmatter fields: a-extra, z-extra"
       ]
     },
     "claude": {
       "errors": [],
       "warnings": [
         "'allowed-tools' has inconsistent host support and may be ignored",
-        "claude may ignore unsupported frontmatter fields: a-extra, allowed-tools, allowed_tools, z-extra"
+        "claude may ignore unsupported frontmatter fields: a-extra, z-extra"
       ]
     },
     "codex": {
       "errors": [],
       "warnings": [
         "'allowed-tools' has inconsistent host support and may be ignored",
-        "codex may ignore unsupported frontmatter fields: a-extra, allowed-tools, allowed_tools, z-extra"
+        "codex may ignore unsupported frontmatter fields: a-extra, z-extra"
       ]
     },
     "standard": {
@@ -666,21 +663,15 @@
   "host-limit-edge": {
     "agy": {
       "errors": [],
-      "warnings": [
-        "agy may ignore unsupported frontmatter fields: metadata"
-      ]
+      "warnings": []
     },
     "claude": {
       "errors": [],
-      "warnings": [
-        "claude may ignore unsupported frontmatter fields: metadata"
-      ]
+      "warnings": []
     },
     "codex": {
       "errors": [],
-      "warnings": [
-        "codex may ignore unsupported frontmatter fields: metadata"
-      ]
+      "warnings": []
     },
     "standard": {
       "errors": [],
@@ -692,25 +683,19 @@
       "errors": [
         "agy description exceeds 768 characters"
       ],
-      "warnings": [
-        "agy may ignore unsupported frontmatter fields: metadata"
-      ]
+      "warnings": []
     },
     "claude": {
       "errors": [
         "claude description exceeds 768 characters"
       ],
-      "warnings": [
-        "claude may ignore unsupported frontmatter fields: metadata"
-      ]
+      "warnings": []
     },
     "codex": {
       "errors": [
         "codex description exceeds 768 characters"
       ],
-      "warnings": [
-        "codex may ignore unsupported frontmatter fields: metadata"
-      ]
+      "warnings": []
     },
     "standard": {
       "errors": [],
@@ -1620,25 +1605,19 @@
       "errors": [
         "agy description exceeds 768 characters"
       ],
-      "warnings": [
-        "agy may ignore unsupported frontmatter fields: metadata"
-      ]
+      "warnings": []
     },
     "claude": {
       "errors": [
         "claude description exceeds 768 characters"
       ],
-      "warnings": [
-        "claude may ignore unsupported frontmatter fields: metadata"
-      ]
+      "warnings": []
     },
     "codex": {
       "errors": [
         "codex description exceeds 768 characters"
       ],
-      "warnings": [
-        "codex may ignore unsupported frontmatter fields: metadata"
-      ]
+      "warnings": []
     },
     "standard": {
       "errors": [],
