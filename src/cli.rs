@@ -106,6 +106,8 @@ pub enum Command {
     Hooks(HooksArgs),
     /// Show how a host connection differs from its canonical skill (read-only)
     Diff(DiffArgs),
+    /// Find the canonical source behind a skill name or a skill path (read-only)
+    Resolve(ResolveArgs),
 }
 
 #[derive(Debug, Args)]
@@ -291,6 +293,11 @@ pub struct SkillNameArgs {
 
 #[derive(Debug, Args)]
 pub struct StatusArgs {
+    /// Only these skills (default: every enabled skill)
+    pub skills: Vec<String>,
+    /// Also show every skill in this manifest group (repeatable)
+    #[arg(long = "group", value_name = "GROUP")]
+    pub groups: Vec<String>,
     /// Machine-readable output (v1)
     #[arg(long)]
     pub json: bool,
@@ -298,6 +305,9 @@ pub struct StatusArgs {
 
 #[derive(Debug, Args)]
 pub struct SkillsArgs {
+    /// Only these skills (default: every registered skill); combines with
+    /// the filters below as AND
+    pub skills: Vec<String>,
     /// Machine-readable output (per-host connection status is always included)
     #[arg(long)]
     pub json: bool,
@@ -446,6 +456,17 @@ pub struct DiffArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct ResolveArgs {
+    /// A registered skill name, or a path to a skill directory or any file
+    /// inside one: canonical (skills/<name>/...) or a host connection such as
+    /// ~/.claude/skills/<name>/references/setup.md
+    pub target: String,
+    /// Machine-readable output
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct HooksArgs {
     #[command(subcommand)]
     pub action: HooksAction,
@@ -505,6 +526,7 @@ impl Command {
             Command::Skills(args) => args.json,
             Command::Sync(args) => args.json,
             Command::Diff(args) => args.json,
+            Command::Resolve(args) => args.json,
             _ => false,
         }
     }
@@ -542,5 +564,6 @@ pub fn run(cli: Cli) -> ExitCode {
         Command::Convert(args) => commands::connect::convert(&args),
         Command::Hooks(args) => commands::hooks::run(&args),
         Command::Diff(args) => commands::diff::run(&args),
+        Command::Resolve(args) => commands::resolve::run(&args),
     }
 }

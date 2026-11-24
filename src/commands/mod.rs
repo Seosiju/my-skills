@@ -12,6 +12,7 @@ pub mod doctor; // stream G
 pub mod hooks; // stream G
 pub mod inspect; // integrator: validate, audit, status, set-root, data-path
 pub mod registry; // stream H: init-registry, skills, share, enable, disable, import
+pub mod resolve; // wave15 S2: read-only name/path -> canonical lookup
 pub mod update; // stream I
 
 /// Placeholder until a command is wired; keeps alpha builds honest.
@@ -30,6 +31,10 @@ pub fn config_error(err: impl std::fmt::Display) -> ExitCode {
     }
     ExitCode::from(2)
 }
+
+/// Every "state lock timed out" message starts with this; `config_error` maps
+/// it to the `state_busy` JSON code (exit 2). Wave 15 S1 produces it.
+pub const STATE_BUSY_PREFIX: &str = "state is busy: ";
 
 /// Stable codes for errors currently passed through the display-only handler.
 /// Match the originating diagnostics here so existing human output stays intact.
@@ -61,6 +66,10 @@ fn config_error_details(message: &str) -> (&'static str, Option<&'static str>) {
         }
         m if m.starts_with("unknown group: ") => ("unknown_group", None),
         m if m.starts_with("unknown host: ") => ("unknown_host", None),
+        m if m.starts_with(STATE_BUSY_PREFIX) => (
+            "state_busy",
+            Some("Another my-skills command is writing; retry when it finishes."),
+        ),
         _ => ("config", None),
     }
 }
