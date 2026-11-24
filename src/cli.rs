@@ -348,7 +348,8 @@ pub struct SyncArgs {
     #[arg(long)]
     pub all: bool,
     /// Report drift only; change nothing. Exits 1 when anything is out of date.
-    /// Takes precedence over --dry-run; not combinable with --json
+    /// Does not validate or audit (use --dry-run --json for that). Takes
+    /// precedence over --dry-run; not combinable with --json
     #[arg(long)]
     pub check: bool,
     /// Confirm a write to more than one host
