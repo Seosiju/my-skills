@@ -111,6 +111,11 @@ fn windows_displays_registry_doctor_and_plan_paths_consistently() {
         let action = &value["actions"][0];
         check_path(&action["source"]);
         check_path(&action["destination"]);
+        let audited = value["audit"]["skills"].as_array().unwrap();
+        assert!(!audited.is_empty(), "{command}: audit ran");
+        for skill in audited {
+            check_path(&skill["path"]);
+        }
     }
 
     let active = fixture.base.join("active");

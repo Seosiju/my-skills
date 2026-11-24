@@ -582,7 +582,8 @@ fn print_validation(checks: &[ValidationCheck<'_>], json: bool) {
                 print(&format!("  error: {error}"));
             }
         }
-        if check.host.is_some() {
+        // With --json the warnings are already in `validation[].warnings`.
+        if check.host.is_some() && !json {
             for warning in &check.warnings {
                 print(&format!("  warn: {warning}"));
             }
