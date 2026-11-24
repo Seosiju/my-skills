@@ -4,6 +4,7 @@
 //! Planning reads the filesystem but never writes it. `apply::apply`
 //! executes the plan.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -239,6 +240,117 @@ fn copy_status(
         (false, true) => Status::Stale,
         (false, false) => Status::Fresh,
     })
+}
+
+/// Locate the host entry without following the final link. Different live
+/// connections may point to the same source and still have distinct entries.
+fn physical_destination(path: &Path) -> Result<PathBuf> {
+    for ancestor in path
+        .ancestors()
+        .skip(1)
+        .filter(|p| !p.as_os_str().is_empty())
+    {
+        match fs::canonicalize(ancestor) {
+            Ok(real) => {
+                let suffix = path
+                    .strip_prefix(ancestor)
+                    .expect("ancestor is a path prefix");
+                let entry = real.join(suffix);
+                #[cfg(windows)]
+                let entry = PathBuf::from(entry.to_string_lossy().to_lowercase());
+                return Ok(entry);
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(Error::io(ancestor, err)),
+        }
+    }
+    Err(Error::Manifest(format!(
+        "no existing parent for {}",
+        path.display()
+    )))
+}
+
+#[derive(Default)]
+pub(crate) struct SharedDestinations {
+    pub(crate) groups: BTreeMap<usize, Vec<usize>>,
+    pub(crate) incompatible: bool,
+}
+
+pub(crate) fn group_destinations(items: &mut [PlanItem]) -> Result<SharedDestinations> {
+    let mut indices: BTreeMap<PathBuf, Vec<usize>> = BTreeMap::new();
+    for (index, item) in items.iter().enumerate() {
+        if !matches!(item.action, Action::SkipUnsupported | Action::NotManaged) {
+            indices
+                .entry(physical_destination(&item.destination)?)
+                .or_default()
+                .push(index);
+        }
+    }
+    let mut result = SharedDestinations::default();
+    for group in indices.into_values().filter(|group| group.len() > 1) {
+        let first = &items[group[0]];
+        let same_items = group.iter().all(|&idx| {
+            let item = &items[idx];
+            item.skill == first.skill && item.source == first.source && item.mode == first.mode
+        });
+        let same_action = group.iter().all(|&idx| items[idx].action == first.action);
+        if same_action && first.action == Action::Remove {
+            continue;
+        }
+        if same_items
+            && same_action
+            && matches!(
+                first.action,
+                Action::Create | Action::Update | Action::Convert
+            )
+        {
+            result.groups.insert(group[0], group[1..].to_vec());
+            continue;
+        }
+        // A managed peer proves ownership and the clean installed digest for
+        // an alias left unrecorded by a previous partial install.
+        let managed_copy = group
+            .iter()
+            .copied()
+            .find(|&idx| matches!(items[idx].action, Action::Update | Action::Noop));
+        let unrecorded = |item: &PlanItem| {
+            item.action == Action::BlockConflict
+                && item.reason == "destination exists and is not managed by my-skills"
+        };
+        if same_items
+            && first.mode == InstallMode::Copy
+            && let Some(primary) = managed_copy
+            && group.iter().all(|&idx| {
+                matches!(items[idx].action, Action::Update | Action::Noop)
+                    || unrecorded(&items[idx])
+            })
+        {
+            if !same_action {
+                for &idx in &group {
+                    items[idx].action = Action::Update;
+                    items[idx].reason = "reconcile shared copy destination".into();
+                }
+                result.groups.insert(
+                    primary,
+                    group
+                        .iter()
+                        .copied()
+                        .filter(|&idx| idx != primary)
+                        .collect(),
+                );
+            }
+            continue;
+        }
+        if !same_items || group.iter().any(|&idx| items[idx].action.writes()) {
+            result.incompatible = true;
+            for idx in group {
+                items[idx].action = Action::Conflict;
+                items[idx].reason =
+                    "shared destination has incompatible planned connections".into();
+            }
+        }
+    }
+    Ok(result)
 }
 
 /// Plan connecting one skill to one host. An existing record keeps its own

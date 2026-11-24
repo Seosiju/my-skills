@@ -66,6 +66,14 @@ fn config_error_details(message: &str) -> (&'static str, Option<&'static str>) {
         }
         m if m.starts_with("unknown group: ") => ("unknown_group", None),
         m if m.starts_with("unknown host: ") => ("unknown_host", None),
+        m if m.starts_with("skill already exists: ") => (
+            "already_exists",
+            Some("Pick another name, or edit the existing skill (my-skills resolve <name>)."),
+        ),
+        m if m.starts_with("invalid skill name ") || m.starts_with("invalid group name ") => (
+            "invalid_name",
+            Some("Use lowercase letters, digits, and single hyphens."),
+        ),
         m if m.starts_with(STATE_BUSY_PREFIX) => (
             "state_busy",
             Some("Another my-skills command is writing; retry when it finishes."),

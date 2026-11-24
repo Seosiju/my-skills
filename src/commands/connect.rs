@@ -4,7 +4,7 @@
 //! `bootstrap_commands.py`. v1 changes: links are the default mode, sync
 //! reconciles (connects and prunes, D3), and `convert` is new (spec §6.6).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::rc::Rc;
@@ -15,7 +15,7 @@ use serde_json::json;
 use super::config_error;
 use crate::Error;
 use crate::check::audit::{
-    AuditGateResult, audit_skills, format_gate, gate_json, policy_from_settings,
+    AuditGateResult, AuditResult, audit_skills, format_gate, gate_json, policy_from_settings,
 };
 use crate::check::validate::{ValidationResult, compose_validation, validate_skill_for_host};
 use crate::cli::*;
@@ -57,29 +57,6 @@ pub fn install(args: &InstallArgs) -> ExitCode {
     };
     let allow = is_builtin_seed_default_install(args, &manifest, &skills, &hosts);
     let needs_yes = !allow && hosts.len() > 1 && !args.yes;
-    let preview_checks;
-    let preview_validation;
-    if args.dry_run {
-        preview_checks = check_targets(&manifest, &skills, &hosts, None, CheckScope::AllHosts);
-        preview_validation = validate_selected(&preview_checks);
-        if preview_validation.iter().any(|check| !check.ok) {
-            DryRun {
-                items: &[],
-                validation: &preview_validation,
-                audit: None,
-                resolution: Some(&resolution),
-                needs_yes,
-            }
-            .print(args.json);
-            if !args.json {
-                print_confirmation_hint(&hosts, needs_yes);
-            }
-            return ExitCode::from(1);
-        }
-    } else {
-        preview_checks = Vec::new();
-        preview_validation = Vec::new();
-    }
     let mut state = match State::load(None) {
         Ok(s) => s,
         Err(e) => return config_error(e),
@@ -95,28 +72,35 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         }
     }
 
-    let prepared = (!args.dry_run).then(|| PreparedPlan::new(&items));
-    let checks = if args.dry_run {
-        preview_checks
-    } else {
-        check_targets(
-            &manifest,
-            &skills,
-            &hosts,
-            prepared.as_ref(),
-            CheckScope::AllHosts,
-        )
+    let shared = match plan::group_destinations(&mut items) {
+        Ok(shared) => shared,
+        Err(err) => return config_error(err),
     };
-    let validation = if args.dry_run {
-        preview_validation
-    } else {
-        validate_selected(&checks)
-    };
+    if shared.incompatible && !args.dry_run {
+        print_plan_results_noop(&items);
+        return ExitCode::from(1);
+    }
+    let mut prepared = PreparedPlan::new(&items);
+    let checks = check_targets(&manifest, &skills, &hosts, &prepared, CheckScope::AllHosts);
+    let validation = validate_selected(&checks, Some(&prepared));
     if !args.dry_run {
         print_validation(&validation, false);
-        if validation.iter().any(|check| !check.ok) {
-            return ExitCode::from(1);
+    }
+    if validation.iter().any(|check| !check.ok) {
+        if args.dry_run {
+            DryRun {
+                items: &[],
+                validation: &validation,
+                audit: None,
+                resolution: Some(&resolution),
+                needs_yes,
+            }
+            .print(args.json);
+            if !args.json {
+                print_confirmation_hint(&hosts, needs_yes);
+            }
         }
+        return ExitCode::from(1);
     }
     let gate = match audit_gate(&manifest, &checks, args.skip_audit) {
         Ok(gate) => gate,
@@ -133,7 +117,7 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         }
         .print(args.json);
         if !args.json {
-            println!("{}", format_gate(&gate, "AUDIT WOULD BLOCK"));
+            println!("{}", format_gate(&unique_audit(&gate), "AUDIT WOULD BLOCK"));
             println!("Dry run — planned actions (nothing written):");
             print_plan(&items);
             super::print_would_cache_root(&resolution);
@@ -149,14 +133,16 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         return code;
     }
     let mut audit = audit_meta_by_path(&checks, &gate);
-    let mut prepared = prepared.expect("real install has a prepared plan");
     if let Err(code) = check_fallbacks(&manifest, &mut prepared, &mut audit, args.skip_audit) {
         return code;
     }
-    if let Err(error) = remember_write_root(Some(&resolution), &items) {
-        return config_error(error);
-    }
-    let (_, blocked) = apply_plan(prepared, &mut state, &audit, false);
+    remember_write_root(Some(&resolution), &items);
+    let (_, blocked) = apply_plan(
+        prepared.with_groups(shared.groups),
+        &mut state,
+        &audit,
+        false,
+    );
     exit(blocked)
 }
 
@@ -236,6 +222,7 @@ fn sync_manifest_with_resolution(
     };
     let scoped: Vec<Skill> = scoped
         .into_iter()
+        .filter(|skill| !args.exclude.contains(&skill.name))
         .cloned()
         .map(|mut s| {
             if args.all {
@@ -256,7 +243,7 @@ fn sync_manifest_with_resolution(
         include_orphans: requested.is_empty(),
         prune: !args.no_prune,
     };
-    let items = match plan::plan_sync(manifest, &state, &scope, None) {
+    let mut items = match plan::plan_sync(manifest, &state, &scope, None) {
         Ok(items) => items,
         Err(e) => return config_error(e),
     };
@@ -289,6 +276,14 @@ fn sync_manifest_with_resolution(
         return exit(drift);
     }
 
+    let shared = match plan::group_destinations(&mut items) {
+        Ok(shared) => shared,
+        Err(err) => return config_error(err),
+    };
+    if shared.incompatible && !args.dry_run {
+        print_plan_results_noop(&items);
+        return ExitCode::from(1);
+    }
     let writes = items.iter().any(|i| i.action.writes());
     let explicit = !requested.is_empty();
     if !args.dry_run {
@@ -303,7 +298,7 @@ fn sync_manifest_with_resolution(
         }
     }
 
-    let prepared = (!args.dry_run).then(|| PreparedPlan::new(&items));
+    let mut prepared = PreparedPlan::new(&items);
     let checked: Vec<&Skill> = skills
         .iter()
         .copied()
@@ -319,8 +314,8 @@ fn sync_manifest_with_resolution(
     } else {
         CheckScope::AllHosts
     };
-    let checks = check_targets(manifest, &checked, &hosts, prepared.as_ref(), scope);
-    let validation = validate_selected(&checks);
+    let checks = check_targets(manifest, &checked, &hosts, &prepared, scope);
+    let validation = validate_selected(&checks, Some(&prepared));
     let invalid = validation.iter().any(|check| !check.ok);
     if !args.dry_run {
         print_validation(&validation, false);
@@ -352,7 +347,7 @@ fn sync_manifest_with_resolution(
             print_plan(&items);
             // Same rule as the JSON `audit` object: report only a gate that ran.
             if let Some(gate) = gate.as_ref().filter(|gate| gate.skipped || gate.blocked()) {
-                println!("{}", format_gate(gate, "AUDIT WOULD BLOCK"));
+                println!("{}", format_gate(&unique_audit(gate), "AUDIT WOULD BLOCK"));
             }
             if let Some(resolution) = resolution {
                 super::print_would_cache_root(resolution);
@@ -372,14 +367,16 @@ fn sync_manifest_with_resolution(
     let mut audit = gate
         .as_ref()
         .map_or_else(BTreeMap::new, |gate| audit_meta_by_path(&checks, gate));
-    let mut prepared = prepared.expect("real sync has a prepared plan");
     if let Err(code) = check_fallbacks(manifest, &mut prepared, &mut audit, args.skip_audit) {
         return code;
     }
-    if let Err(error) = remember_write_root(resolution, &items) {
-        return config_error(error);
-    }
-    let (_, blocked) = apply_plan(prepared, &mut state, &audit, args.quiet);
+    remember_write_root(resolution, &items);
+    let (_, blocked) = apply_plan(
+        prepared.with_groups(shared.groups),
+        &mut state,
+        &audit,
+        args.quiet,
+    );
     exit(blocked)
 }
 
@@ -434,9 +431,7 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
     if !confirm_multi_host_write(&hosts, args.yes) {
         return ExitCode::from(2);
     }
-    if let Err(error) = remember_write_root(Some(&resolution), &items) {
-        return config_error(error);
-    }
+    remember_write_root(Some(&resolution), &items);
     let mut warned = false;
     let mut failed = false;
     for item in &items {
@@ -501,10 +496,18 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
     let explicit_host = matches!(args.host.as_deref(), Some(name) if name != "all");
     let (active_hosts, skipped_hosts) =
         plan::filter_convert_hosts(&manifest, &hosts, to, explicit_host);
-    let items = match plan::plan_convert(&manifest, &state, &skills, &active_hosts, to) {
+    let mut items = match plan::plan_convert(&manifest, &state, &skills, &active_hosts, to) {
         Ok(items) => items,
         Err(e) => return config_error(e),
     };
+    let shared = match plan::group_destinations(&mut items) {
+        Ok(shared) => shared,
+        Err(err) => return config_error(err),
+    };
+    if shared.incompatible && !args.dry_run {
+        print_plan_results_noop(&items);
+        return ExitCode::from(1);
+    }
     if args.dry_run {
         print_write_refusal(resolution.write_refusal().as_deref());
         println!("Dry run — planned actions (nothing written):");
@@ -512,21 +515,24 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
         print_skipped_convert_hosts(&skipped_hosts);
         super::print_would_cache_root(&resolution);
         print_confirmation_hint(&active_hosts, active_hosts.len() > 1 && !args.yes);
-        return ExitCode::SUCCESS;
+        if shared.incompatible {
+            return ExitCode::from(1);
+        }
+    } else {
+        if !confirm_multi_host_write(&active_hosts, args.yes) {
+            return ExitCode::from(2);
+        }
+        print_skipped_convert_hosts(&skipped_hosts);
     }
-    if !confirm_multi_host_write(&active_hosts, args.yes) {
-        return ExitCode::from(2);
-    }
-    print_skipped_convert_hosts(&skipped_hosts);
     let prepared = PreparedPlan::new(&items);
     let checks = check_targets(
         &manifest,
         &skills,
         &active_hosts,
-        Some(&prepared),
+        &prepared,
         CheckScope::ConvertCopies,
     );
-    let validation = validate_selected(&checks);
+    let validation = validate_selected(&checks, Some(&prepared));
     print_validation(&validation, false);
     if validation.iter().any(|check| !check.ok) {
         return ExitCode::from(1);
@@ -538,15 +544,25 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
             Ok(gate) => gate,
             Err(e) => return config_error(e),
         };
+        if args.dry_run {
+            println!("{}", format_gate(&unique_audit(&gate), "AUDIT WOULD BLOCK"));
+            return exit(gate.blocked());
+        }
         if let Some(code) = report_gate(&gate) {
             return code;
         }
         audit_meta_by_path(&checks, &gate)
     };
-    if let Err(error) = remember_write_root(Some(&resolution), &items) {
-        return config_error(error);
+    if args.dry_run {
+        return ExitCode::SUCCESS;
     }
-    let (_, blocked) = apply_plan(prepared, &mut state, &audit, false);
+    remember_write_root(Some(&resolution), &items);
+    let (_, blocked) = apply_plan(
+        prepared.with_groups(shared.groups),
+        &mut state,
+        &audit,
+        false,
+    );
     exit(blocked)
 }
 
@@ -604,6 +620,9 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
             Ok(lock) => lock,
             Err(e) => return config_error(e),
         };
+        if let Err(err) = resolution.recheck_write() {
+            return config_error(err);
+        }
         let manifest = match load_manifest(&resolution.root, &cli) {
             Ok(m) => m,
             Err(e) => return config_error(e),
@@ -638,6 +657,7 @@ fn load_connect_manifest(
     }
     let resolution = resolve_write_root()?;
     let state_lock = lock_state(true)?;
+    resolution.recheck_write()?;
     let manifest = load_manifest(&resolution.root, cli)?;
     Ok((manifest, resolution, state_lock))
 }
@@ -657,29 +677,25 @@ fn resolve_write_root() -> crate::Result<root::RootResolution> {
 }
 
 // After all checks pass, remember the registry only for a plan that will write.
-fn remember_write_root(
-    resolution: Option<&root::RootResolution>,
-    items: &[PlanItem],
-) -> crate::Result<()> {
-    if let Some(resolution) = resolution.filter(|resolution| resolution.would_cache())
+fn remember_write_root(resolution: Option<&root::RootResolution>, items: &[PlanItem]) {
+    if let Some(resolution) = resolution
         && items.iter().any(|item| item.action.writes())
     {
-        root::resolve_root(Some(&resolution.root), true)?;
+        resolution.remember();
     }
-    Ok(())
 }
 
 #[derive(Serialize)]
 struct ValidationCheck<'a> {
     skill: &'a str,
-    host: Option<&'static str>,
+    host: Option<&'a str>,
     ok: bool,
     errors: Vec<String>,
     warnings: Vec<String>,
 }
 
 impl<'a> ValidationCheck<'a> {
-    fn new(skill: &'a str, host: Option<&'static str>, result: ValidationResult) -> Self {
+    fn new(skill: &'a str, host: Option<&'a str>, result: ValidationResult) -> Self {
         Self {
             skill,
             host,
@@ -696,6 +712,7 @@ struct PreparedPlan<'a> {
     items: &'a [PlanItem],
     connections: BTreeMap<(&'a str, &'a str), Preparation>,
     snapshots: BTreeMap<String, Rc<CopySnapshot>>,
+    groups: BTreeMap<usize, Vec<usize>>,
 }
 
 impl<'a> PreparedPlan<'a> {
@@ -717,7 +734,13 @@ impl<'a> PreparedPlan<'a> {
             items,
             connections,
             snapshots,
+            groups: BTreeMap::new(),
         }
+    }
+
+    fn with_groups(mut self, groups: BTreeMap<usize, Vec<usize>>) -> Self {
+        self.groups = groups;
+        self
     }
 
     fn prepare_links(&mut self) -> Vec<CheckTarget<'a>> {
@@ -778,7 +801,7 @@ fn check_targets<'a>(
     manifest: &Manifest,
     skills: &[&'a Skill],
     hosts: &'a [String],
-    prepared: Option<&PreparedPlan<'_>>,
+    prepared: &PreparedPlan<'_>,
     scope: CheckScope,
 ) -> Vec<CheckTarget<'a>> {
     let mut checks = Vec::new();
@@ -790,19 +813,17 @@ fn check_targets<'a>(
             let eligible = match scope {
                 CheckScope::AllHosts => skill.hosts.is_empty() || skill.hosts.contains(host),
                 CheckScope::Wanted => plan::wants(manifest, skill, host),
-                CheckScope::ConvertCopies => prepared.is_some_and(|plan| {
-                    plan.items.iter().any(|item| {
-                        item.skill == skill.name
-                            && item.host == *host
-                            && item.action == Action::Convert
-                            && item.mode == InstallMode::Copy
-                    })
+                CheckScope::ConvertCopies => prepared.items.iter().any(|item| {
+                    item.skill == skill.name
+                        && item.host == *host
+                        && item.action == Action::Convert
+                        && item.mode == InstallMode::Copy
                 }),
             };
             if !eligible {
                 continue;
             }
-            if let Some(path) = prepared.and_then(|plan| plan.snapshot(&skill.name, host)) {
+            if let Some(path) = prepared.snapshot(&skill.name, host) {
                 snapshot = Some(path);
                 copy_hosts.push(host.as_str());
             } else {
@@ -829,7 +850,10 @@ fn check_targets<'a>(
     checks
 }
 
-fn validate_selected<'a>(targets: &[CheckTarget<'a>]) -> Vec<ValidationCheck<'a>> {
+fn validate_selected<'a>(
+    targets: &[CheckTarget<'a>],
+    prepared: Option<&PreparedPlan<'a>>,
+) -> Vec<ValidationCheck<'a>> {
     let mut checks = Vec::new();
     for target in targets {
         checks.push(ValidationCheck::new(
@@ -845,7 +869,41 @@ fn validate_selected<'a>(targets: &[CheckTarget<'a>]) -> Vec<ValidationCheck<'a>
             ));
         }
     }
-    checks
+    if let Some(prepared) = prepared {
+        for (&(skill, host), connection) in &prepared.connections {
+            if let Err(error) = connection {
+                checks.push(ValidationCheck {
+                    skill,
+                    host: Some(host),
+                    ok: false,
+                    errors: vec![format!("could not stage a copy: {error}")],
+                    warnings: Vec::new(),
+                });
+            }
+        }
+    }
+    let mut unique: Vec<ValidationCheck<'_>> = Vec::new();
+    for check in checks {
+        if let Some(existing) = unique
+            .iter_mut()
+            .find(|row| row.skill == check.skill && row.host == check.host)
+        {
+            existing.ok &= check.ok;
+            for error in check.errors {
+                if !existing.errors.contains(&error) {
+                    existing.errors.push(error);
+                }
+            }
+            for warning in check.warnings {
+                if !existing.warnings.contains(&warning) {
+                    existing.warnings.push(warning);
+                }
+            }
+        } else {
+            unique.push(check);
+        }
+    }
+    unique
 }
 
 fn print_validation(checks: &[ValidationCheck<'_>], json: bool) {
@@ -857,16 +915,24 @@ fn print_validation(checks: &[ValidationCheck<'_>], json: bool) {
         }
     };
     let mut invalid = false;
+    let mut printed = BTreeSet::new();
     for check in checks {
         if !check.ok {
             invalid = true;
-            let host = check.host.map_or(String::new(), |host| format!("{host} "));
-            print(&format!(
-                "[BLOCKED] {}: {host}validation failed",
-                check.skill
-            ));
-            for error in &check.errors {
-                print(&format!("  error: {error}"));
+            let errors: Vec<_> = check
+                .errors
+                .iter()
+                .filter(|error| printed.insert((check.skill, *error)))
+                .collect();
+            if !errors.is_empty() {
+                let host = check.host.map_or(String::new(), |host| format!("{host} "));
+                print(&format!(
+                    "[BLOCKED] {}: {host}validation failed",
+                    check.skill
+                ));
+                for error in errors {
+                    print(&format!("  error: {error}"));
+                }
             }
         }
         // With --json the warnings are already in `validation[].warnings`.
@@ -888,7 +954,32 @@ fn audit_gate(
 ) -> crate::Result<AuditGateResult> {
     let policy = policy_from_settings(&manifest.audit)?;
     let dirs: Vec<PathBuf> = checks.iter().map(|target| target.dir.clone()).collect();
-    audit_skills(&dirs, &policy, skip)
+    let mut gate = audit_skills(&dirs, &policy, skip)?;
+    for result in &mut gate.results {
+        result.root = manifest.skill_dir(&result.skill);
+    }
+    Ok(gate)
+}
+
+/// Combine presentation results only. Record metadata still uses the
+/// findings from the exact tree checked for that connection.
+fn unique_audit(gate: &AuditGateResult) -> AuditGateResult {
+    let mut results: Vec<AuditResult> = Vec::new();
+    for result in &gate.results {
+        if let Some(existing) = results.iter_mut().find(|entry| entry.skill == result.skill) {
+            for finding in &result.findings {
+                if !existing.findings.contains(finding) {
+                    existing.findings.push(finding.clone());
+                }
+            }
+        } else {
+            results.push(result.clone());
+        }
+    }
+    AuditGateResult {
+        results,
+        skipped: gate.skipped,
+    }
 }
 
 fn check_fallbacks(
@@ -901,7 +992,7 @@ fn check_fallbacks(
     if checks.is_empty() {
         return Ok(());
     }
-    let validation = validate_selected(&checks);
+    let validation = validate_selected(&checks, None);
     print_validation(&validation, false);
     if validation.iter().any(|check| !check.ok) {
         return Err(ExitCode::from(1));
@@ -919,9 +1010,9 @@ fn check_fallbacks(
 /// Print a skipped or blocked gate; `Some(exit)` when the command must stop.
 fn report_gate(gate: &AuditGateResult) -> Option<ExitCode> {
     if gate.skipped {
-        println!("{}", format_gate(gate, "AUDIT BLOCKED"));
+        println!("{}", format_gate(&unique_audit(gate), "AUDIT BLOCKED"));
     } else if gate.blocked() {
-        println!("{}", format_gate(gate, "AUDIT BLOCKED"));
+        println!("{}", format_gate(&unique_audit(gate), "AUDIT BLOCKED"));
         eprintln!("\nNo files were changed (audit blocked).");
         return Some(ExitCode::from(1));
     }
@@ -960,8 +1051,19 @@ fn apply_plan(
 ) -> (usize, bool) {
     let mut changed = 0;
     let mut blocked = false;
-    for item in plan.items {
+    let aliases: BTreeSet<_> = plan.groups.values().flatten().copied().collect();
+    for (index, item) in plan.items.iter().enumerate() {
+        if aliases.contains(&index) {
+            continue;
+        }
         if item.action.writes() {
+            let peers: Vec<_> = plan
+                .groups
+                .remove(&index)
+                .into_iter()
+                .flatten()
+                .map(|idx| &plan.items[idx])
+                .collect();
             let prepared = plan
                 .connections
                 .remove(&(item.skill.as_str(), item.host.as_str()))
@@ -971,12 +1073,27 @@ fn apply_plan(
                     .as_ref()
                     .and_then(PreparedConnection::check_snapshot)
                     .unwrap_or(&item.source);
-                apply::apply_prepared(item, state, audit.get(path), connection.as_ref())
+                apply::apply_prepared_group(
+                    item,
+                    &peers,
+                    state,
+                    audit.get(path),
+                    connection.as_ref(),
+                )
             }) {
                 Ok(applied) => {
-                    changed += 1;
-                    print_result_line(item, Some(&applied.outcome));
+                    changed += 1 + peers.len();
+                    for applied_item in std::iter::once(item).chain(peers.iter().copied()) {
+                        print_result_line(applied_item, Some(&applied.outcome));
+                    }
                     applied.print_cleanup_warnings();
+                }
+                Err(Error::CopyConflict(path)) => {
+                    blocked = true;
+                    println!(
+                        "  CONFLICT: {} -> {} ({path} changed locally after planning)",
+                        item.skill, item.host
+                    );
                 }
                 Err(Error::StateSave(e)) => {
                     blocked = true;
@@ -1085,9 +1202,9 @@ impl DryRun<'_> {
             .resolution
             .and_then(root::RootResolution::write_refusal);
         let validation = self.validation.iter().filter(|check| !check.ok);
-        let audit = self
-            .audit
-            .into_iter()
+        let audit_gate = self.audit.map(unique_audit);
+        let audit = audit_gate
+            .iter()
             .flat_map(|gate| &gate.results)
             .filter(|result| result.blocked());
         let plan = self.items.iter().filter(|item| item.action.is_block());
@@ -1153,7 +1270,7 @@ impl DryRun<'_> {
                     "source": display_path(&item.source),
                     "destination": display_path(&item.destination),
                 })).collect::<Vec<_>>(),
-                "audit": gate_json(self.audit.unwrap_or(&audit_not_run)),
+                "audit": gate_json(audit_gate.as_ref().unwrap_or(&audit_not_run)),
                 "registry": self.resolution.map(root::RootResolution::meta),
                 "dry_run": true,
                 "blocked": blocked,

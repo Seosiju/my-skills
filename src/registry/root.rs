@@ -10,9 +10,11 @@
 //! 4. the cached active root (`$XDG_CONFIG_HOME/my-skills/root`).
 
 use std::fs;
+use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+use fs4::FileExt;
 use serde::Serialize;
 
 use crate::registry::manifest::{self, CliOverrides, MANIFEST_FILE, Manifest, Skill};
@@ -43,6 +45,7 @@ pub struct RootResolution {
     pub source: RootSource,
     /// The cached active root, if one is valid.
     pub cached: Option<PathBuf>,
+    cache: CacheSnapshot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -56,6 +59,43 @@ impl RootResolution {
     /// active registry because no valid cache exists yet.
     pub fn would_cache(&self) -> bool {
         self.source == RootSource::Cwd && self.cached.is_none()
+    }
+
+    /// Recheck implicit write eligibility once the caller holds the state lock.
+    pub(crate) fn recheck_write(&self) -> Result<()> {
+        let current = read_root_cache();
+        let refusal = match self.source {
+            RootSource::Cwd => current.as_deref().filter(|active| *active != self.root),
+            RootSource::Cache if current.as_deref() != Some(self.root.as_path()) => {
+                if current.is_none() {
+                    note_cache_change(&self.root);
+                    return Err(Error::Manifest(
+                        "active registry was removed; retry with an explicit registry".into(),
+                    ));
+                }
+                current.as_deref()
+            }
+            _ => None,
+        };
+        if let Some(active) = refusal {
+            note_cache_change(&self.root);
+            return Err(Error::Manifest(write_refusal_message(&self.root, active)));
+        }
+        Ok(())
+    }
+
+    /// Cache only a first cwd discovery, and preserve a newer set-root.
+    pub(crate) fn remember(&self) -> bool {
+        if self.would_cache() {
+            return self.cache.remember(&self.root);
+        }
+        if matches!(self.source, RootSource::Cwd | RootSource::Cache)
+            && let Ok(current) = cache_contents(&root_cache_path())
+            && current != self.cache.0
+        {
+            note_cache_change(&self.root);
+        }
+        false
     }
 
     pub fn meta(&self) -> RegistryMeta {
@@ -111,23 +151,84 @@ fn resolve(path: &Path) -> PathBuf {
     fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-fn write_root_cache(root: &Path) {
-    // Explicit invocations never update the saved active registry, including
-    // callers that record roots through `cache_repo_root` directly.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct CacheSnapshot(Option<Vec<u8>>);
+
+impl CacheSnapshot {
+    pub(crate) fn observe() -> Self {
+        Self(cache_contents(&root_cache_path()).ok().flatten())
+    }
+
+    pub(crate) fn remember(&self, root: &Path) -> bool {
+        write_root_cache(root, Some(self))
+    }
+
+    fn active(&self) -> Option<PathBuf> {
+        self.0.as_deref().and_then(cached_root)
+    }
+}
+
+fn note_cache_change(root: &Path) {
+    eprintln!(
+        "note: active registry cache changed while writing {}; leaving the newer selection alone",
+        paths::display_path(root),
+    );
+}
+
+fn write_root_cache(root: &Path, observed: Option<&CacheSnapshot>) -> bool {
+    try_write_root_cache(root, observed).unwrap_or(false)
+}
+
+/// Like `write_root_cache`, but reports lock and write failures. Implicit
+/// caching is best effort; an explicit `set-root` must not claim success
+/// when nothing was saved.
+fn try_write_root_cache(root: &Path, observed: Option<&CacheSnapshot>) -> io::Result<bool> {
     if explicit_root().is_some() {
-        return;
+        return Ok(false);
     }
     let cache = root_cache_path();
-    if let Some(parent) = cache.parent() {
-        let _ = fs::create_dir_all(parent);
+    let parent = cache.parent().expect("root cache has a parent");
+    let write = || -> io::Result<bool> {
+        fs::create_dir_all(parent)?;
+        // Serialize the conditional update with explicit set-root writes.
+        // A separate file lets set-root proceed while a host writer waits.
+        let lock = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(cache.with_file_name("root.lock"))?;
+        FileExt::lock(&lock)?;
+        if let Some(original) = observed
+            && let Some(current) = cache_contents(&cache)?
+            && original.0.as_deref() != Some(&current)
+        {
+            note_cache_change(root);
+            return Ok(false);
+        }
+        let mut temp = tempfile::NamedTempFile::new_in(parent)?;
+        writeln!(temp, "{}", root.display())?;
+        temp.persist(&cache).map_err(|err| err.error)?;
+        Ok(true)
+    };
+    write()
+}
+
+fn cache_contents(path: &Path) -> io::Result<Option<Vec<u8>>> {
+    match fs::read(path) {
+        Ok(contents) => Ok(Some(contents)),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err),
     }
-    let _ = fs::write(&cache, format!("{}\n", root.display()));
+}
+
+fn cached_root(contents: &[u8]) -> Option<PathBuf> {
+    let text = std::str::from_utf8(contents).ok()?;
+    let cached = manifest::expand_path(text.trim());
+    is_root(&cached).then(|| resolve(&cached))
 }
 
 pub fn read_root_cache() -> Option<PathBuf> {
-    let text = fs::read_to_string(root_cache_path()).ok()?;
-    let cached = manifest::expand_path(text.trim());
-    is_root(&cached).then(|| resolve(&cached))
+    cached_root(&cache_contents(&root_cache_path()).ok()??)
 }
 
 /// Validate `root` as a registry without recording it (`set-root --dry-run`).
@@ -151,7 +252,7 @@ pub fn cache_repo_root(root: &Path) -> Result<PathBuf> {
             root.display()
         )));
     }
-    write_root_cache(&resolved);
+    try_write_root_cache(&resolved, None).map_err(|err| Error::io(root_cache_path(), err))?;
     Ok(resolved)
 }
 
@@ -198,8 +299,7 @@ fn resolve_root_inner(
                 paths::display_path(active)
             );
         }
-    } else if write_cache && resolution.would_cache() {
-        write_root_cache(&resolution.root);
+    } else if write_cache && resolution.remember() {
         resolution.cached = Some(resolution.root.clone());
     }
     Ok(resolution)
@@ -242,6 +342,7 @@ fn discover_root(start: Option<&Path>) -> Result<RootResolution> {
             root,
             source: RootSource::Flag,
             cached: read_root_cache(),
+            cache: CacheSnapshot::default(),
         });
     }
 
@@ -253,6 +354,7 @@ fn discover_root(start: Option<&Path>) -> Result<RootResolution> {
                 root,
                 source: RootSource::Env,
                 cached: read_root_cache(),
+                cache: CacheSnapshot::default(),
             });
         }
         return Err(Error::Manifest(format!(
@@ -260,12 +362,14 @@ fn discover_root(start: Option<&Path>) -> Result<RootResolution> {
         )));
     }
 
-    let cached = read_root_cache();
+    let cache = CacheSnapshot::observe();
+    let cached = cache.active();
     if let Ok(cwd_root) = find_cwd_root(start) {
         return Ok(RootResolution {
             root: cwd_root,
             source: RootSource::Cwd,
             cached,
+            cache,
         });
     }
 
@@ -274,6 +378,7 @@ fn discover_root(start: Option<&Path>) -> Result<RootResolution> {
             root: active.clone(),
             source: RootSource::Cache,
             cached: Some(active),
+            cache,
         });
     }
 

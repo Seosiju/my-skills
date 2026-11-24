@@ -265,9 +265,7 @@ impl Scaffold {
             // real directory (spec §4 I2).
             let _ = crate::drive::apply::remove_real_dir(&skills);
         }
-        result?;
-        root::cache_repo_root(target)?;
-        Ok(())
+        result
     }
 }
 

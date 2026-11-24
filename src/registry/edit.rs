@@ -38,7 +38,7 @@ impl EditLock {
         manifest.with_extension("toml.edit-lock")
     }
 
-    fn check_available(manifest: &Path) -> Result<()> {
+    pub(crate) fn check_available(manifest: &Path) -> Result<()> {
         let path = Self::path(manifest);
         match fs::symlink_metadata(&path) {
             Ok(_) => Err(Error::io(path, io::ErrorKind::AlreadyExists.into())),
@@ -179,6 +179,45 @@ pub(crate) fn prepare_registration_locked(
 ) -> Result<ManifestEdit> {
     prepare_locked(path, Some(lock), |lines| {
         register(lines, name, enabled, hosts)?;
+        Ok(true)
+    })
+}
+
+/// Register a brand-new skill as disabled. Unlike `register`, `group` and
+/// `hosts` are written only when given, and an existing section is refused.
+pub(crate) fn prepare_new_skill(
+    path: &Path,
+    name: &str,
+    group: Option<&str>,
+    hosts: &[String],
+) -> Result<ManifestEdit> {
+    // The caller holds the `EditLock` across the canonical write and any rollback.
+    prepare_locked(path, None, |lines| {
+        if let Some(error) = validate_name(name).first() {
+            return Err(Error::Manifest(format!(
+                "invalid skill name '{name}': {error}"
+            )));
+        }
+        if skill_section(lines, name).is_some() {
+            return Err(Error::Manifest(format!(
+                "skill already exists: {name} is already registered"
+            )));
+        }
+        if lines.last().is_some_and(|line| !line.is_empty()) {
+            lines.push(String::new());
+        }
+        lines.push(format!("[skills.{name}]"));
+        lines.push("enabled = false".into());
+        if let Some(group) = group {
+            lines.push(format!("group = {}", toml_string(group)));
+        }
+        if !hosts.is_empty() {
+            let hosts = hosts
+                .iter()
+                .map(|host| toml_string(host))
+                .collect::<Vec<_>>();
+            lines.push(format!("hosts = [{}]", hosts.join(", ")));
+        }
         Ok(true)
     })
 }
