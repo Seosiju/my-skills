@@ -69,6 +69,11 @@ fn skills_json_filters_by_host_and_enabled_state() {
             .command()
             .args(["skills", "--json", "--host", "codex", "--enabled"]),
     );
+    // v1.1 adds `registry`; every v1.0 key keeps its value.
+    assert_eq!(data["registry"]["source"], "env");
+    assert!(data["registry"]["path"].is_string());
+    let mut data = data;
+    data.as_object_mut().unwrap().remove("registry");
     assert_eq!(
         data,
         json!({"skills": [

@@ -1,7 +1,6 @@
 //! Skill listing and metadata (v0.4.1 catalog.py). Stream H.
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
@@ -225,18 +224,7 @@ pub(crate) fn display_path(path: &Path) -> String {
 }
 
 pub(crate) fn json_output(value: &impl Serialize) -> String {
-    let json = serde_json::to_string_pretty(value).expect("registry output is serializable");
-    let mut ascii = String::with_capacity(json.len());
-    for ch in json.chars() {
-        if ch <= '\x7e' {
-            ascii.push(ch);
-        } else {
-            for unit in ch.encode_utf16(&mut [0; 2]) {
-                write!(ascii, "\\u{unit:04x}").unwrap();
-            }
-        }
-    }
-    ascii
+    serde_json::to_string_pretty(value).expect("registry output is serializable")
 }
 
 pub(crate) fn table(

@@ -8,20 +8,22 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use serde_json::{Value, json};
+use serde::Serialize;
+use serde_json::json;
 
 use super::config_error;
 use crate::Error;
 use crate::check::audit::{
     AuditGateResult, audit_skills, format_gate, gate_json, policy_from_settings,
 };
-use crate::check::validate::{compose_validation, validate_skill_for_host};
+use crate::check::validate::{ValidationResult, compose_validation, validate_skill_for_host};
 use crate::cli::*;
 use crate::drive::apply::{self, AuditMeta, Connection, Outcome};
 use crate::drive::hosts::{self, get_host};
 use crate::drive::link::LinkKind;
 use crate::drive::plan::{self, Action, PlanItem, SyncScope};
 use crate::drive::state::State;
+use crate::platform::paths::display_path;
 use crate::registry::manifest::{
     CliOverrides, InstallMode, Manifest, Skill, expand_path, load_manifest,
 };
@@ -30,11 +32,14 @@ use crate::registry::root::{self, confirm_multi_host_write, resolve_hosts};
 // ---------------------------------------------------------------- install
 
 pub fn install(args: &InstallArgs) -> ExitCode {
+    if args.json && !args.dry_run {
+        return config_error("install --json requires --dry-run");
+    }
     let cli = CliOverrides {
         install_mode: args.mode.map(Into::into),
         ..CliOverrides::default()
     };
-    let (manifest, resolution) = match root::load_manifest_resolved(&cli, !args.dry_run) {
+    let (manifest, resolution) = match load_connect_manifest(&cli, !args.dry_run) {
         Ok(loaded) => loaded,
         Err(e) => return config_error(e),
     };
@@ -47,11 +52,29 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         Ok(selection) => selection,
         Err(e) => return config_error(e),
     };
-    if args.json && !args.dry_run {
-        return config_error("install --json requires --dry-run");
+    if let Err(error) = remember_write_root(Some(&resolution), !args.dry_run) {
+        return config_error(error);
     }
-    if !validate_selected(&manifest, &skills, &hosts) {
-        eprintln!("\nNo files were changed (fix validation errors first).");
+    let validation = validate_selected(&manifest, &skills, &hosts);
+    let allow = is_builtin_seed_default_install(args, &manifest, &skills, &hosts);
+    let needs_yes = !allow && hosts.len() > 1 && !args.yes;
+    if !args.dry_run {
+        print_validation(&validation, false);
+    }
+    if validation.iter().any(|check| !check.ok) {
+        if args.dry_run {
+            DryRun {
+                items: &[],
+                validation: &validation,
+                audit: None,
+                resolution: Some(&resolution),
+                needs_yes,
+            }
+            .print(args.json);
+            if !args.json {
+                print_confirmation_hint(&hosts, needs_yes);
+            }
+        }
         return ExitCode::from(1);
     }
     let gate = match audit_gate(&manifest, &skills, args.skip_audit) {
@@ -74,20 +97,24 @@ pub fn install(args: &InstallArgs) -> ExitCode {
     }
 
     if args.dry_run {
-        if args.json {
-            let mut payload = plan_json(&items);
-            payload["audit"] = gate_json(&gate);
-            print_json(&payload);
-            return ExitCode::SUCCESS;
+        DryRun {
+            items: &items,
+            validation: &validation,
+            audit: Some(&gate),
+            resolution: Some(&resolution),
+            needs_yes,
         }
-        println!("{}", format_gate(&gate, "AUDIT WOULD BLOCK"));
-        println!("Dry run — planned actions (nothing written):");
-        print_plan(&items);
-        super::print_would_cache_root(&resolution);
+        .print(args.json);
+        if !args.json {
+            println!("{}", format_gate(&gate, "AUDIT WOULD BLOCK"));
+            println!("Dry run — planned actions (nothing written):");
+            print_plan(&items);
+            super::print_would_cache_root(&resolution);
+            print_confirmation_hint(&hosts, needs_yes);
+        }
         return ExitCode::SUCCESS;
     }
 
-    let allow = is_builtin_seed_default_install(args, &manifest, &skills, &hosts);
     if !allow && !confirm_multi_host_write(&hosts, args.yes) {
         return ExitCode::from(2);
     }
@@ -130,16 +157,21 @@ fn is_builtin_seed_default_install(
 // ---------------------------------------------------------------- sync
 
 pub fn sync(args: &SyncArgs) -> ExitCode {
+    if args.json && args.check {
+        return config_error("sync --json is not supported with --check; use --dry-run --json");
+    }
+    if args.json && !args.dry_run {
+        return config_error("sync --json requires --dry-run");
+    }
     let (manifest, resolution) =
-        match root::load_manifest_resolved(&CliOverrides::default(), !args.dry_run) {
+        match load_connect_manifest(&CliOverrides::default(), !args.dry_run && !args.check) {
             Ok(loaded) => loaded,
             Err(e) => return config_error(e),
         };
     sync_manifest_with_resolution(&manifest, args, Some(&resolution))
 }
 
-/// Sync against an already loaded manifest (also used by bootstrap and the
-/// git hooks).
+/// Sync against an already loaded manifest.
 pub fn sync_manifest(manifest: &Manifest, args: &SyncArgs) -> ExitCode {
     sync_manifest_with_resolution(manifest, args, None)
 }
@@ -163,6 +195,9 @@ fn sync_manifest_with_resolution(
         },
         None => manifest.skills.values().cloned().collect(),
     };
+    if let Err(error) = remember_write_root(resolution, !args.dry_run && !args.check) {
+        return config_error(error);
+    }
     let scoped: Vec<Skill> = scoped
         .into_iter()
         .map(|mut s| {
@@ -217,6 +252,19 @@ fn sync_manifest_with_resolution(
         return exit(drift);
     }
 
+    let writes = items.iter().any(|i| i.action.writes());
+    if !args.dry_run {
+        if !writes {
+            if !args.quiet {
+                print_plan_results_noop(&items);
+            }
+            return exit(items.iter().any(|i| i.action.is_block()));
+        }
+        if !confirm_multi_host_write(&hosts, args.yes) {
+            return ExitCode::from(2);
+        }
+    }
+
     let connecting: Vec<&Skill> = skills
         .iter()
         .copied()
@@ -227,31 +275,49 @@ fn sync_manifest_with_resolution(
         })
         .collect();
 
-    if args.dry_run {
-        println!("Dry run — planned actions (nothing written):");
-        print_plan(&items);
-        if let Some(resolution) = resolution {
-            super::print_would_cache_root(resolution);
+    let validation = validate_selected(manifest, &connecting, &hosts);
+    let invalid = validation.iter().any(|check| !check.ok);
+    if !args.dry_run {
+        print_validation(&validation, false);
+        if invalid {
+            return ExitCode::from(1);
         }
-        return ExitCode::SUCCESS;
     }
-    if !items.iter().any(|i| i.action.writes()) {
-        if !args.quiet {
-            print_plan_results_noop(&items);
+    let gate = if writes && !invalid {
+        match audit_gate(manifest, &connecting, args.skip_audit) {
+            Ok(gate) => Some(gate),
+            Err(e) => return config_error(e),
         }
-        return exit(items.iter().any(|i| i.action.is_block()));
-    }
-    if !confirm_multi_host_write(&hosts, args.yes) {
-        return ExitCode::from(2);
-    }
-    if !validate_selected(manifest, &connecting, &hosts) {
-        eprintln!("\nNo files were changed (fix validation errors first).");
-        return ExitCode::from(1);
-    }
-    let gate = match audit_gate(manifest, &connecting, args.skip_audit) {
-        Ok(gate) => gate,
-        Err(e) => return config_error(e),
+    } else {
+        None
     };
+
+    if args.dry_run {
+        let needs_yes = writes && hosts.len() > 1 && !args.yes;
+        DryRun {
+            items: &items,
+            validation: &validation,
+            audit: gate.as_ref(),
+            resolution,
+            needs_yes,
+        }
+        .print(args.json);
+        if !args.json {
+            println!("Dry run — planned actions (nothing written):");
+            print_plan(&items);
+            // Same rule as the JSON `audit` object: report only a gate that ran.
+            if let Some(gate) = gate.as_ref().filter(|gate| gate.skipped || gate.blocked()) {
+                println!("{}", format_gate(gate, "AUDIT WOULD BLOCK"));
+            }
+            if let Some(resolution) = resolution {
+                super::print_would_cache_root(resolution);
+            }
+            print_confirmation_hint(&hosts, needs_yes);
+        }
+        return exit(invalid);
+    }
+
+    let gate = gate.expect("a real sync with writes and valid skills runs the audit gate");
     if !args.quiet || gate.blocked() {
         if let Some(code) = report_gate(&gate) {
             return code;
@@ -272,18 +338,21 @@ fn print_plan_results_noop(items: &[PlanItem]) {
 // ---------------------------------------------------------------- uninstall
 
 pub fn uninstall(args: &UninstallArgs) -> ExitCode {
-    let (manifest, resolution) =
-        match root::load_manifest_resolved(&CliOverrides::default(), !args.dry_run) {
-            Ok(loaded) => loaded,
-            Err(e) => return config_error(e),
-        };
     let Some(skill) = args.skill.as_deref() else {
         return config_error("uninstall requires a skill name");
     };
+    let (manifest, resolution) =
+        match load_connect_manifest(&CliOverrides::default(), !args.dry_run) {
+            Ok(loaded) => loaded,
+            Err(e) => return config_error(e),
+        };
     let hosts = match resolve_hosts(&manifest, args.host.as_deref()) {
         Ok(h) => h,
         Err(e) => return config_error(e),
     };
+    if let Err(error) = remember_write_root(Some(&resolution), !args.dry_run) {
+        return config_error(error);
+    }
     let mut state = match State::load(None) {
         Ok(s) => s,
         Err(e) => return config_error(e),
@@ -296,9 +365,11 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
         }
     }
     if args.dry_run {
+        print_write_refusal(resolution.write_refusal().as_deref());
         println!("Dry run — planned actions (nothing written):");
         print_plan(&items);
         super::print_would_cache_root(&resolution);
+        print_confirmation_hint(&hosts, hosts.len() > 1 && !args.yes);
         return ExitCode::SUCCESS;
     }
     if !confirm_multi_host_write(&hosts, args.yes) {
@@ -322,7 +393,11 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
                     "  WARN: {} -> {} was modified locally; not removed",
                     item.skill, item.host
                 );
-                println!("    {}", item.destination.display());
+                println!("    {}", display_path(&item.destination));
+            }
+            action if action.is_block() => {
+                warned = true;
+                print_result_line(item, None);
             }
             Action::NotManaged => println!(
                 "  skipped: {} -> {} (not managed by my-skills)",
@@ -338,7 +413,7 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
 
 pub fn convert(args: &ConvertArgs) -> ExitCode {
     let (manifest, resolution) =
-        match root::load_manifest_resolved(&CliOverrides::default(), !args.dry_run) {
+        match load_connect_manifest(&CliOverrides::default(), !args.dry_run) {
             Ok(loaded) => loaded,
             Err(e) => return config_error(e),
         };
@@ -353,6 +428,9 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
         Ok(selection) => selection,
         Err(e) => return config_error(e),
     };
+    if let Err(error) = remember_write_root(Some(&resolution), !args.dry_run) {
+        return config_error(error);
+    }
     let mut state = match State::load(None) {
         Ok(s) => s,
         Err(e) => return config_error(e),
@@ -366,10 +444,12 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
         Err(e) => return config_error(e),
     };
     if args.dry_run {
+        print_write_refusal(resolution.write_refusal().as_deref());
         println!("Dry run — planned actions (nothing written):");
         print_plan(&items);
         print_skipped_convert_hosts(&skipped_hosts);
         super::print_would_cache_root(&resolution);
+        print_confirmation_hint(&active_hosts, active_hosts.len() > 1 && !args.yes);
         return ExitCode::SUCCESS;
     }
     if !confirm_multi_host_write(&active_hosts, args.yes) {
@@ -392,8 +472,13 @@ fn print_skipped_convert_hosts(skipped: &[(String, InstallMode)]) {
 // ---------------------------------------------------------------- bootstrap
 
 pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
-    let root = match root::resolve_root(None, false) {
-        Ok(r) => r.root,
+    let writes = !args.dry_run && !args.skip_skill_install;
+    let resolution = match if writes {
+        resolve_write_root()
+    } else {
+        root::resolve_root(None, false)
+    } {
+        Ok(resolution) => resolution,
         Err(e) => return config_error(e),
     };
     let mut preview = vec!["my-skills".to_string(), "sync".into()];
@@ -425,7 +510,7 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
             install_mode: args.mode.map(Into::into),
             ..CliOverrides::default()
         };
-        let manifest = match load_manifest(&root, &cli) {
+        let manifest = match load_manifest(&resolution.root, &cli) {
             Ok(m) => m,
             Err(e) => return config_error(e),
         };
@@ -435,7 +520,7 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
             yes: true,
             ..SyncArgs::default()
         };
-        let code = sync_manifest(&manifest, &sync_args);
+        let code = sync_manifest_with_resolution(&manifest, &sync_args, Some(&resolution));
         if code != ExitCode::SUCCESS {
             return code;
         }
@@ -449,18 +534,72 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
 
 // ---------------------------------------------------------------- shared
 
-fn validate_selected(manifest: &Manifest, skills: &[&Skill], hosts_: &[String]) -> bool {
-    let mut ok = true;
+fn load_connect_manifest(
+    cli: &CliOverrides,
+    writes: bool,
+) -> crate::Result<(Manifest, root::RootResolution)> {
+    if !writes {
+        return root::load_manifest_resolved(cli, false);
+    }
+    let resolution = resolve_write_root()?;
+    let manifest = load_manifest(&resolution.root, cli)?;
+    Ok((manifest, resolution))
+}
+
+fn resolve_write_root() -> crate::Result<root::RootResolution> {
+    let resolution = root::resolve_root(None, false)?;
+    if let Some(message) = resolution.write_refusal() {
+        return Err(Error::Manifest(message));
+    }
+    Ok(resolution)
+}
+
+// Resolve with the write guard up front, then remember the registry after
+// manifest-dependent argument checks have passed.
+fn remember_write_root(
+    resolution: Option<&root::RootResolution>,
+    writes: bool,
+) -> crate::Result<()> {
+    if let Some(resolution) = resolution.filter(|resolution| writes && resolution.would_cache()) {
+        root::resolve_root(Some(&resolution.root), true)?;
+    }
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct ValidationCheck<'a> {
+    skill: &'a str,
+    host: Option<&'static str>,
+    ok: bool,
+    errors: Vec<String>,
+    warnings: Vec<String>,
+}
+
+impl<'a> ValidationCheck<'a> {
+    fn new(skill: &'a str, host: Option<&'static str>, result: ValidationResult) -> Self {
+        Self {
+            skill,
+            host,
+            ok: result.ok(),
+            errors: result.errors,
+            warnings: result.warnings,
+        }
+    }
+}
+
+fn validate_selected<'a>(
+    manifest: &Manifest,
+    skills: &[&'a Skill],
+    hosts_: &[String],
+) -> Vec<ValidationCheck<'a>> {
+    let mut checks = Vec::new();
     for skill in skills {
         let dir = manifest.skill_dir(&skill.name);
-        let result = compose_validation(&dir);
-        if !result.ok() {
-            ok = false;
-            println!("[BLOCKED] {}: validation failed", skill.name);
-            for error in &result.errors {
-                println!("  error: {error}");
-            }
-        }
+        checks.push(ValidationCheck::new(
+            &skill.name,
+            None,
+            compose_validation(&dir),
+        ));
         for host in hosts_ {
             // A host the skill does not connect to cannot reject it.
             if !skill.hosts.is_empty() && !skill.hosts.iter().any(|h| h == host) {
@@ -469,20 +608,47 @@ fn validate_selected(manifest: &Manifest, skills: &[&Skill], hosts_: &[String]) 
             let Some(config) = get_host(host) else {
                 continue;
             };
-            let host_result = validate_skill_for_host(&dir, config);
-            if !host_result.ok() {
-                ok = false;
-                println!("[BLOCKED] {}: {host} validation failed", skill.name);
-                for error in &host_result.errors {
-                    println!("  error: {error}");
-                }
+            checks.push(ValidationCheck::new(
+                &skill.name,
+                Some(config.name),
+                validate_skill_for_host(&dir, config),
+            ));
+        }
+    }
+    checks
+}
+
+fn print_validation(checks: &[ValidationCheck<'_>], json: bool) {
+    let print = |line: &str| {
+        if json {
+            eprintln!("{line}");
+        } else {
+            println!("{line}");
+        }
+    };
+    let mut invalid = false;
+    for check in checks {
+        if !check.ok {
+            invalid = true;
+            let host = check.host.map_or(String::new(), |host| format!("{host} "));
+            print(&format!(
+                "[BLOCKED] {}: {host}validation failed",
+                check.skill
+            ));
+            for error in &check.errors {
+                print(&format!("  error: {error}"));
             }
-            for warning in &host_result.warnings {
-                println!("  warn: {warning}");
+        }
+        // With --json the warnings are already in `validation[].warnings`.
+        if check.host.is_some() && !json {
+            for warning in &check.warnings {
+                print(&format!("  warn: {warning}"));
             }
         }
     }
-    ok
+    if invalid {
+        eprintln!("\nNo files were changed (fix validation errors first).");
+    }
 }
 
 fn audit_gate(
@@ -590,7 +756,7 @@ fn print_result_line(item: &PlanItem, outcome: Option<&Outcome>) {
         (action, _) if action.is_block() => {
             println!("  BLOCKED: {pair}");
             println!("    {}:", item.reason);
-            println!("    {}", item.destination.display());
+            println!("    {}", display_path(&item.destination));
         }
         _ => {}
     }
@@ -620,25 +786,125 @@ fn print_plan(items: &[PlanItem]) {
     }
 }
 
-fn plan_json(items: &[PlanItem]) -> Value {
-    json!({
-        "actions": items.iter().map(|item| json!({
-            "skill": item.skill,
-            "host": item.host,
-            "action": item.action.label(),
-            "reason": item.reason,
-            "mode": mode_label(item.mode),
-            "source": item.source.to_string_lossy(),
-            "destination": item.destination.to_string_lossy(),
-        })).collect::<Vec<_>>()
-    })
+fn print_write_refusal(message: Option<&str>) {
+    if let Some(message) = message {
+        println!("BLOCKED: {message}");
+    }
 }
 
-fn print_json(value: &Value) {
-    println!(
-        "{}",
-        serde_json::to_string_pretty(value).expect("JSON values always serialize")
-    );
+fn print_confirmation_hint(hosts: &[String], needs_yes: bool) {
+    if needs_yes {
+        println!(
+            "Re-run with --yes to apply: this command writes to multiple hosts ({}).",
+            hosts.join(", ")
+        );
+    }
+}
+
+struct DryRun<'a> {
+    items: &'a [PlanItem],
+    validation: &'a [ValidationCheck<'a>],
+    audit: Option<&'a AuditGateResult>,
+    resolution: Option<&'a root::RootResolution>,
+    needs_yes: bool,
+}
+
+impl DryRun<'_> {
+    fn print(&self, json: bool) {
+        let refusal = self
+            .resolution
+            .and_then(root::RootResolution::write_refusal);
+        let validation = self.validation.iter().filter(|check| !check.ok);
+        let audit = self
+            .audit
+            .into_iter()
+            .flat_map(|gate| &gate.results)
+            .filter(|result| result.blocked());
+        let plan = self.items.iter().filter(|item| item.action.is_block());
+        let (validation_count, audit_count, plan_count) = (
+            validation.clone().count(),
+            audit.clone().count(),
+            plan.clone().count(),
+        );
+        let count = validation_count + audit_count + plan_count;
+        let blocked = count != 0 || refusal.is_some();
+
+        if json {
+            let mut reasons = Vec::new();
+            if let Some(message) = refusal {
+                reasons.push(json!({
+                    "skill": null,
+                    "host": null,
+                    "kind": "inactive_registry",
+                    "message": message,
+                }));
+            }
+            reasons.extend(validation.map(|check| {
+                json!({
+                    "skill": check.skill,
+                    "host": check.host,
+                    "kind": "validation",
+                    "message": check.errors.join("\n"),
+                })
+            }));
+            reasons.extend(audit.map(|result| json!({
+                "skill": result.skill,
+                "host": null,
+                "kind": "audit",
+                "message": format!("audit blocked (threshold={})", result.threshold.map_or("none", |threshold| threshold.label())),
+            })));
+            reasons.extend(plan.map(|item| {
+                json!({
+                    "skill": item.skill,
+                    "host": item.host,
+                    "kind": item.action.label().to_ascii_lowercase(),
+                    "message": item.reason,
+                })
+            }));
+            if self.needs_yes {
+                reasons.push(json!({
+                    "skill": null,
+                    "host": null,
+                    "kind": "needs_yes",
+                    "message": "this command writes to multiple hosts and requires --yes",
+                }));
+            }
+            let audit_not_run = AuditGateResult {
+                results: Vec::new(),
+                skipped: false,
+            };
+            let payload = json!({
+                "actions": self.items.iter().map(|item| json!({
+                    "skill": item.skill,
+                    "host": item.host,
+                    "action": item.action.label(),
+                    "reason": item.reason,
+                    "mode": mode_label(item.mode),
+                    "source": display_path(&item.source),
+                    "destination": display_path(&item.destination),
+                })).collect::<Vec<_>>(),
+                "audit": gate_json(self.audit.unwrap_or(&audit_not_run)),
+                "registry": self.resolution.map(root::RootResolution::meta),
+                "dry_run": true,
+                "blocked": blocked,
+                "applicable": !blocked && !self.needs_yes,
+                "block_reasons": reasons,
+                "validation": self.validation,
+            });
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&payload).expect("JSON values always serialize")
+            );
+        } else {
+            print_write_refusal(refusal.as_deref());
+            if count != 0 {
+                println!(
+                    "BLOCKED: {count} item(s) would be refused (validation {validation_count}, audit {audit_count}, plan {plan_count})"
+                );
+            }
+        }
+        print_validation(self.validation, json);
+    }
 }
 
 fn exit(blocked: bool) -> ExitCode {
