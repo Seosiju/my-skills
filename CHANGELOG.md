@@ -7,6 +7,17 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ## [Unreleased]
 
+## [1.0.0-alpha.1] - 2026-11-24
+
+### Added
+
+- First Rust prerelease, with binaries and SHA-256 checksums for macOS
+  (Apple silicon and Intel), Linux (x86-64 GNU), and Windows (x86-64 MSVC).
+- Symlink and junction installation for skills, with copy fallback and
+  per-host install modes.
+- Shell and PowerShell installers and a Rust self-updater. Use
+  `my-skills update --check --channel main` to check for prereleases.
+
 ## [0.4.2] - 2026-11-23
 
 ### Changed
