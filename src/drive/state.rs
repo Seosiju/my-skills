@@ -18,6 +18,11 @@ use crate::platform::paths;
 use crate::registry::manifest::InstallMode;
 use crate::{Error, Result};
 
+#[path = "lock.rs"]
+mod lock;
+
+pub(crate) use lock::StateLock;
+
 pub const SCHEMA_VERSION: i64 = 1;
 
 const REQUIRED_RECORD_FIELDS: &[&str] = &[

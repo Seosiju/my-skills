@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 use std::fs;
-use std::io::Write as _;
+use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 use tempfile::NamedTempFile;
@@ -26,16 +26,29 @@ pub(crate) struct ManifestEdit {
     path: PathBuf,
     before: String,
     after: String,
-    _lock: EditLock,
+    _lock: Option<EditLock>,
 }
 
 // Hold the lock through the canonical swap and state save so two registry
 // writers cannot publish conflicting edits or roll back each other's work.
-struct EditLock(PathBuf);
+pub(crate) struct EditLock(PathBuf);
 
 impl EditLock {
-    fn acquire(manifest: &Path) -> Result<Self> {
-        let path = manifest.with_extension("toml.edit-lock");
+    fn path(manifest: &Path) -> PathBuf {
+        manifest.with_extension("toml.edit-lock")
+    }
+
+    fn check_available(manifest: &Path) -> Result<()> {
+        let path = Self::path(manifest);
+        match fs::symlink_metadata(&path) {
+            Ok(_) => Err(Error::io(path, io::ErrorKind::AlreadyExists.into())),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(Error::io(path, err)),
+        }
+    }
+
+    pub(crate) fn acquire(manifest: &Path) -> Result<Self> {
+        let path = Self::path(manifest);
         fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -122,9 +135,17 @@ pub(crate) fn prepare_import(
     enable: bool,
     current: bool,
     hosts: &[String],
+    dry_run: bool,
 ) -> Result<(ManifestEdit, bool)> {
+    let lock = if dry_run {
+        // Report an edit already in progress without creating a lock or waiting.
+        EditLock::check_available(path)?;
+        None
+    } else {
+        Some(EditLock::acquire(path)?)
+    };
     let mut enabled = enable;
-    let edit = prepare(path, |lines| {
+    let edit = prepare_locked(path, lock, |lines| {
         if let Some((start, end)) = skill_section(lines, name) {
             if !enable {
                 enabled = current;
@@ -145,7 +166,18 @@ pub(crate) fn prepare_registration(
     enabled: bool,
     hosts: &[String],
 ) -> Result<ManifestEdit> {
-    prepare(path, |lines| {
+    let lock = EditLock::acquire(path)?;
+    prepare_registration_locked(path, name, enabled, hosts, lock)
+}
+
+pub(crate) fn prepare_registration_locked(
+    path: &Path,
+    name: &str,
+    enabled: bool,
+    hosts: &[String],
+    lock: EditLock,
+) -> Result<ManifestEdit> {
+    prepare_locked(path, Some(lock), |lines| {
         register(lines, name, enabled, hosts)?;
         Ok(true)
     })
@@ -193,7 +225,14 @@ fn prepare(
     path: &Path,
     edit: impl FnOnce(&mut Vec<String>) -> Result<bool>,
 ) -> Result<ManifestEdit> {
-    let lock = EditLock::acquire(path)?;
+    prepare_locked(path, Some(EditLock::acquire(path)?), edit)
+}
+
+fn prepare_locked(
+    path: &Path,
+    lock: Option<EditLock>,
+    edit: impl FnOnce(&mut Vec<String>) -> Result<bool>,
+) -> Result<ManifestEdit> {
     let before = read(path)?;
     let mut lines = prep_lines(&before);
     let after = if edit(&mut lines)? {

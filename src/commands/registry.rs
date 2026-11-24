@@ -103,13 +103,11 @@ pub fn skills(args: &SkillsArgs) -> ExitCode {
 }
 
 pub fn share(args: &ShareArgs) -> ExitCode {
-    let preview = args.plan || args.dry_run;
-    let write = !preview && args.skill.is_some() && args.enable != args.disable;
-    let (manifest, resolution) = match load_resolved(write) {
-        Ok(loaded) => loaded,
-        Err(err) => return super::config_error(err),
-    };
-    if preview {
+    if args.plan || args.dry_run {
+        let (manifest, resolution) = match load_resolved(false) {
+            Ok(loaded) => loaded,
+            Err(err) => return super::config_error(err),
+        };
         return match share::plan_share(&manifest, &args.from_host) {
             Ok(plan) => {
                 let output = if args.json {
@@ -133,13 +131,15 @@ pub fn share(args: &ShareArgs) -> ExitCode {
         return super::config_error("share requires exactly one of --enable or --disable");
     }
 
-    let mut state = match State::load(None) {
-        Ok(state) => state,
+    let resolution = match root::resolve_root(None, false) {
+        Ok(resolution) => resolution,
         Err(err) => return super::config_error(err),
     };
+    if let Some(refusal) = resolution.write_refusal() {
+        return super::config_error(refusal);
+    }
     match share::share(
-        &manifest,
-        &mut state,
+        &resolution.root,
         &args.from_host,
         skill,
         args.enable,
@@ -147,6 +147,9 @@ pub fn share(args: &ShareArgs) -> ExitCode {
         args.skip_audit,
     ) {
         Ok(result) => {
+            if resolution.would_cache() {
+                let _ = root::cache_repo_root(&resolution.root);
+            }
             if args.force {
                 println!("WARN: force overwrite allowed for existing canonical skill");
             }

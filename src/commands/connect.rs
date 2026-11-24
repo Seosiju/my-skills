@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::rc::Rc;
 
 use serde::Serialize;
 use serde_json::json;
@@ -18,11 +19,11 @@ use crate::check::audit::{
 };
 use crate::check::validate::{ValidationResult, compose_validation, validate_skill_for_host};
 use crate::cli::*;
-use crate::drive::apply::{self, AuditMeta, Connection, Outcome};
+use crate::drive::apply::{self, AuditMeta, Connection, CopySnapshot, Outcome, PreparedConnection};
 use crate::drive::hosts::{self, get_host};
 use crate::drive::link::LinkKind;
 use crate::drive::plan::{self, Action, PlanItem, SyncScope};
-use crate::drive::state::State;
+use crate::drive::state::{State, StateLock, default_state_path};
 use crate::platform::paths::display_path;
 use crate::registry::manifest::{
     CliOverrides, InstallMode, Manifest, Skill, expand_path, load_manifest, select_names,
@@ -40,7 +41,7 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         install_mode: args.mode.map(Into::into),
         ..CliOverrides::default()
     };
-    let (manifest, resolution) = match load_connect_manifest(&cli, !args.dry_run) {
+    let (manifest, resolution, _state_lock) = match load_connect_manifest(&cli, !args.dry_run) {
         Ok(loaded) => loaded,
         Err(e) => return config_error(e),
     };
@@ -54,17 +55,17 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         Ok(hosts) => hosts,
         Err(e) => return config_error(e),
     };
-    let validation = validate_selected(&manifest, &skills, &hosts);
     let allow = is_builtin_seed_default_install(args, &manifest, &skills, &hosts);
     let needs_yes = !allow && hosts.len() > 1 && !args.yes;
-    if !args.dry_run {
-        print_validation(&validation, false);
-    }
-    if validation.iter().any(|check| !check.ok) {
-        if args.dry_run {
+    let preview_checks;
+    let preview_validation;
+    if args.dry_run {
+        preview_checks = check_targets(&manifest, &skills, &hosts, None, CheckScope::AllHosts);
+        preview_validation = validate_selected(&preview_checks);
+        if preview_validation.iter().any(|check| !check.ok) {
             DryRun {
                 items: &[],
-                validation: &validation,
+                validation: &preview_validation,
                 audit: None,
                 resolution: Some(&resolution),
                 needs_yes,
@@ -73,13 +74,12 @@ pub fn install(args: &InstallArgs) -> ExitCode {
             if !args.json {
                 print_confirmation_hint(&hosts, needs_yes);
             }
+            return ExitCode::from(1);
         }
-        return ExitCode::from(1);
+    } else {
+        preview_checks = Vec::new();
+        preview_validation = Vec::new();
     }
-    let gate = match audit_gate(&manifest, &skills, args.skip_audit) {
-        Ok(gate) => gate,
-        Err(e) => return config_error(e),
-    };
     let mut state = match State::load(None) {
         Ok(s) => s,
         Err(e) => return config_error(e),
@@ -94,6 +94,34 @@ pub fn install(args: &InstallArgs) -> ExitCode {
             }
         }
     }
+
+    let prepared = (!args.dry_run).then(|| PreparedPlan::new(&items));
+    let checks = if args.dry_run {
+        preview_checks
+    } else {
+        check_targets(
+            &manifest,
+            &skills,
+            &hosts,
+            prepared.as_ref(),
+            CheckScope::AllHosts,
+        )
+    };
+    let validation = if args.dry_run {
+        preview_validation
+    } else {
+        validate_selected(&checks)
+    };
+    if !args.dry_run {
+        print_validation(&validation, false);
+        if validation.iter().any(|check| !check.ok) {
+            return ExitCode::from(1);
+        }
+    }
+    let gate = match audit_gate(&manifest, &checks, args.skip_audit) {
+        Ok(gate) => gate,
+        Err(e) => return config_error(e),
+    };
 
     if args.dry_run {
         DryRun {
@@ -120,11 +148,15 @@ pub fn install(args: &InstallArgs) -> ExitCode {
     if let Some(code) = report_gate(&gate) {
         return code;
     }
-    let audit = audit_meta_by_skill(&gate);
+    let mut audit = audit_meta_by_path(&checks, &gate);
+    let mut prepared = prepared.expect("real install has a prepared plan");
+    if let Err(code) = check_fallbacks(&manifest, &mut prepared, &mut audit, args.skip_audit) {
+        return code;
+    }
     if let Err(error) = remember_write_root(Some(&resolution), &items) {
         return config_error(error);
     }
-    let (_, blocked) = apply_plan(&items, &mut state, &audit, false);
+    let (_, blocked) = apply_plan(prepared, &mut state, &audit, false);
     exit(blocked)
 }
 
@@ -166,7 +198,7 @@ pub fn sync(args: &SyncArgs) -> ExitCode {
     if args.json && !args.dry_run {
         return config_error("sync --json requires --dry-run");
     }
-    let (manifest, resolution) =
+    let (manifest, resolution, _state_lock) =
         match load_connect_manifest(&CliOverrides::default(), !args.dry_run && !args.check) {
             Ok(loaded) => loaded,
             Err(e) => return config_error(e),
@@ -176,6 +208,10 @@ pub fn sync(args: &SyncArgs) -> ExitCode {
 
 /// Sync against an already loaded manifest.
 pub fn sync_manifest(manifest: &Manifest, args: &SyncArgs) -> ExitCode {
+    let _state_lock = match lock_state(!args.dry_run && !args.check) {
+        Ok(lock) => lock,
+        Err(e) => return config_error(e),
+    };
     sync_manifest_with_resolution(manifest, args, None)
 }
 
@@ -254,29 +290,37 @@ fn sync_manifest_with_resolution(
     }
 
     let writes = items.iter().any(|i| i.action.writes());
+    let explicit = !requested.is_empty();
     if !args.dry_run {
-        if !writes {
+        if !writes && !explicit {
             if !args.quiet {
                 print_plan_results_noop(&items);
             }
             return exit(items.iter().any(|i| i.action.is_block()));
         }
-        if !confirm_multi_host_write(&hosts, args.yes) {
+        if writes && !confirm_multi_host_write(&hosts, args.yes) {
             return ExitCode::from(2);
         }
     }
 
-    let connecting: Vec<&Skill> = skills
+    let prepared = (!args.dry_run).then(|| PreparedPlan::new(&items));
+    let checked: Vec<&Skill> = skills
         .iter()
         .copied()
         .filter(|s| {
-            items
-                .iter()
-                .any(|i| i.skill == s.name && matches!(i.action, Action::Create | Action::Update))
+            explicit
+                || items.iter().any(|i| {
+                    i.skill == s.name && matches!(i.action, Action::Create | Action::Update)
+                })
         })
         .collect();
-
-    let validation = validate_selected(manifest, &connecting, &hosts);
+    let scope = if explicit {
+        CheckScope::Wanted
+    } else {
+        CheckScope::AllHosts
+    };
+    let checks = check_targets(manifest, &checked, &hosts, prepared.as_ref(), scope);
+    let validation = validate_selected(&checks);
     let invalid = validation.iter().any(|check| !check.ok);
     if !args.dry_run {
         print_validation(&validation, false);
@@ -284,8 +328,8 @@ fn sync_manifest_with_resolution(
             return ExitCode::from(1);
         }
     }
-    let gate = if writes && !invalid {
-        match audit_gate(manifest, &connecting, args.skip_audit) {
+    let gate = if (writes || !checks.is_empty()) && !invalid {
+        match audit_gate(manifest, &checks, args.skip_audit) {
             Ok(gate) => Some(gate),
             Err(e) => return config_error(e),
         }
@@ -318,18 +362,24 @@ fn sync_manifest_with_resolution(
         return exit(invalid);
     }
 
-    let gate = gate.expect("a real sync with writes and valid skills runs the audit gate");
-    if !args.quiet || gate.blocked() {
-        if let Some(code) = report_gate(&gate) {
-            return code;
-        }
+    if let Some(gate) = gate.as_ref()
+        && (!args.quiet || gate.blocked())
+        && let Some(code) = report_gate(gate)
+    {
+        return code;
     }
     let mut state = state;
-    let audit = audit_meta_by_skill(&gate);
+    let mut audit = gate
+        .as_ref()
+        .map_or_else(BTreeMap::new, |gate| audit_meta_by_path(&checks, gate));
+    let mut prepared = prepared.expect("real sync has a prepared plan");
+    if let Err(code) = check_fallbacks(manifest, &mut prepared, &mut audit, args.skip_audit) {
+        return code;
+    }
     if let Err(error) = remember_write_root(resolution, &items) {
         return config_error(error);
     }
-    let (_, blocked) = apply_plan(&items, &mut state, &audit, args.quiet);
+    let (_, blocked) = apply_plan(prepared, &mut state, &audit, args.quiet);
     exit(blocked)
 }
 
@@ -345,7 +395,7 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
     if args.skills.is_empty() && args.groups.is_empty() {
         return config_error("uninstall requires a skill name");
     }
-    let (manifest, resolution) =
+    let (manifest, resolution, _state_lock) =
         match load_connect_manifest(&CliOverrides::default(), !args.dry_run) {
             Ok(loaded) => loaded,
             Err(e) => return config_error(e),
@@ -391,8 +441,11 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
     let mut failed = false;
     for item in &items {
         match item.action {
-            Action::Remove => match apply::apply(item, &mut state, None) {
-                Ok(_) => println!("  removed: {} -> {}", item.skill, item.host),
+            Action::Remove => match apply::apply_prepared(item, &mut state, None, None) {
+                Ok(applied) => {
+                    println!("  removed: {} -> {}", item.skill, item.host);
+                    applied.print_cleanup_warnings();
+                }
                 Err(Error::StateSave(e)) => return config_error(e),
                 Err(e) => {
                     failed = true;
@@ -424,7 +477,7 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
 // ---------------------------------------------------------------- convert
 
 pub fn convert(args: &ConvertArgs) -> ExitCode {
-    let (manifest, resolution) =
+    let (manifest, resolution, _state_lock) =
         match load_connect_manifest(&CliOverrides::default(), !args.dry_run) {
             Ok(loaded) => loaded,
             Err(e) => return config_error(e),
@@ -465,10 +518,35 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
         return ExitCode::from(2);
     }
     print_skipped_convert_hosts(&skipped_hosts);
+    let prepared = PreparedPlan::new(&items);
+    let checks = check_targets(
+        &manifest,
+        &skills,
+        &active_hosts,
+        Some(&prepared),
+        CheckScope::ConvertCopies,
+    );
+    let validation = validate_selected(&checks);
+    print_validation(&validation, false);
+    if validation.iter().any(|check| !check.ok) {
+        return ExitCode::from(1);
+    }
+    let audit = if checks.is_empty() {
+        BTreeMap::new()
+    } else {
+        let gate = match audit_gate(&manifest, &checks, false) {
+            Ok(gate) => gate,
+            Err(e) => return config_error(e),
+        };
+        if let Some(code) = report_gate(&gate) {
+            return code;
+        }
+        audit_meta_by_path(&checks, &gate)
+    };
     if let Err(error) = remember_write_root(Some(&resolution), &items) {
         return config_error(error);
     }
-    let (_, blocked) = apply_plan(&items, &mut state, &BTreeMap::new(), false);
+    let (_, blocked) = apply_plan(prepared, &mut state, &audit, false);
     exit(blocked)
 }
 
@@ -522,6 +600,10 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
             install_mode: args.mode.map(Into::into),
             ..CliOverrides::default()
         };
+        let _state_lock = match StateLock::acquire(&default_state_path()) {
+            Ok(lock) => lock,
+            Err(e) => return config_error(e),
+        };
         let manifest = match load_manifest(&resolution.root, &cli) {
             Ok(m) => m,
             Err(e) => return config_error(e),
@@ -549,13 +631,21 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
 fn load_connect_manifest(
     cli: &CliOverrides,
     writes: bool,
-) -> crate::Result<(Manifest, root::RootResolution)> {
+) -> crate::Result<(Manifest, root::RootResolution, Option<StateLock>)> {
     if !writes {
-        return root::load_manifest_resolved(cli, false);
+        let (manifest, resolution) = root::load_manifest_resolved(cli, false)?;
+        return Ok((manifest, resolution, None));
     }
     let resolution = resolve_write_root()?;
+    let state_lock = lock_state(true)?;
     let manifest = load_manifest(&resolution.root, cli)?;
-    Ok((manifest, resolution))
+    Ok((manifest, resolution, state_lock))
+}
+
+fn lock_state(writes: bool) -> crate::Result<Option<StateLock>> {
+    writes
+        .then(|| StateLock::acquire(&default_state_path()))
+        .transpose()
 }
 
 fn resolve_write_root() -> crate::Result<root::RootResolution> {
@@ -600,31 +690,158 @@ impl<'a> ValidationCheck<'a> {
     }
 }
 
-fn validate_selected<'a>(
+type Preparation = crate::Result<Option<PreparedConnection>>;
+
+struct PreparedPlan<'a> {
+    items: &'a [PlanItem],
+    connections: BTreeMap<(&'a str, &'a str), Preparation>,
+    snapshots: BTreeMap<String, Rc<CopySnapshot>>,
+}
+
+impl<'a> PreparedPlan<'a> {
+    fn new(items: &'a [PlanItem]) -> Self {
+        let mut snapshots = BTreeMap::new();
+        let connections = items
+            .iter()
+            .filter(|item| item.action.writes())
+            .map(|item| {
+                let connection = if creates_link(item) {
+                    Ok(None)
+                } else {
+                    apply::prepare(item, &mut snapshots)
+                };
+                ((item.skill.as_str(), item.host.as_str()), connection)
+            })
+            .collect();
+        Self {
+            items,
+            connections,
+            snapshots,
+        }
+    }
+
+    fn prepare_links(&mut self) -> Vec<CheckTarget<'a>> {
+        let mut fallbacks = BTreeMap::new();
+        // Check the live canonical targets before creating even temporary
+        // links. The old gate covers canonical, then any fallback has its
+        // own checks on the bytes that will be installed.
+        for item in self.items.iter().filter(|item| creates_link(item)) {
+            let prepared = apply::prepare(item, &mut self.snapshots);
+            let skill = item.skill.as_str();
+            let host = item.host.as_str();
+            if let Ok(Some(connection)) = &prepared
+                && let Some(path) = connection.check_snapshot()
+            {
+                fallbacks
+                    .entry(skill)
+                    .or_insert_with(|| CheckTarget {
+                        skill,
+                        dir: path.to_owned(),
+                        hosts: Vec::new(),
+                    })
+                    .hosts
+                    .push(host);
+            }
+            self.connections.insert((skill, host), prepared);
+        }
+        fallbacks.into_values().collect()
+    }
+
+    fn snapshot<'b>(&'b self, skill: &'b str, host: &'b str) -> Option<&'b std::path::Path> {
+        self.connections
+            .get(&(skill, host))?
+            .as_ref()
+            .ok()?
+            .as_ref()?
+            .check_snapshot()
+    }
+}
+
+fn creates_link(item: &PlanItem) -> bool {
+    item.action == Action::Create && item.mode == InstallMode::Link
+}
+
+#[derive(Clone, Copy)]
+enum CheckScope {
+    AllHosts,
+    Wanted,
+    ConvertCopies,
+}
+
+struct CheckTarget<'a> {
+    skill: &'a str,
+    dir: PathBuf,
+    hosts: Vec<&'a str>,
+}
+
+fn check_targets<'a>(
     manifest: &Manifest,
     skills: &[&'a Skill],
-    hosts_: &[String],
-) -> Vec<ValidationCheck<'a>> {
+    hosts: &'a [String],
+    prepared: Option<&PreparedPlan<'_>>,
+    scope: CheckScope,
+) -> Vec<CheckTarget<'a>> {
     let mut checks = Vec::new();
     for skill in skills {
-        let dir = manifest.skill_dir(&skill.name);
-        checks.push(ValidationCheck::new(
-            &skill.name,
-            None,
-            compose_validation(&dir),
-        ));
-        for host in hosts_ {
-            // A host the skill does not connect to cannot reject it.
-            if !skill.hosts.is_empty() && !skill.hosts.iter().any(|h| h == host) {
+        let mut canonical_hosts = Vec::new();
+        let mut copy_hosts = Vec::new();
+        let mut snapshot = None;
+        for host in hosts {
+            let eligible = match scope {
+                CheckScope::AllHosts => skill.hosts.is_empty() || skill.hosts.contains(host),
+                CheckScope::Wanted => plan::wants(manifest, skill, host),
+                CheckScope::ConvertCopies => prepared.is_some_and(|plan| {
+                    plan.items.iter().any(|item| {
+                        item.skill == skill.name
+                            && item.host == *host
+                            && item.action == Action::Convert
+                            && item.mode == InstallMode::Copy
+                    })
+                }),
+            };
+            if !eligible {
                 continue;
             }
-            let Some(config) = get_host(host) else {
-                continue;
-            };
+            if let Some(path) = prepared.and_then(|plan| plan.snapshot(&skill.name, host)) {
+                snapshot = Some(path);
+                copy_hosts.push(host.as_str());
+            } else {
+                canonical_hosts.push(host.as_str());
+            }
+        }
+        if !canonical_hosts.is_empty()
+            || (snapshot.is_none() && matches!(scope, CheckScope::AllHosts))
+        {
+            checks.push(CheckTarget {
+                skill: &skill.name,
+                dir: manifest.skill_dir(&skill.name),
+                hosts: canonical_hosts,
+            });
+        }
+        if let Some(path) = snapshot {
+            checks.push(CheckTarget {
+                skill: &skill.name,
+                dir: path.to_owned(),
+                hosts: copy_hosts,
+            });
+        }
+    }
+    checks
+}
+
+fn validate_selected<'a>(targets: &[CheckTarget<'a>]) -> Vec<ValidationCheck<'a>> {
+    let mut checks = Vec::new();
+    for target in targets {
+        checks.push(ValidationCheck::new(
+            target.skill,
+            None,
+            compose_validation(&target.dir),
+        ));
+        for host in target.hosts.iter().filter_map(|host| get_host(host)) {
             checks.push(ValidationCheck::new(
-                &skill.name,
-                Some(config.name),
-                validate_skill_for_host(&dir, config),
+                target.skill,
+                Some(host.name),
+                validate_skill_for_host(&target.dir, host),
             ));
         }
     }
@@ -666,12 +883,37 @@ fn print_validation(checks: &[ValidationCheck<'_>], json: bool) {
 
 fn audit_gate(
     manifest: &Manifest,
-    skills: &[&Skill],
+    checks: &[CheckTarget<'_>],
     skip: bool,
 ) -> crate::Result<AuditGateResult> {
     let policy = policy_from_settings(&manifest.audit)?;
-    let dirs: Vec<PathBuf> = skills.iter().map(|s| manifest.skill_dir(&s.name)).collect();
+    let dirs: Vec<PathBuf> = checks.iter().map(|target| target.dir.clone()).collect();
     audit_skills(&dirs, &policy, skip)
+}
+
+fn check_fallbacks(
+    manifest: &Manifest,
+    prepared: &mut PreparedPlan<'_>,
+    audit: &mut BTreeMap<PathBuf, AuditMeta>,
+    skip_audit: bool,
+) -> Result<(), ExitCode> {
+    let checks = prepared.prepare_links();
+    if checks.is_empty() {
+        return Ok(());
+    }
+    let validation = validate_selected(&checks);
+    print_validation(&validation, false);
+    if validation.iter().any(|check| !check.ok) {
+        return Err(ExitCode::from(1));
+    }
+    let gate = audit_gate(manifest, &checks, skip_audit).map_err(config_error)?;
+    if gate.blocked()
+        && let Some(code) = report_gate(&gate)
+    {
+        return Err(code);
+    }
+    audit.extend(audit_meta_by_path(&checks, &gate));
+    Ok(())
 }
 
 /// Print a skipped or blocked gate; `Some(exit)` when the command must stop.
@@ -686,13 +928,17 @@ fn report_gate(gate: &AuditGateResult) -> Option<ExitCode> {
     None
 }
 
-fn audit_meta_by_skill(gate: &AuditGateResult) -> BTreeMap<String, AuditMeta> {
+fn audit_meta_by_path(
+    checks: &[CheckTarget<'_>],
+    gate: &AuditGateResult,
+) -> BTreeMap<PathBuf, AuditMeta> {
     let now = apply::utc_now();
     gate.results
         .iter()
-        .map(|r| {
+        .zip(checks)
+        .map(|(r, check)| {
             (
-                r.skill.clone(),
+                check.dir.clone(),
                 AuditMeta {
                     last_audit_at: now.clone(),
                     last_audit_result_hash: r.result_hash(),
@@ -707,19 +953,30 @@ fn audit_meta_by_skill(gate: &AuditGateResult) -> BTreeMap<String, AuditMeta> {
 /// Apply writes in order and print v0.4.1-style result lines.
 /// Returns (changed, blocked).
 fn apply_plan(
-    items: &[PlanItem],
+    mut plan: PreparedPlan<'_>,
     state: &mut State,
-    audit: &BTreeMap<String, AuditMeta>,
+    audit: &BTreeMap<PathBuf, AuditMeta>,
     quiet: bool,
 ) -> (usize, bool) {
     let mut changed = 0;
     let mut blocked = false;
-    for item in items {
+    for item in plan.items {
         if item.action.writes() {
-            match apply::apply(item, state, audit.get(&item.skill)) {
-                Ok(outcome) => {
+            let prepared = plan
+                .connections
+                .remove(&(item.skill.as_str(), item.host.as_str()))
+                .expect("every write has a preparation result");
+            match prepared.and_then(|connection| {
+                let path = connection
+                    .as_ref()
+                    .and_then(PreparedConnection::check_snapshot)
+                    .unwrap_or(&item.source);
+                apply::apply_prepared(item, state, audit.get(path), connection.as_ref())
+            }) {
+                Ok(applied) => {
                     changed += 1;
-                    print_result_line(item, Some(&outcome));
+                    print_result_line(item, Some(&applied.outcome));
+                    applied.print_cleanup_warnings();
                 }
                 Err(Error::StateSave(e)) => {
                     blocked = true;
@@ -956,14 +1213,20 @@ mod tests {
         };
         let audit = BTreeMap::new();
         let items = std::slice::from_ref(&item);
-        assert_eq!(apply_plan(items, &mut state, &audit, false), (1, false));
+        assert_eq!(
+            apply_plan(PreparedPlan::new(items), &mut state, &audit, false),
+            (1, false)
+        );
         assert_eq!(State::load(Some(&state_path)).unwrap(), state);
 
         item.action = Action::Convert;
         for mode in [InstallMode::Link, InstallMode::Copy] {
             item.mode = mode;
             let items = std::slice::from_ref(&item);
-            assert_eq!(apply_plan(items, &mut state, &audit, false), (1, false));
+            assert_eq!(
+                apply_plan(PreparedPlan::new(items), &mut state, &audit, false),
+                (1, false)
+            );
             let persisted = State::load(Some(&state_path)).unwrap();
             assert_eq!(persisted, state);
             assert_eq!(persisted.get("alpha", "claude").unwrap().mode, mode);

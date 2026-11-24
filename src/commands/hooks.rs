@@ -41,6 +41,8 @@ fn run_hook(args: &HooksRunArgs) -> ExitCode {
             ExitCode::SUCCESS
         }
         "post-merge" | "post-rewrite" | "post-checkout" => {
+            // Sync owns the state lock. Post-operation hooks report failures
+            // without changing Git's exit status.
             let result = super::connect::sync(&SyncArgs {
                 yes: true,
                 quiet: true,
