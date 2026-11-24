@@ -7,6 +7,8 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-11-24
+
 ### Removed
 
 - Hermes is no longer a supported host. The built-in hosts are Claude Code,
