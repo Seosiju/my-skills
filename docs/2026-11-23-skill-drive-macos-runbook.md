@@ -737,33 +737,43 @@ cd "$HOME" && rm -rf -- "$W" || { echo "STOP: cleanup $W failed"; exit 1; }
    git push "$R_REMOTE" "HEAD:refs/heads/$R_DEST" || { echo "STOP: push failed"; exit 1; }
    echo "pushed SHA: $(git rev-parse HEAD)"           # 이 SHA를 Windows PC에 알린다
    ```
-4. 이 맥의 전역 안내에서 동기화 절차를 찾는다. 대상은 **각 에이전트의 최상위 안내 파일과, 그 파일이 `@경로`로 불러오는 파일만**이다.
+4. 이 맥의 전역 안내에서 동기화 절차를 찾는다. 대상은 **각 에이전트의 최상위 안내 파일, Claude Code가 자동으로 읽는 `~/.claude/rules/` 아래의 `.md`, 그리고 이 파일들이 `@경로`로 불러오는 파일만**이다.
    host 스킬 폴더(`~/.claude/skills`, `~/.agents/skills`, `~/.gemini/config/skills`)의 사본, 프로젝트 메모리, 세션 기록은 대상이 아니다. host 사본은 설치 결과물이라 직접 고치지 않는다.
    에이전트 설정 폴더 전체를 검색하면 결과의 대부분이 이런 파일이다.
+   아래 블록은 heredoc의 `EOF`와 Python이 줄 앞 공백에 민감하므로 목록 밖(줄 맨 앞)에 둔다. 공백을 더하지 말고 그대로 실행한다.
 
-   ```bash
-   . "<GENV>" || exit 1
-   CX="${CODEX_HOME:-$HOME/.codex}"
-   python3 - ~/.claude/CLAUDE.md "$CX/AGENTS.md" "$CX/AGENTS.override.md" ~/.gemini/GEMINI.md <<'EOF'
-   import os, re, sys
-   queue = [p for p in sys.argv[1:] if os.path.isfile(p)]
-   seen = set()
-   while queue:
-       p = os.path.realpath(queue.pop(0))
-       if p in seen:
-           continue
-       seen.add(p)
-       text = open(p, encoding="utf-8", errors="replace").read()
-       for m in re.finditer(r"(?:^|\s)@(\S+\.md)", text):    # @경로 import (줄 맨 앞 또는 공백 뒤)
-           q = os.path.expanduser(m.group(1))
-           q = q if os.path.isabs(q) else os.path.join(os.path.dirname(p), q)
-           if os.path.isfile(q):
-               queue.append(q)
-       print("MATCH" if "my-skills" in text else "-    ", p)
-   EOF
-   ```
+```bash
+. "<GENV>" || exit 1
+CX="${CODEX_HOME:-$HOME/.codex}"
+python3 - ~/.claude/CLAUDE.md ~/.claude/rules "$CX/AGENTS.md" "$CX/AGENTS.override.md" ~/.gemini/GEMINI.md <<'EOF'
+import os, re, sys
+queue = []
+for p in sys.argv[1:]:
+    if os.path.isdir(p):                                    # ~/.claude/rules: 하위 폴더의 .md까지
+        for d, _, fs in os.walk(p):
+            queue += [os.path.join(d, f) for f in sorted(fs) if f.endswith(".md")]
+    elif os.path.isfile(p):
+        queue.append(p)
+    else:
+        print("absent", p)                                  # 없는 시작 위치도 기록에 남긴다
+seen = set()
+while queue:
+    p = os.path.realpath(queue.pop(0))
+    if p in seen:
+        continue
+    seen.add(p)
+    text = open(p, encoding="utf-8", errors="replace").read()
+    for m in re.finditer(r"(?:^|\s)@(\S+\.md)", text):    # @경로 import (줄 맨 앞 또는 공백 뒤)
+        q = os.path.expanduser(m.group(1))
+        q = q if os.path.isabs(q) else os.path.join(os.path.dirname(p), q)
+        if os.path.isfile(q):
+            queue.append(q)
+    print("MATCH" if "my-skills" in text else "-    ", p)
+EOF
+```
 
-   `MATCH`인 파일만 diff를 보여 주고 승인을 받아 고친다. **이 파일들은 레지스트리나 tool repo에 커밋하지 않는다.** Windows PC의 전역 안내는 Windows 쪽에서 따로 고친다.
+`MATCH`인 파일만 diff를 보여 주고 승인을 받아 고친다. **이 파일들은 레지스트리나 tool repo에 커밋하지 않는다.** Windows PC의 전역 안내는 Windows 쪽에서 따로 고친다.
+
 5. 상태 재확인:
 
    ```bash

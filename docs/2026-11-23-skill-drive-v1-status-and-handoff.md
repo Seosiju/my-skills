@@ -65,8 +65,8 @@ flowchart LR
 | 이후 | **wave3: §7 E 완료와 T(범위 복원)**. Codex 두 개(E high, T medium)를 병렬로 돌림. 같은 두 검토를 했고, 1차에서 Codex는 문서 사실 오류 2건, agy는 고칠 것 10건을 냄. 작업자가 지적마다 사실인지 먼저 확인한 뒤 고침(`SEED_REVISION`은 Python판처럼 패키지 버전에서 가져오기로 결정, `.venv/`는 의도적으로 남김). 재검토에서 둘 다 병합 판정. 테스트 209개 통과, 사용자 위치 변화 없음. 같은 worktree에서 두 검토자가 동시에 빌드하면 MSVC `LNK1104`가 날 수 있다(빌드 폴더를 따로 쓰면 통과) | `5309157`, `71f1cdc`(E), `de4f63f`, `7186fda`(T), `b28a3d9` |
 | 이후 | **H 3단계(이 Windows PC)**: release binary(`071ca28`)로 runbook 3.1~3.6 진행. junction 연결, 해제, Git Bash의 pre-commit, post-checkout, post-merge, `HOME=/c/...` 경로, 공백 경로 모두 정상. 새 세션 확인에서 **Claude Code와 Codex는 junction 스킬을 찾았지만 agy 1.5.14는 못 찾음**(같은 폴더의 일반 폴더는 찾음, 모델 호출 없는 `/skills` 조회로 확인). Git Bash에서 `agy -p '/skills'`는 MSYS가 경로로 바꿔 버리므로 PowerShell에서 실행해야 함 | 스펙 §12 기록은 H 5단계에서 |
 | 이후 | **wave4: host별 `install_mode`**. agy(Gemini 4 Neon high)가 개발: `[targets.<host>] install_mode`(우선순위 CLI > host > defaults, 기록된 연결은 유지), `convert --host all`에서 방식을 명시한 host 건너뛰기, Windows에서 agy link일 때 doctor 경고, doctor의 `\\?\` 표시 제거. Codex(medium) 체크리스트 검토와 agy 블라인드 검토 → 수정 한 번(빈 assertion 2곳 등) → 둘 다 병합 판정. 중간 커밋이 Windows에서 실패하던 것은 통합 담당이 커밋을 다시 묶어 7개 커밋 모두 fmt, clippy, 테스트 통과(최종 221개)를 확인했고, 트리는 검토한 것과 같음(`33bc860`) | `29bf51c`..`4df4a61`, `a348cff` |
-
-| 2026-11-24 | **맥 점검**(통합 담당 Claude, 맥): `dev` pull 뒤 테스트, 맥 runbook 명령과 코드 대조, 실제 환경 읽기 전용 점검(§6.6). Windows PC의 Claude가 검토하고 결정(사용자가 전달): 개발 도구는 rustup stable을 `rustup run stable`로 쓰고, `doctor.rs`의 lint는 이번에 고치지 않음. 맥 runbook 2·4.1·4.2·5.4단계와 이 문서를 고침. §7 K 정리 | 이 문서를 고친 커밋 |
+| 2026-11-24 | **맥 점검**(통합 담당 Claude, 맥): `dev` pull 뒤 테스트, 맥 runbook 명령과 코드 대조, 실제 환경 읽기 전용 점검(§6.6). Windows PC의 Claude가 검토해 권고하고 사용자가 결정: 개발 도구는 rustup stable을 `rustup run stable`로 쓰고, `doctor.rs`의 lint는 이번에 고치지 않음. 맥 runbook 2·4.1·4.2·5.4단계와 이 문서를 고침. §7 K 정리 | `a447574` |
+| 2026-11-24 | **맥 수정의 Windows 검토**(Windows PC의 Claude): `a447574`를 받아 정적 검토, runbook bash 블록 33개 `bash -n`, 5.4 스크립트를 가짜 홈 폴더로 실행. 대부분 그대로 맞았고, 5.4 스크립트의 들여쓰기 문제와 `~/.claude/rules/` 누락, 이 표의 끊김, 결정 주체 문구를 고침(§6.7) | 이 문서를 고친 커밋 |
 
 Codex 운영:
 - 1단계: `gpt-6.2-sol` `xhigh` 5개. 5시간 한도의 약 51%포인트를 썼다(99% → 48%).
@@ -229,7 +229,7 @@ Codex 운영:
 
 ### 6.6 맥 점검(2026-11-24)에서 나온 것
 
-`72aaf89`를 받아 맥에서 테스트하고, 맥 runbook의 명령과 기대 출력을 코드와 대조하고, 실제 환경을 읽기만 해서 점검했다. 실제 레지스트리, host 폴더, 전역 안내는 바꾸지 않았다. 결정은 Windows PC의 Claude가 검토해 내렸다.
+`72aaf89`를 받아 맥에서 테스트하고, 맥 runbook의 명령과 기대 출력을 코드와 대조하고, 실제 환경을 읽기만 해서 점검했다. 실제 레지스트리, host 폴더, 전역 안내는 바꾸지 않았다. 결정은 Windows PC의 Claude가 검토해 권고하고 사용자가 내렸다.
 
 | 발견 | 확인 결과 | 처리 |
 |---|---|---|
@@ -240,6 +240,23 @@ Codex 운영:
 | 이 문서의 머리말, §1, §3, §4, §6.3이 H 이전 상태였음 | [확정] | 현재 상태로 고침. 기기의 실제 연결 수는 일반화함(스펙 §12 포함) |
 | 그 밖의 runbook 점검 | [관찰] 블록 33개 모두 macOS 기본 bash 3.2에서 문법 오류 없음. 1.2의 doctor 출력 필터는 Python 0.4.1에서 동작. doctor·status의 JSON 필드, `[BLOCKED]`, `copy fallback`, `skipped host` 문구가 코드와 같음. agy 1.5.15의 `/skills` 조회가 runbook이 기대하는 형식이고, XDG 경로를 임시 폴더로 돌려도 동작함 | 기록만 |
 | 실제 환경의 전환 준비 상태 | [관찰] 레지스트리가 깨끗한 기본 브랜치이고 원격과 같음. hook과 전역 `core.hooksPath`가 없음. host 폴더의 다른 도구 symlink 중 레지스트리 스킬과 이름이 겹치는 것은 없음 | G 시작 조건을 만족 |
+
+### 6.7 맥 수정(`a447574`)의 Windows 검토
+
+Windows PC의 Claude가 정적으로 검토했다. 맥 명령은 Windows에서 실행할 수 없으므로, bash 블록은 `bash -n`으로, 5.4 스크립트는 Git Bash와 가짜 홈 폴더로 실행해 확인했다.
+
+| 무엇 | 결과 | 처리 |
+|---|---|---|
+| 2단계 `rcargo`, 1.2 toolchain 표, §8 빌드 안내 | 맞음. `component list --installed`의 이름(`rustfmt-<target>`)을 `^rustfmt`, `^clippy`로 찾는 것도 맞음 | 그대로 |
+| 4.1, 4.2 전용 설치 폴더 | 맞음. 자리표시자를 바꾸지 않으면 절대 경로 검사에서 멈추고, `bin`에 `my-skills` 말고 다른 파일이 있으면 멈춤 | 그대로 |
+| 5.4 스크립트가 목록 안에서 3칸 들여쓰기됨 | [확인] 문서 원문을 그대로 복사하면 `EOF` 줄을 찾지 못하고 Python이 `IndentationError`로 멈춤(읽기만 하는 단계라 위험은 없지만 진행이 막힘). 이 runbook에서 들여쓰기된 heredoc은 이것 하나 | 블록을 목록 밖으로 옮김 |
+| 5.4 시작 목록 | [확인] 상대 경로와 `~` import, 순환 import, 이메일 주소 무시는 동작. Claude Code가 자동으로 읽는 `~/.claude/rules/`는 빠져 있었음. 없는 시작 파일은 아무 표시 없이 건너뜀 | `~/.claude/rules/`(하위 폴더 포함)를 넣고, 없는 시작 위치는 `absent`로 출력 |
+| §2 진행 경과 표 | 새 행 앞의 빈 줄 때문에 표가 끊겨 있었음 | 빈 줄을 지움 |
+| 결정 주체 문구(§2, §6.6) | "Windows PC의 Claude가 결정"으로 적혀 있었으나 결정은 사용자가 했음 | 고침 |
+| 스펙 §12와 이 문서의 기기 수치 일반화 | 남은 연결·기록 수 없음 | 그대로 |
+| bash 블록 33개 | 목록 들여쓰기를 뺀 상태로 `bash -n` 모두 통과(Git Bash, bash 5) | — |
+
+맥에서 확인할 것: 5.4를 실행하기 전에 고친 블록이 bash 3.2에서도 문법 오류가 없는지 다시 본다.
 
 ---
 
