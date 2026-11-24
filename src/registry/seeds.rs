@@ -87,14 +87,22 @@ Install the public Rust `my-skills` CLI using the release installer for your
 platform. See the [tool repo README](https://github.com/Seosiju/my-skills/tree/main#install-the-cli).
 Run `my-skills --version` to check the installation.
 
-Return to this registry. Add skills under `skills/<name>/SKILL.md`, then
-preview and install them. Add `--yes` after reviewing a plan for multiple hosts.
+Return to this registry. Edit canonical skills under `skills/<name>/SKILL.md`
+(run `my-skills resolve <path>` to find the canonical file from a host copy or
+path), then preview (`--dry-run` or `--dry-run --json` for agents) and apply.
+Add `--yes` after reviewing a plan for multiple hosts.
 
 ```bash
 my-skills skills
 my-skills install --dry-run
 my-skills install
+my-skills sync <skill> --host <host> --dry-run
+my-skills sync <skill> --host <host>
 ```
+
+After adding or changing skills, start a new host session if needed (Claude Code
+picks up skills on restart; Codex detects changes automatically or on restart;
+Antigravity CLI needs a new session and `/skills`).
 
 Keep secrets, account data, personal memory, and machine-specific overrides out
 of git. Store local data with:

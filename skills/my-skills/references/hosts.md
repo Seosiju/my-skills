@@ -15,19 +15,29 @@ in `my-skills.toml` or `my-skills.local.toml`. Precedence for new connections:
 3. `[defaults] install_mode`
 
 Existing connections keep their recorded mode until converted with `convert`.
+Copy installs, refreshes, fallbacks, and `convert --to copy` validate, audit,
+and stage from one check snapshot per skill (so a canonical edit after checking
+leaves the installed copy `STALE`), and real `convert --to copy` enforces the
+same validation and audit gates before replacing a link.
 
 ## Quick host diagnostics
 
-Run `my-skills doctor --quick --json` to see the registry, host settings, and
-connection counts. Quick mode skips the update lookup, Git and hook diagnostics,
-full validation, and the link probe.
+Run `my-skills doctor --quick --json` to see the registry, host settings,
+catalog description costs, and connection counts. Quick mode skips the update
+lookup, Git and hook diagnostics, full validation, and the link probe.
 
-Each `hosts` row reports `configured_mode` (`link` or `copy` for new
-connections, or `null` when the manifest is unavailable). The `connections`
-counts cover records owned by the displayed registry. A copy fallback is
-included in both the `copy` and `fallback` counts. For full local diagnostics
-without the update lookup, use `--no-update-check` or
-`MY_SKILLS_NO_UPDATE_CHECK=1`.
+Text output includes a `Catalog:` summary line per enabled host, and JSON adds
+`catalog: {skills, description_chars, longest, invalid}` to each enabled host
+row (omitted when disabled or without a loaded manifest). Each `hosts` row
+reports `configured_mode` (`link` or `copy` for new connections, or `null` when
+the manifest is unavailable). The `connections` counts cover records owned by
+the displayed registry. A copy fallback is included in both the `copy` and
+`fallback` counts. For full local diagnostics without the update lookup, use
+`--no-update-check` or `MY_SKILLS_NO_UPDATE_CHECK=1`.
+
+After adding or changing skills, start a new host session if needed: Claude Code
+picks up skills on restart, Codex detects changes automatically (restart if
+needed), and Antigravity CLI requires a new session and `/skills`.
 
 ## Antigravity CLI (agy)
 

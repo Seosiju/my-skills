@@ -10,8 +10,27 @@ When a `--json` command hits a usage or configuration error, read the
 ```
 
 Codes are `usage`, `inactive_registry`, `unknown_skill`, `unknown_group`,
-`unknown_host`, and `config`. `hint` is a string or `null`. A blocked validation,
-audit, or dry-run plan uses its normal report shape.
+`unknown_host`, `state_busy` (writer lock timed out after 30s), and `config`.
+`hint` is a string or `null`. A blocked validation, audit, or dry-run plan uses
+its normal report shape.
+
+## Resolving names and paths (`resolve`)
+
+Run `my-skills resolve <target> --json` to map a registered skill name,
+canonical path, or host path (including disabled hosts and files inside a skill)
+to its canonical path without hashing or updating state or the root cache.
+Targets that are absolute, start with `.` or `~`, or contain `/` (or `\` on
+Windows) are paths; all others are skill names.
+
+- **Exit `0`:** `state` is `registered` or `unregistered` (real draft dir under
+  `skills/`, or an owned host record removed from `my-skills.toml` whose
+  canonical dir still exists).
+- **Exit `1`:** `state` is `foreign`, `unmanaged`, `ambiguous`, or `unsafe`
+  (`..` traversal, escaping internal link, or redirected host link).
+- **Exit `2`:** unknown skill name (`unknown_skill`) or usage/config error.
+
+Read `canonical_dir`, `canonical_path`, `matched_host`, `mode`, `reason`,
+`write_refusal`, and `registry_agents_md` (all `null` when inapplicable).
 
 ## Validation
 
@@ -23,8 +42,11 @@ means a check failed, and `2` means a usage or configuration error.
 
 The pre-commit gate applies standard validation, the security floor, host
 limits, and the manifest audit policy. An over-limit description fails.
-`--host <host>` narrows host checks to that host. A bare `validate` scans all
-skill directories, including unregistered ones.
+`license`, `compatibility`, and `metadata` do not emit unsupported-field
+warnings; `allowed-tools` keeps its dedicated warning; other unsupported fields
+warn once per skill listing affected hosts. `--host <host>` narrows host checks
+to that host. A bare `validate` scans all skill directories, including
+unregistered ones.
 
 ## Dry-run JSON fields and exit codes
 
@@ -55,16 +77,28 @@ Exit-code rules:
 - Both `install --dry-run` and `sync --dry-run` exit `1` **only** on validation
   failure and exit `0` otherwise — even when `blocked: true` or
   `applicable: false`.
-- Use `sync --check` when you need a non-zero exit code for any drift.
+- Use `sync --check` when you need a non-zero exit code for any drift (drift
+  only; it does not run validation or audit).
+- Explicit `sync <skill...>` or `sync --group <group>` validates and audits all
+  wanted skills on the selected hosts, including `FRESH` links (failing `1` if a
+  wanted skill is broken). Disabled skills whose only planned action is `REMOVE`
+  (prune) skip those checks unless `--all` puts them in scope to connect.
 - `sync --json` requires `--dry-run`.
 - `sync --check` takes precedence over `--dry-run` and cannot be combined with
   `--json`.
 
-## Compact catalog results
+## Compact catalog and status filters
 
-Use `my-skills skills --json --brief` for compact rows. A row keeps `error`
-when skill metadata is missing or invalid. Add `--with-governance` to put
-`audit` and `provenance` under `governance` in each brief row.
+Use `my-skills skills [skill...] --json --brief` for compact rows. Positional
+`skill...` names intersect (AND) with `--group`, `--host`, and
+`--enabled`/`--disabled`. A row keeps `error` when skill metadata is missing or
+invalid. Add `--with-governance` to put `audit` and `provenance` under
+`governance` in each brief row.
+
+Use `my-skills status [skill...] --group <group> --json` for a top-level JSON
+array filtered by the union of names and groups; explicitly selected disabled
+skills keep their normal per-host labels (such as `MISSING`). Unknown skill names
+exit `2` (`unknown_skill`).
 
 ## Comparing installed content
 

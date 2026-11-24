@@ -6,8 +6,9 @@ Detailed reference for commands, registry lookup, install modes, safety checks, 
 
 | Command | What it does |
 | --- | --- |
-| `my-skills skills` | List registered skills (`--json`, `--brief`, `--host <HOST>`, `--enabled`, `--disabled`, `--group <GROUP>`, `--with-governance`). |
-| `my-skills status` | Show connection status for every skill and host (`--json`). |
+| `my-skills skills [SKILL...]` | List registered skills (`--json`, `--brief`, `--host <HOST>`, `--enabled`, `--disabled`, `--group <GROUP>`, `--with-governance`). |
+| `my-skills status [SKILL...]` | Show connection status per skill and host (`--group <GROUP>`, `--json`). |
+| `my-skills resolve <TARGET>` | Find the canonical source behind a skill name or path without writing (`--json`). |
 | `my-skills diff <SKILL>` | Compare a registered skill with host entries without writing (`--host <HOST>`, `--patch`, `--json`). |
 | `my-skills install [SKILL...]` | Connect skills to host folders (`--group <GROUP>`, `--host <HOST>`, `--all`, `--mode link\|copy`, `--dry-run`, `--json`, `--skip-audit`, `--yes`). |
 | `my-skills sync [SKILL...]` | Reconcile host connections with `my-skills.toml` (`--group <GROUP>`, `--host <HOST>`, `--all`, `--check`, `--no-prune`, `--dry-run`, `--json`, `--quiet`, `--skip-audit`, `--yes`). |
@@ -25,17 +26,29 @@ Detailed reference for commands, registry lookup, install modes, safety checks, 
 ### Skill selection
 
 Commands that accept `SKILL...` take the union of the supplied registered names
-and members of each repeatable `--group <GROUP>`. Each selected skill runs once.
-`uninstall`, `enable`, and `disable` require a name or group. A single name on
-`uninstall` can also target a managed connection for a skill you removed from
-the manifest. `enable` and `disable` validate all names before committing one
-atomic manifest edit.
+and members of each repeatable `--group <GROUP>`, except `skills [SKILL...]`,
+which intersects (AND) supplied `SKILL...` names with `--group`, `--host`, and
+`--enabled` or `--disabled`. Each selected skill runs once. `uninstall`,
+`enable`, and `disable` require a name or group. A single name on `uninstall`
+can also target a managed connection for a skill you removed from the manifest.
+`enable` and `disable` validate all names before committing one atomic manifest
+edit. `status [SKILL...]` takes the union of `SKILL...` and `--group`, keeps
+its top-level JSON array, and shows normal per-host labels (such as `MISSING`)
+for explicitly selected disabled skills. Both `skills` and `status` reject
+unknown skill names with exit `2` (`unknown_skill` in JSON).
 
-A bare `sync` reconciles every registered skill and can prune managed orphan
-connections. With a selection, `sync` can prune only unwanted connections for
-the selected skills. `--no-prune` preserves unwanted connections. `sync --check`
-takes precedence over `--dry-run` and cannot be combined with `--json`. Both
-`install --json` and `sync --json` require `--dry-run`.
+A bare `sync` reconciles every registered skill, checks only skills with
+`CREATE` or `UPDATE` actions, and can prune managed orphan connections. With an
+explicit `SKILL...` or `--group` selection, `sync` limits pruning to unwanted
+connections for the selected skills and validates and audits all wanted skills
+on the selected hosts, including zero-action `FRESH` links (so a broken skill
+with a `FRESH` link fails with exit `1`). Disabled skills whose only planned
+action is `REMOVE` (prune) bypass those checks unless `--all` puts them in
+scope to connect. `--no-prune` preserves unwanted connections. `sync --check`
+reports drift only without running validation or audit; it takes precedence over
+`--dry-run` and cannot be combined with `--json`. Both `install --json` and
+`sync --json` require `--dry-run`. Real `convert --to copy` also validates and
+audits the copy snapshot before replacing a link.
 
 `install` defaults to enabled skills and accepts explicitly selected disabled
 skills. `install --all` includes disabled skills in the default selection.
@@ -74,9 +87,9 @@ On a machine with no saved active registry yet, only the **first real write** fr
 ## JSON output
 
 JSON is UTF-8. On Windows, displayed paths strip `\\?\` and use `\`. The
-`registry` object in `skills`, `share` previews, `install` and `sync` previews,
-`validate`, and `diff` has `path` and `source`. Source labels are `flag`,
-`env`, `cwd`, and `cache`.
+`registry` object in `skills`, `resolve`, `share` previews, `install` and
+`sync` previews, `validate`, and `diff` has `path` and `source`. Source labels
+are `flag`, `env`, `cwd`, and `cache`.
 
 ### Errors
 
@@ -89,8 +102,9 @@ checks that reach a result still return their normal report when blocked.
 ```
 
 Codes are `usage` (including argument parsing), `inactive_registry` (a refused
-cwd write), `unknown_skill`, `unknown_group`, `unknown_host`, and `config`.
-`hint` is a string when guidance is available and `null` otherwise.
+cwd write), `unknown_skill`, `unknown_group`, `unknown_host`, `state_busy`
+(writer lock timeout), and `config`. `hint` is a string when guidance is
+available and `null` otherwise.
 
 ### Skill catalog
 
@@ -112,7 +126,11 @@ includes standard validation, the fixed security floor, applicable enabled
 host limits, and manifest audit policy. With no selection, it checks all
 directories under the skills root, including unregistered skills. Use
 `--host <HOST>` to check only the named host's constraints. An over-limit
-description fails validation.
+description fails validation. Standard optional Agent Skills fields
+(`license`, `compatibility`, and `metadata`) do not emit unsupported-field
+warnings; `allowed-tools` / `allowed_tools` keep their single dedicated warning,
+and any other unsupported fields emit one combined warning per skill listing all
+affected hosts.
 
 ```json
 {
@@ -184,6 +202,55 @@ entries. For copies, status tracks both sides against their recorded install
 hashes. Identical edits to a managed copy and its canonical skill can yield
 `CONFLICT` with `different: false` and empty file lists.
 
+## Resolve
+
+`my-skills resolve <TARGET> [--json]` maps a registered skill name, canonical
+path, or configured host path (including disabled hosts and files inside a
+skill) to its canonical directory or file without hashing or updating `state.json`
+or the active-root cache.
+
+`TARGET` is classified as a path when it is absolute, starts with `.` or `~`, or
+contains a platform path separator (`/` or, on Windows, `\`). Otherwise it is
+treated as a skill name. Lexical path matching runs before link inspection so
+host entries and relative subpaths are identified first; unmatched paths can
+still resolve through an alias into the canonical `skills/` tree, and a linked
+canonical skill root is allowed when it resolves to a directory.
+
+```json
+{
+  "canonical_dir": "/path/to/registry/skills/my-skills",
+  "canonical_path": "/path/to/registry/skills/my-skills",
+  "matched_host": null,
+  "mode": null,
+  "reason": null,
+  "registered": true,
+  "registry": {
+    "path": "/path/to/registry",
+    "source": "flag"
+  },
+  "registry_agents_md": null,
+  "skill": "my-skills",
+  "state": "registered",
+  "write_refusal": null
+}
+```
+
+Inapplicable fields are `null`. On text success, the first line is
+`canonical_path` (followed by `Unregistered skill: <name>` for drafts, and any
+`write_refusal` note for an inactive cwd registry).
+
+| State | Exit code | Meaning |
+| --- | --- | --- |
+| `registered` | `0` | Registered in `my-skills.toml` and resolved to `skills/<name>` (or a relative file inside it). |
+| `unregistered` | `0` | Real draft directory (or file inside it) under `skills/`, or an owned host record removed from `my-skills.toml` whose canonical directory still exists. |
+| `foreign` | `1` | Managed host entry whose `state.json` record points into another registry. |
+| `unmanaged` | `1` | Outside any skill entry (including the registry or `skills/` root), missing canonical directory, dangling canonical root link, host entry without an install record, host entry whose disk kind differs from its recorded `link`/`copy` mode, or a host-only/missing relative file in a managed copy. |
+| `ambiguous` | `1` | Overlapping host roots match install records for different canonical skills. |
+| `unsafe` | `1` | `..` traversal or nested link escaping the skill entry, or a host link redirected away from its expected canonical directory. |
+
+Unknown skill names exit `2` (`unknown_skill` in JSON), as do usage and
+configuration errors.
+
 ## Doctor
 
 Run `my-skills doctor --quick --json` for registry metadata, manifest health,
@@ -191,6 +258,15 @@ and host and connection diagnostics. It skips the update lookup, Git and hook
 diagnostics, full validation, and the link probe. In quick JSON, `update` and
 `link_capability.kind` are `not_checked`. `registry_git`, `hooks`,
 `hooks_error`, and `full_validation` are `null`.
+
+Both `doctor` and `doctor --quick` report catalog description cost per enabled
+host. Text output prints a `Catalog:` summary line (or `Catalog: no enabled hosts`),
+and JSON attaches `catalog: {skills, description_chars, longest, invalid}` to
+each enabled host row (`longest` lists up to two `{name, chars}` entries).
+Counts measure Unicode characters across wanted skills; missing or malformed
+descriptions count as `0` characters and increment `invalid` without appearing
+in `longest`. Disabled hosts and reports without a loaded manifest omit
+`catalog`.
 
 Each built-in host row includes `configured_mode` (`link`, `copy`, or `null`
 when the manifest is unavailable) and `connections: {link, copy, fallback}`
@@ -236,7 +312,9 @@ With `--host all`, `convert` skips any host that has an explicit `[targets.<host
 - **Existing folders are never overwritten.** If a host folder already contains an unmanaged directory at the destination path, `my-skills` stops instead of replacing it.
 - **Connections owned by another registry are protected.** A managed connection belongs to the registry whose `skills/` directory contains its recorded `source` path. `sync` silently leaves another registry's connections alone when pruning, `share --plan` recommends `skip` for them, and `install`, `sync`, `convert`, `uninstall`, and `share` refuse to modify or overwrite them.
 - **Locally edited copies are protected.** If you edit a copied skill inside a host folder, `sync` flags it and leaves your edits untouched.
-- **Failed installs roll back.** Each write stages in a temporary folder and swaps into place. If the swap or saving the install state fails, `my-skills` rolls back so you can fix the cause and re-run cleanly.
+- **Failed installs roll back.** Each write stages in a temporary folder and swaps into place. If the swap or saving the install state fails, `my-skills` rolls back so you can fix the cause and re-run cleanly. When a committed update, conversion, or removal succeeds but deleting the temporary backup directory fails, `my-skills` prints a `warning: cleanup could not remove ...` diagnostic to stderr and keeps the committed result.
+- **Staged copy snapshots.** Copy installs, refreshes, link fallbacks, and `convert --to copy` validate, audit, and stage from one private check snapshot per skill onto the destination volume. If the canonical skill is edited after the snapshot is taken, the originally checked bytes are installed and the copy is left `STALE`.
+- **Writer locking (`state.json.lock`).** Writing commands (`install`, `sync`, `uninstall`, `convert`, `bootstrap`, `share`, and hook-triggered sync) serialize on `state.json.lock` beside `state.json` (`share` acquires `my-skills.toml.edit-lock` first, then `state.json.lock`). After about one second of contention, stderr prints `Waiting for another my-skills command to finish...` once. The wait is capped at 30 seconds; on timeout, writers fail with `error: state is busy: <path>` and exit `2` (`state_busy` in JSON), while `post-*` Git hooks warn on stderr and exit `0` so Git finishes. The `MY_SKILLS_STATE_LOCK_TIMEOUT_MS` environment variable is test-only and overrides the wait up to 30 seconds. Readers stay unlocked.
 
 Install state is stored locally per machine (under `$XDG_STATE_HOME` or `~/.local/state/my-skills/`) and is never committed to Git.
 

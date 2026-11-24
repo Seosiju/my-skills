@@ -7,6 +7,78 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ## [Unreleased]
 
+### Added
+
+- `my-skills resolve <TARGET> [--json]` maps a registered skill name, canonical
+  path, or configured host path (including disabled hosts, subdirectories, and
+  nested files) to its canonical directory or file without hashing or updating
+  the root cache or install state. Inputs that are absolute, start with `.` or
+  `~`, or contain a path separator are treated as paths; all others are skill
+  names. Supports linked canonical skill roots. Exit `0` covers `registered`
+  and `unregistered` draft directories under `skills/`; exit `1` covers
+  `foreign`, `unmanaged`, `ambiguous`, and `unsafe`; exit `2` covers unknown
+  skill names (`unknown_skill` in JSON) and usage or configuration errors.
+- `skills [SKILL]...` filters by positional skill names intersected (AND) with
+  `--group`, `--host`, and `--enabled`/`--disabled`. `status [SKILL]...`
+  accepts positional skill names and repeatable `--group` (union) while keeping
+  its top-level JSON array and normal per-host labels for explicitly selected
+  disabled skills (such as `MISSING`). Both reject unknown skill names with
+  exit `2` (`unknown_skill`).
+- `doctor` and `doctor --quick` add a `Catalog:` summary line in text output
+  (per enabled host: skill count, total Unicode characters across
+  descriptions, up to two longest descriptions, and invalid count when nonzero;
+  or `Catalog: no enabled hosts`) and a `catalog` object (`skills`,
+  `description_chars`, `longest: [{name, chars}]`, `invalid`) on each enabled
+  host in `--json` (omitted when disabled or without a loaded manifest).
+- Writer serialization via `state.json.lock` beside `state.json`: `install`,
+  `sync`, `uninstall`, `convert`, `bootstrap`, `share`, and hook-triggered sync
+  hold the lock for the whole write (`share` acquires
+  `my-skills.toml.edit-lock` first, then `state.json.lock`). Contention prints
+  `Waiting for another my-skills command to finish...` once after about one
+  second and waits up to 30 seconds (`MY_SKILLS_STATE_LOCK_TIMEOUT_MS`
+  overrides the wait for tests, capped at 30 seconds). A timeout prints
+  `error: state is busy: <lock_path>`, exits `2` (`state_busy` in JSON), and
+  leaves state and hosts unchanged; a busy `post-merge`, `post-rewrite`, or
+  `post-checkout` hook prints that diagnostic plus
+  `warning: <hook> could not sync the registry` and exits `0`. Readers stay
+  unlocked.
+
+### Changed
+
+- **Deliberate behaviour change in explicit `sync <SKILL>` / `--group`:**
+  explicitly selecting skills by name or `--group` now validates and audits all
+  wanted skills on the selected hosts, including zero-action `FRESH` links. A
+  broken skill with an already-`FRESH` link now fails with exit `1` and can
+  block the batch. Disabled skills whose only planned action is `REMOVE`
+  (prune) bypass those checks unless `--all` puts them in scope to connect.
+  Bare `sync` (including hook-triggered sync) continues to check only the
+  create/update skill set, and `sync --check` stays drift-only without running
+  validation or audit.
+- **Deliberate behaviour change in frontmatter warnings:** `validate` and host
+  checks during `install` and `sync` previews no longer warn about standard
+  optional Agent Skills fields (`license`, `compatibility`, and `metadata`).
+  `allowed-tools` / `allowed_tools` keep their single dedicated warning without
+  a duplicate generic warning, and any other unsupported fields emit one
+  combined warning per skill listing all affected hosts.
+- Staged copy checks: copy creation, refresh, link fallback, and
+  `convert --to copy` build one private check snapshot per copied skill for
+  validation, audit, and both recorded hashes, then stage from that snapshot
+  onto the destination volume. If the canonical skill is edited after the
+  snapshot check, the originally checked bytes are installed and the copy is
+  left `STALE`.
+- Real `convert --to copy` now runs validation and the registry audit gate on
+  the copy snapshot before replacing a link.
+- Committed updates, conversions, and removals print a
+  `warning: cleanup could not remove <path>: <error>` line to stderr and still
+  succeed when post-commit backup cleanup fails (distinct from rollback
+  failures).
+
+### Fixed
+
+- `share` from a discovered working directory now records the active root only
+  after adoption succeeds, leaving the root cache untouched when `share` fails
+  or the state lock is busy.
+
 ## [1.2.0] - 2026-11-24
 
 ### Added
