@@ -45,61 +45,93 @@ pub struct AuditMeta {
     pub audit_threshold: String,
 }
 
-/// Apply one plan item and update `state`. `Outcome::Converted` means state
-/// was already saved. The caller saves state after other successful writes.
+/// Apply one plan item and persist its state before reporting success.
 /// Blocked and informational items are not applied.
 pub fn apply(item: &PlanItem, state: &mut State, audit: Option<&AuditMeta>) -> Result<Outcome> {
     match item.action {
-        Action::Create => create(item, state, audit),
+        Action::Create => create(item, state, audit, link::create_link),
         Action::Update => {
-            copy_install(&item.source, &item.destination)?;
-            state.put(record_for(item, InstallMode::Copy, None, None, audit)?);
+            copy_install_with(&item.source, &item.destination, || {
+                commit_install(item, state, &Connection::Copy, audit)
+            })?;
             Ok(Outcome::Updated)
         }
-        Action::Remove => {
-            remove_connection(&item.destination)?;
-            state.remove(&item.skill, &item.host);
-            Ok(Outcome::Removed)
-        }
+        Action::Remove => remove(item, state),
         Action::Convert => convert(item, state, audit),
         _ => Ok(Outcome::Unchanged),
     }
 }
 
-fn create(item: &PlanItem, state: &mut State, audit: Option<&AuditMeta>) -> Result<Outcome> {
-    match item.mode {
-        InstallMode::Copy => {
-            copy_install(&item.source, &item.destination)?;
-            state.put(record_for(item, InstallMode::Copy, None, None, audit)?);
-            Ok(Outcome::Created(Connection::Copy))
-        }
-        InstallMode::Link => {
-            let canonical = absolute(&item.source)?;
-            match link::create_link(&item.destination, &canonical)? {
-                Created::Link(kind) => {
-                    state.put(record_for(
-                        item,
-                        InstallMode::Link,
-                        Some(kind),
-                        None,
-                        audit,
-                    )?);
-                    Ok(Outcome::Created(Connection::Link(kind)))
+fn create(
+    item: &PlanItem,
+    state: &mut State,
+    audit: Option<&AuditMeta>,
+    create_link: impl FnOnce(&Path, &Path) -> Result<Created>,
+) -> Result<Outcome> {
+    let dest = &item.destination;
+    let connection = match item.mode {
+        InstallMode::Copy => Connection::Copy,
+        InstallMode::Link => match create_link(dest, &absolute(&item.source)?)? {
+            Created::Link(kind) => {
+                let connection = Connection::Link(kind);
+                if let Err(err) = commit_install(item, state, &connection, audit) {
+                    link::remove_link(dest)?;
+                    return Err(err);
                 }
-                Created::NeedsCopy { reason } => {
-                    copy_install(&item.source, &item.destination)?;
-                    state.put(record_for(
-                        item,
-                        InstallMode::Copy,
-                        None,
-                        Some(reason.clone()),
-                        audit,
-                    )?);
-                    Ok(Outcome::Created(Connection::CopyFallback { reason }))
-                }
+                return Ok(Outcome::Created(connection));
             }
+            Created::NeedsCopy { reason } => Connection::CopyFallback { reason },
+        },
+    };
+    copy_install_with(&item.source, dest, || {
+        commit_install(item, state, &connection, audit)
+    })?;
+    Ok(Outcome::Created(connection))
+}
+
+fn remove(item: &PlanItem, state: &mut State) -> Result<Outcome> {
+    let dest = &item.destination;
+    let backup = match link::entry_kind(dest)? {
+        EntryKind::Missing => None,
+        EntryKind::Link(_) | EntryKind::Dir => {
+            // Rename the entry itself so even a broken link can be restored.
+            let backup = sibling(dest, "backup");
+            fs::rename(dest, &backup).map_err(|e| Error::io(dest, e))?;
+            Some(backup)
         }
+        EntryKind::File => {
+            return Err(Error::Refused(format!(
+                "{} is a file, not a managed connection",
+                dest.display()
+            )));
+        }
+    };
+    let key = (item.skill.clone(), item.host.clone());
+    if let Err(err) = commit_record_change(state, key, None) {
+        if let Some(backup) = backup {
+            fs::rename(&backup, dest).map_err(|e| Error::io(&backup, e))?;
+        }
+        return Err(Error::StateSave(Box::new(err)));
     }
+    if let Some(backup) = backup {
+        remove_connection(&backup)?;
+    }
+    Ok(Outcome::Removed)
+}
+
+fn commit_install(
+    item: &PlanItem,
+    state: &mut State,
+    connection: &Connection,
+    audit: Option<&AuditMeta>,
+) -> Result<()> {
+    let (mode, kind, reason) = match connection {
+        Connection::Link(kind) => (InstallMode::Link, Some(*kind), None),
+        Connection::Copy => (InstallMode::Copy, None, None),
+        Connection::CopyFallback { reason } => (InstallMode::Copy, None, Some(reason.clone())),
+    };
+    let record = record_for(item, mode, kind, reason, audit)?;
+    commit_record(state, record).map_err(|err| Error::StateSave(Box::new(err)))
 }
 
 fn convert(item: &PlanItem, state: &mut State, audit: Option<&AuditMeta>) -> Result<Outcome> {
@@ -186,16 +218,26 @@ fn convert_link_to_copy(
     Ok(Outcome::Converted(Connection::Copy))
 }
 
-/// Put `record` and save state; on a failed save the previous record is
-/// restored in memory.
 fn commit_record(state: &mut State, record: InstallRecord) -> Result<()> {
-    let previous = state.get(&record.skill, &record.host).cloned();
-    let key = (record.skill.clone(), record.host.clone());
-    state.put(record);
+    commit_record_change(state, record.key(), Some(record))
+}
+
+/// Save a record change and restore the previous record in memory if it fails.
+fn commit_record_change(
+    state: &mut State,
+    key: (String, String),
+    record: Option<InstallRecord>,
+) -> Result<()> {
+    let previous = match record {
+        Some(record) => state.installs.insert(key.clone(), record),
+        None => state.installs.remove(&key),
+    };
     if let Err(err) = state.save() {
         match previous {
             Some(previous) => state.put(previous),
-            None => state.remove(&key.0, &key.1),
+            None => {
+                state.installs.remove(&key);
+            }
         }
         return Err(err);
     }
@@ -240,6 +282,15 @@ fn restore(backup: &Path, dest: &Path) -> Result<()> {
 /// Copy `source` to `dest` through a staging directory; an existing copy is
 /// moved aside first and restored if the swap fails (I6).
 pub fn copy_install(source: &Path, dest: &Path) -> Result<()> {
+    copy_install_with(source, dest, || Ok(()))
+}
+
+/// Keep the previous copy until the replacement has been committed.
+fn copy_install_with(
+    source: &Path,
+    dest: &Path,
+    commit: impl FnOnce() -> Result<()>,
+) -> Result<()> {
     if !source.is_dir() {
         return Err(Error::Link(format!(
             "source skill directory not found: {}",
@@ -275,6 +326,14 @@ pub fn copy_install(source: &Path, dest: &Path) -> Result<()> {
         }
         let _ = remove_real_dir(&staged);
         return Err(Error::io(dest, err));
+    }
+    if let Err(err) = commit() {
+        fs::rename(dest, &staged).map_err(|e| Error::io(dest, e))?;
+        if let Some(backup) = backup {
+            fs::rename(&backup, dest).map_err(|e| Error::io(&backup, e))?;
+        }
+        remove_real_dir(&staged)?;
+        return Err(err);
     }
     if let Some(backup) = backup {
         remove_real_dir(&backup)?;
@@ -402,6 +461,72 @@ fn format_utc(secs: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn copy_fallback_retries_after_state_save_failure_without_leaking_record() {
+        let tmp = tempfile::tempdir().unwrap();
+        let state_path = tmp.path().join("state.json");
+        let blocker = state_path.with_file_name("state.json.tmp");
+        fs::write(&blocker, "busy").unwrap();
+        let mut state = State::load(Some(&state_path)).unwrap();
+        let source = tmp.path().join("canonical");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("SKILL.md"), "canonical").unwrap();
+        let item = PlanItem {
+            skill: "alpha".into(),
+            host: "claude".into(),
+            source,
+            destination: tmp.path().join("host").join("alpha"),
+            action: Action::Create,
+            reason: String::new(),
+            mode: InstallMode::Link,
+            source_hash: None,
+        };
+        let reason = "link unavailable";
+        let force_fallback = |_: &Path, _: &Path| {
+            Ok(Created::NeedsCopy {
+                reason: reason.into(),
+            })
+        };
+        let err = create(&item, &mut state, None, force_fallback).unwrap_err();
+        assert!(matches!(err, Error::StateSave(_)), "{err}");
+        assert_eq!(
+            link::entry_kind(&item.destination).unwrap(),
+            EntryKind::Missing
+        );
+        assert!(state.get("alpha", "claude").is_none());
+        assert!(!state_path.exists());
+
+        fs::remove_file(blocker).unwrap();
+        // A subsequent successful item using this state must not persist alpha.
+        let other = PlanItem {
+            host: "codex".into(),
+            destination: tmp.path().join("other-host").join("alpha"),
+            mode: InstallMode::Copy,
+            ..item.clone()
+        };
+        assert_eq!(
+            apply(&other, &mut state, None).unwrap(),
+            Outcome::Created(Connection::Copy)
+        );
+        let persisted = State::load(Some(&state_path)).unwrap();
+        assert_eq!(persisted, state);
+        assert!(persisted.get("alpha", "claude").is_none());
+        assert!(persisted.get("alpha", "codex").is_some());
+
+        assert_eq!(
+            create(&item, &mut state, None, force_fallback).unwrap(),
+            Outcome::Created(Connection::CopyFallback {
+                reason: reason.into()
+            }),
+        );
+        assert_eq!(link::entry_kind(&item.destination).unwrap(), EntryKind::Dir);
+        let persisted = State::load(Some(&state_path)).unwrap();
+        assert_eq!(persisted, state);
+        let record = persisted.get("alpha", "claude").unwrap();
+        assert_eq!(record.mode, InstallMode::Copy);
+        assert_eq!(record.fallback_reason.as_deref(), Some(reason));
+    }
 
     #[test]
     fn utc_format_known_instants() {
