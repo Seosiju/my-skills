@@ -4,6 +4,7 @@ use std::fs;
 use std::path::Path;
 
 use assert_cmd::Command;
+use my_skills::check::audit::{AuditPolicy, run_audit};
 use predicates::prelude::*;
 use support_h::{Fixture, external, link_dir, plain, skill};
 
@@ -257,6 +258,72 @@ fn import_new_copies_in() {
     );
     assert!(!fixture.host("claude").exists());
     assert!(!fixture.state().exists());
+}
+
+#[test]
+fn import_and_validate_accept_binary_assets() {
+    let fixture = Fixture::repo();
+    let source = external(&fixture, "# Brand\n\n![Pixel](assets/pixel.png)\n");
+    let assets = [
+        (
+            "font.woff2",
+            include_bytes!("fixtures/binary-assets/font.woff2").as_slice(),
+        ),
+        (
+            "pixel.png",
+            include_bytes!("fixtures/binary-assets/pixel.png").as_slice(),
+        ),
+    ];
+    fs::create_dir(source.join("assets")).unwrap();
+    for (name, bytes) in assets {
+        assert!(bytes.contains(&0));
+        fs::write(source.join("assets").join(name), bytes).unwrap();
+    }
+
+    import(&fixture, &source).assert().success();
+    for (name, bytes) in assets {
+        assert_eq!(
+            fs::read(fixture.canonical("brand").join("assets").join(name)).unwrap(),
+            bytes
+        );
+    }
+    fixture
+        .command()
+        .args(["validate", "brand"])
+        .assert()
+        .success()
+        .stdout("[OK] brand\n");
+    fixture
+        .command()
+        .args(["audit", "brand"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("nul-byte").not());
+}
+
+#[test]
+fn import_still_blocks_unexpected_nul_bytes() {
+    for file in ["fake.png", "notes", "notes.md"] {
+        let fixture = Fixture::repo();
+        let source = external(&fixture, "# Brand\n");
+        fs::write(source.join(file), b"Plain text with a NUL byte\0\n").unwrap();
+
+        let audit = run_audit(&source, &AuditPolicy::default()).unwrap();
+        assert!(
+            audit
+                .findings
+                .iter()
+                .any(|finding| finding.rule_id == "nul-byte" && finding.file == file),
+            "{file}: {:?}",
+            audit.findings
+        );
+        assert_blocked(
+            &fixture,
+            &source,
+            &format!("security: {file}: file contains a NUL byte"),
+            false,
+        );
+    }
 }
 
 #[test]

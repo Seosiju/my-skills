@@ -33,7 +33,7 @@ static FETCH_SECRET: LazyLock<Regex> =
 
 pub(super) fn analyze(context: &FileContext, findings: &mut Vec<AuditFinding>) {
     let mut report = |id, message| findings.push(finding(id, &context.file, message, None));
-    if context.has_nul {
+    if context.has_unexpected_nul {
         report("nul-byte", "file contains a NUL byte");
     }
     if context.decode_error {
