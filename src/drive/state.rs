@@ -84,10 +84,14 @@ impl InstallRecord {
     }
 }
 
+/// A record's source is always `<skills root>/<name>`. Compare its parent,
+/// not the source itself, so a skill directory that is a symlink into a
+/// checkout elsewhere still belongs to the registry that lists it.
 fn source_is_within(source: &Path, skills_root: &Path) -> bool {
-    let source = ownership_path(source);
-    let skills_root = ownership_path(skills_root);
-    source != skills_root && source.starts_with(skills_root)
+    let Some(parent) = lexical_path(source).parent().map(Path::to_path_buf) else {
+        return false;
+    };
+    ownership_path(&parent) == ownership_path(skills_root)
 }
 
 fn ownership_path(path: &Path) -> PathBuf {
@@ -366,5 +370,31 @@ mod tests {
 
         assert!(source_is_within(&alias.join("missing"), &skills));
         assert!(!source_is_within(&skills.join("escape/missing"), &skills));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ownership_keeps_a_symlinked_skill_dir_in_its_registry() {
+        let temp = tempfile::tempdir().unwrap();
+        let skills = temp.path().join("skills");
+        let checkout = temp.path().join("checkout");
+        fs::create_dir(&skills).unwrap();
+        fs::create_dir(&checkout).unwrap();
+        std::os::unix::fs::symlink(&checkout, skills.join("alpha")).unwrap();
+
+        assert!(source_is_within(&skills.join("alpha"), &skills));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn ownership_keeps_a_junctioned_skill_dir_in_its_registry() {
+        let temp = tempfile::tempdir().unwrap();
+        let skills = temp.path().join("skills");
+        let checkout = temp.path().join("checkout");
+        fs::create_dir(&skills).unwrap();
+        fs::create_dir(&checkout).unwrap();
+        junction::create(&checkout, skills.join("alpha")).unwrap();
+
+        assert!(source_is_within(&skills.join("alpha"), &skills));
     }
 }
