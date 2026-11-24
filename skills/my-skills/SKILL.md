@@ -73,7 +73,8 @@ drafts under `skills/`; exit `1` flags `foreign`, `unmanaged`, `ambiguous`, or
   (`my-skills validate <skill> --json`), then commit (`pre-commit` validates;
   `post-commit` refreshes copy hosts automatically) and push in a Git registry
   — zero extra `my-skills` calls after committing. In a non-Git registry, run
-  `my-skills sync <skill> --host <host>` after previewing with `--dry-run --json`.
+  one call: `my-skills sync <skill> --host <host> --json` (after previewing with
+  `--dry-run --json`).
 - **Session reload:** after adding or changing skills, start a new host session
   if needed — Claude Code picks up skills on restart, Codex detects changes
   automatically (restart if needed), and Antigravity CLI requires a new
@@ -89,7 +90,7 @@ current host. **Never add `--yes` yourself** to a multi-host write — `--yes`
 means the user already approved that exact multi-host plan; otherwise stop after
 the dry-run and ask which host to update.
 
-1. Preview with `--dry-run --json` instead of parsing text:
+1. Preview is always `--dry-run --json` (instead of parsing text):
 
 ```bash
 my-skills install <skill> --host <host> --dry-run --json
@@ -100,12 +101,13 @@ my-skills sync <skill> --host <host> --dry-run --json
    `audit`, and `actions` (for `sync`, review removals as well as new/updated
    connections). Stop and surface findings if `blocked` is `true` or audit would
    block.
-3. Run the matching command only when `applicable` is `true` (or only
-   `needs_yes` remains for an already-approved multi-host scope):
+3. To apply, drop only `--dry-run` when `applicable` is `true` (or only
+   `needs_yes` remains for an already-approved multi-host scope), and check
+   `applied`, `summary`, `cleanup_warnings`, and each action's `result`:
 
 ```bash
-my-skills install <skill> --host <host>
-my-skills sync <skill> --host <host>
+my-skills install <skill> --host <host> --json
+my-skills sync <skill> --host <host> --json
 ```
 
 ## Never bypass audit
@@ -122,8 +124,8 @@ Read a reference only when the task needs it:
 - [references/setup.md](references/setup.md) — First-time CLI/registry setup,
   `my-skills.toml not found`, `init-registry` flags, `bootstrap`, and Git hooks.
 - [references/json-and-dry-run.md](references/json-and-dry-run.md) — `resolve`,
-  dry-run and validation JSON, error codes (`state_busy`), `sync --check`, and
-  multi-host rules.
+  `new --json`, dry-run and applied `install`/`sync --json`, error codes,
+  `sync --check`, and multi-host rules.
 - [references/share-and-audit.md](references/share-and-audit.md) — Sharing
   host-local skills (`share`), creating/importing skills (`import`), and
   security and bundle audits (`audit`, `--with-governance`).

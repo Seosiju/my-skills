@@ -36,7 +36,8 @@ under `my-skills.toml.edit-lock`. Edit the draft, then enable and preview/commit
 
 ```bash
 my-skills enable <name>
-my-skills sync <name> --host <host> --dry-run --json
+my-skills sync <name> --host <host> --dry-run --json   # preview
+my-skills sync <name> --host <host> --json             # or commit in a Git registry
 ```
 
 To bring in an existing external skill folder instead, use `import`:

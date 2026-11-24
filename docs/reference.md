@@ -20,6 +20,7 @@ Detailed reference for commands, registry lookup, install modes, safety checks, 
 | `my-skills import <SOURCE>` | Copy an external skill folder into `skills/` and register it as disabled (`--enable`, `--force`, `--skip-audit`, `--dry-run`). |
 | `my-skills share --from <HOST> [SKILL]` | Promote a skill from a host folder into your registry (`--plan` / `--dry-run`, `--json`, `--enable`, `--disable`, `--force`, `--skip-audit`). |
 | `my-skills convert --to link\|copy [SKILL]` | Switch existing managed connections between link and copy (`--host <HOST>`, `--all`, `--dry-run`, `--yes`). |
+| `my-skills hooks <install\|uninstall\|status>` | Install, remove, or inspect the registry's managed Git hooks (`--dry-run` on `install`/`uninstall`). |
 | `my-skills data-path <SKILL>` | Print a skill's machine-local data folder (`--create` to create it). |
 | `my-skills update` | Update the `my-skills` binary from GitHub Releases (`--check`, `--dry-run`, `--channel stable\|main`). |
 | `my-skills doctor` | Check your environment, hosts, active registry, Git hooks, and manifest (`--quick`, `--no-update-check`, `--json`). |
@@ -48,8 +49,9 @@ action is `REMOVE` (prune) bypass those checks unless `--all` puts them in
 scope to connect. `--no-prune` preserves unwanted connections. `sync --check`
 reports drift only without running validation or audit; it takes precedence over
 `--dry-run` and cannot be combined with `--json`. Both `install --json` and
-`sync --json` require `--dry-run`. Real and `--dry-run` `convert --to copy`
-also validate and audit the copy snapshot before replacing a link.
+`sync --json` apply by default (add `--dry-run` to preview, drop only
+`--dry-run` to apply). Real and `--dry-run` `convert --to copy` also validate
+and audit the copy snapshot before replacing a link.
 
 `install` defaults to enabled skills and accepts explicitly selected disabled
 skills. `install --all` includes disabled skills in the default selection.
@@ -90,8 +92,8 @@ On a machine with no saved active registry yet, only the **first real write** fr
 
 JSON is UTF-8. On Windows, displayed paths strip `\\?\` and use `\`. The
 `registry` object in `skills`, `resolve`, `new`, `share` previews, `install`
-and `sync` previews, `validate`, and `diff` has `path` and `source`. Source
-labels are `flag`, `env`, `cwd`, and `cache`.
+and `sync` (`--dry-run --json` and applied `--json`), `validate`, and `diff` has
+`path` and `source`. Source labels are `flag`, `env`, `cwd`, and `cache`.
 
 ### Errors
 
@@ -369,7 +371,8 @@ With `--host all`, `convert` skips any host that has an explicit `[targets.<host
 `my-skills` avoids silent overwrites and half-finished installs:
 
 - **Dry runs.** Pass `--dry-run` to preview changes without writing anything. Both `install --dry-run` and `sync --dry-run` run validation and audit just like the real command (including validating and auditing planned copies from the same filtered check snapshot as apply), exit `1` only on validation failure, and exit `0` otherwise — even when audit, drift, foreign ownership, missing `--yes`, or an inactive cwd registry would refuse the real run. Real and `--dry-run` `convert --to copy` also validate and audit the copy snapshot and exit `1` on validation or audit failure. In text mode, the first stdout line starts with `BLOCKED:` whenever items (`install`/`sync`) or an inactive cwd registry (`install`/`sync`/`uninstall`/`convert`) would refuse the real run, and multi-host previews without `--yes` end with `Re-run with --yes to apply: ...`. Use `sync --check` when you want a non-zero exit code for any out-of-date state.
-- **Dry-run JSON (`install|sync --dry-run --json`).** Emits `actions`, `audit`, `registry` (`{path, source}`), `dry_run`, `blocked`, `applicable` (whether the same command without `--dry-run` would exit `0`, including `--yes` and active-registry checks), `block_reasons` (`[{skill, host, kind, message}]` with kinds `validation`, `audit`, `needs_yes`, `inactive_registry`, or a lowercased block action such as `block_drift` or `block_foreign`), and `validation` (`[{skill, host, ok, errors, warnings}]`). With `--json`, validation warnings stay in JSON and do not print to stderr.
+- **Dry-run JSON (`install|sync --dry-run --json`).** Emits `actions`, `audit`, `registry` (`{path, source}`), `dry_run` (`true`), `blocked`, `applicable` (whether the same command without `--dry-run` would exit `0`, including `--yes` and active-registry checks), `block_reasons` (`[{skill, host, kind, message}]` with kinds `validation`, `audit`, `needs_yes`, `inactive_registry`, or a lowercased block action such as `block_drift` or `block_foreign`), and `validation` (`[{skill, host, ok, errors, warnings}]`). With `--json`, validation warnings stay in JSON and do not print to stderr.
+- **Applied JSON (`install|sync --json`, without `--dry-run`).** **Deliberate behaviour change:** `install --json` and `sync --json` apply by default and write one JSON document to stdout after the last state save or rollback (preview is always `--dry-run --json`; to apply, drop only `--dry-run`). The applied document keeps the preview keys with `dry_run: false` and adds `applied` (boolean, `true` when every write succeeded and no action was `blocked` or `failed`, including no-op syncs and post-commit cleanup warnings), `summary` (`{created, updated, removed, unchanged, blocked, failed}`, excluding `skipped`), `cleanup_warnings` (`[{skill, host, path, message}]`), and per-action `result` (`created`, `updated`, `removed`, `unchanged`, `blocked`, `failed`, or `skipped`), `requested_mode`, `mode` (actual mode after any fallback, or `null` when skipped/blocked/failed before completion), `fallback_reason`, and `error`. Early configuration errors (`unknown_skill`, `state_busy`, `sync --json --check`) still emit `{"error": ...}` and exit `2`; post-plan refusals (validation, audit, missing `--yes`, `inactive_registry`, incompatible shared destinations, or post-plan audit config errors) return the applied document with `applied: false` (missing `--yes` sets `blocked: false`, `applicable: false`, `kind: "needs_yes"`, and exits `2`; late host copy-edit conflicts add `kind: "conflict"` to `block_reasons` and exit `1`).
 - **Confirmation for multi-host writes.** Writing to more than one host asks for confirmation: review a dry run, then pass `--yes`. Installing only the built-in starter skills to default host paths is exempt.
 - **Existing folders are never overwritten.** If a host folder already contains an unmanaged directory at the destination path, `my-skills` stops instead of replacing it.
 - **Connections owned by another registry are protected.** A managed connection belongs to the registry whose `skills/` directory contains its recorded `source` path. `sync` silently leaves another registry's connections alone when pruning, `share --plan` recommends `skip` for them, and `install`, `sync`, `convert`, `uninstall`, and `share` refuse to modify or overwrite them.

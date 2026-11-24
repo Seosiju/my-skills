@@ -66,6 +66,25 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ### Changed
 
+- **Deliberate behaviour change in `install --json` and `sync --json`:**
+  `install --json` and `sync --json` now apply by default and emit one JSON
+  document to stdout after the final state save or rollback (removing the old
+  requirement to pass `--dry-run`). Pass `--dry-run --json` for a preview, and
+  drop only `--dry-run` to apply (`sync --json --check` still returns a usage
+  error with exit `2`). Applied JSON sets `dry_run: false` and adds `applied`
+  (boolean, `true` when every write succeeded and no action was `blocked` or
+  `failed`, including no-op syncs and post-commit cleanup warnings), `summary`
+  (`{created, updated, removed, unchanged, blocked, failed}`, excluding
+  `skipped`), `cleanup_warnings` (`[{skill, host, path, message}]`), and
+  per-action `result` (`created`, `updated`, `removed`, `unchanged`, `blocked`,
+  `failed`, `skipped`), `requested_mode`, `mode` (actual mode, or `null` when
+  skipped/blocked/failed before completion), `fallback_reason`, and `error`.
+  Early configuration failures (`unknown_skill`, `state_busy`, `sync --json --check`)
+  still emit `{"error": ...}` with exit `2`; post-plan refusals (validation,
+  audit, `needs_yes`, `inactive_registry`, incompatible shared destinations, or
+  late audit config failures) return the applied document with `applied: false`
+  (`needs_yes`, `inactive_registry`, and post-plan config failures exit `2`;
+  late copy-edit conflicts add `kind: "conflict"` and exit `1`).
 - **Deliberate behaviour change in explicit `sync <SKILL>` / `--group`:**
   explicitly selecting skills by name or `--group` now validates and audits all
   wanted skills on the selected hosts, including zero-action `FRESH` links. A
