@@ -12,20 +12,31 @@ are the release source of truth while PyPI publishing remains undecided.
 - `my-skills new <NAME> [--group G] [--host H]... [--description TEXT] [--dry-run] [--json]`
   creates `skills/<NAME>/SKILL.md` and registers `[skills.<NAME>]` with
   `enabled = false` under `my-skills.toml.edit-lock` (without touching state).
-  Checks skill/group names, description length (`<= 1024`), active-root write
-  policy, existing `skills/<NAME>` entries (including files or broken links),
-  base/local manifest collisions, and `--host` targets before writing, and
-  rolls back only the newly created directory and `SKILL.md` if registration
-  fails. Reports `invalid_name`, `already_exists`, `unknown_host`,
-  `inactive_registry`, `usage`, or `config` on exit `2` (`0` on success).
+  Checks skill/group names (`invalid_name`), `--description` (non-blank, `<= 1024`
+  and within the smallest `description_max_chars` of the targeted or enabled
+  built-in hosts — 768 characters, mapped to `usage`), active-root write
+  policy (re-checking under `edit-lock` and using conditional active-root
+  caching so a newer `set-root` is never overwritten), existing `skills/<NAME>`
+  entries (`already_exists`, including files or broken links), base/local
+  manifest collisions (`already_exists`), `--host` targets (`unknown_host`),
+  and host-directory containment (refusing `skills/<NAME>` inside a host
+  directory) before writing. Rollback removes only `SKILL.md` if `new` created
+  it and the skill directory only when it holds no foreign files, reporting
+  `rollback failed, remove by hand: ...` on rollback errors. Exit `0` on
+  success, `2` on error.
 - `post-commit` managed Git hook: `hooks install`, `hooks uninstall`,
   `hooks status`, and `doctor` now manage five hooks (`post-commit` second,
-  after `pre-commit`). After a commit passes `pre-commit`, `post-commit` runs
-  `sync --yes --quiet` for committed changes (`my-skills.toml` triggers a full
-  sync; otherwise only committed registered skills sync), skipping uncommitted
-  `my-skills.toml` changes, dirty skill directories (with a warning, also
-  excluded from full sync), in-progress `rebase`/`merge`/`cherry-pick`, and
-  linked worktrees, and always exiting `0`. **Upgrade note:** re-run
+  after `pre-commit`). After checking that the repo is not a linked worktree,
+  `post-commit` acquires `state.json.lock` before inspecting Git state (and
+  re-checks active-root eligibility under the lock) so edits arriving while it
+  waits are detected rather than copied. It inspects `HEAD` including
+  conflict-resolved merge commits (`diff-tree --root -m --first-parent`), runs
+  `sync --yes --quiet` (`my-skills.toml` triggers a full sync; otherwise only
+  committed registered skills sync), warns if a synced skill changes during
+  the copy, skips uncommitted `my-skills.toml` changes, skips dirty skill
+  directories (with a warning for registered or recorded skills, and excludes
+  dirty skills from both full sync and orphan pruning), skips in-progress
+  `rebase`/`merge`/`cherry-pick`, and always exits `0`. **Upgrade note:** re-run
   `my-skills hooks install` on every machine (`hooks status` reports
   `post-commit` as `missing` until installed).
 - `my-skills resolve <TARGET> [--json]` maps a registered skill name, canonical
@@ -110,10 +121,19 @@ are the release source of truth while PyPI publishing remains undecided.
   `STALE`; if the installed copy is edited before an update or conversion
   replaces it, `my-skills` returns `CONFLICT` (exit `1`) and leaves the host
   edit intact.
-- Batch planning detects physical destination aliases across hosts: compatible
-  aliased copy targets share one physical write and record every host (and
-  reconcile an unrecorded alias when a clean managed peer proves ownership),
-  while incompatible aliases block the batch before writing.
+- Batch planning detects physical destination aliases across hosts and protects
+  unselected peers sharing a destination: compatible aliased copy targets share
+  one physical write and record every host (and reconcile an unrecorded alias
+  when a clean managed peer proves ownership), while incompatible aliases block
+  the batch before writing. Single-host `install`, `sync`, `convert`, and
+  `uninstall` (including `uninstall --dry-run`) block with `SHARED_DESTINATION`
+  (JSON `shared_destination`, exit `1`) before writing when a planned `Remove`,
+  `Update`, or `Convert` would alter or delete an entry shared by an unselected
+  recorded connection. Pruning one peer while another keeps or refreshes the
+  shared entry now succeeds and leaves the shared tree in place until the last
+  peer is removed.
+- `validate_selected` drops host rows in `validation[]` and `block_reasons`
+  that only repeat skill-level errors or warnings.
 - Real and `--dry-run` `convert --to copy` now run validation and the registry
   audit gate on the copy snapshot before replacing a link.
 - `post-commit`, `post-merge`, `post-rewrite`, and `post-checkout` hooks are

@@ -263,13 +263,19 @@ creates `skills/<NAME>/SKILL.md` and registers `[skills.<NAME>]` with
 passed). It holds `my-skills.toml.edit-lock` for the whole operation without
 taking the state lock (`--dry-run` checks lock availability and writes nothing).
 
-All checks run before writing: skill and group name rules, non-blank
-description (`<= 1024` characters, YAML double-quoted; default is a `TODO`
-placeholder that passes `validate`), active-registry write policy, any existing
-`skills/<NAME>` entry (including a file or broken link), base or
-`my-skills.local.toml` registration conflicts, and `--host` existence. If
-registration fails, `new` removes only the `SKILL.md` and skill directory it
-just created.
+All checks run before writing: skill and group name rules (`invalid_name`),
+non-blank `--description` within `1024` characters and within the smallest
+`description_max_chars` of the targeted or enabled built-in hosts (`768`
+characters; `--description` errors emit `usage`), active-registry write policy
+(re-checked under `edit-lock`, with conditional active-root caching so a newer
+`set-root` is not overwritten), any existing `skills/<NAME>` entry (`already_exists`,
+including a file or broken link), base or `my-skills.local.toml` registration
+conflicts (`already_exists`), `--host` existence (`unknown_host`), and
+host-directory containment (both `my-skills.toml` and `skills/<NAME>` must be
+outside every target directory, checked in `--dry-run` too). If registration
+fails, `new` removes `SKILL.md` only if `new` created it, removes the skill
+directory only when no foreign files exist there, and reports any rollback
+failure alongside the error.
 
 ```json
 {
@@ -307,11 +313,16 @@ until then).
 - `pre-commit` validates staged changes to `my-skills.toml` and `skills/<name>/`
   from the Git index snapshot and blocks invalid commits.
 - `post-commit` refreshes host connections with `sync --yes --quiet` after a
-  commit passes `pre-commit` (`my-skills.toml` changes run a full sync;
-  otherwise only committed registered skills sync). It always exits `0`, prints
-  warnings on stderr, and skips uncommitted `my-skills.toml` changes, dirty
-  skill folders (including in a full sync), in-progress
-  `rebase`/`merge`/`cherry-pick`, and linked worktrees (`git worktree add`).
+  commit passes `pre-commit`. After confirming the repo is not a linked worktree,
+  it acquires `state.json.lock` before inspecting Git state (and re-checks
+  active-root eligibility under the lock) so edits arriving while waiting are
+  detected rather than copied. It inspects `HEAD` including conflict-resolved
+  merge commits (`diff-tree --root -m --first-parent`), runs a full sync when
+  `my-skills.toml` changed or syncs only committed registered skills otherwise,
+  warns if a synced skill becomes dirty during the copy, skips uncommitted
+  `my-skills.toml` changes, skips dirty skill folders (warning for registered
+  or recorded skills and excluding them from both full sync and orphan
+  pruning), skips in-progress `rebase`/`merge`/`cherry-pick`, and always exits `0`.
 - `post-merge`, `post-rewrite`, and `post-checkout` are also no-ops in linked
   worktrees, and warn and exit `0` when `state.json.lock` is busy.
 
@@ -370,15 +381,15 @@ With `--host all`, `convert` skips any host that has an explicit `[targets.<host
 
 `my-skills` avoids silent overwrites and half-finished installs:
 
-- **Dry runs.** Pass `--dry-run` to preview changes without writing anything. Both `install --dry-run` and `sync --dry-run` run validation and audit just like the real command (including validating and auditing planned copies from the same filtered check snapshot as apply), exit `1` only on validation failure, and exit `0` otherwise — even when audit, drift, foreign ownership, missing `--yes`, or an inactive cwd registry would refuse the real run. Real and `--dry-run` `convert --to copy` also validate and audit the copy snapshot and exit `1` on validation or audit failure. In text mode, the first stdout line starts with `BLOCKED:` whenever items (`install`/`sync`) or an inactive cwd registry (`install`/`sync`/`uninstall`/`convert`) would refuse the real run, and multi-host previews without `--yes` end with `Re-run with --yes to apply: ...`. Use `sync --check` when you want a non-zero exit code for any out-of-date state.
-- **Dry-run JSON (`install|sync --dry-run --json`).** Emits `actions`, `audit`, `registry` (`{path, source}`), `dry_run` (`true`), `blocked`, `applicable` (whether the same command without `--dry-run` would exit `0`, including `--yes` and active-registry checks), `block_reasons` (`[{skill, host, kind, message}]` with kinds `validation`, `audit`, `needs_yes`, `inactive_registry`, or a lowercased block action such as `block_drift` or `block_foreign`), and `validation` (`[{skill, host, ok, errors, warnings}]`). With `--json`, validation warnings stay in JSON and do not print to stderr.
+- **Dry runs.** Pass `--dry-run` to preview changes without writing anything. Both `install --dry-run` and `sync --dry-run` run validation and audit just like the real command (including validating and auditing planned copies from the same filtered check snapshot as apply), exit `1` only on validation failure, and exit `0` otherwise — even when audit, drift, foreign ownership, missing `--yes`, or an inactive cwd registry would refuse the real run. Real and `--dry-run` `convert --to copy` also validate and audit the copy snapshot and exit `1` on validation or audit failure, and `uninstall --dry-run` exits `1` when a single-host selection is blocked by `SHARED_DESTINATION`. In text mode, the first stdout line starts with `BLOCKED:` whenever items (`install`/`sync`) or an inactive cwd registry (`install`/`sync`/`uninstall`/`convert`) would refuse the real run, and multi-host previews without `--yes` end with `Re-run with --yes to apply: ...`. Use `sync --check` when you want a non-zero exit code for any out-of-date state.
+- **Dry-run JSON (`install|sync --dry-run --json`).** Emits `actions`, `audit`, `registry` (`{path, source}`), `dry_run` (`true`), `blocked`, `applicable` (whether the same command without `--dry-run` would exit `0`, including `--yes` and active-registry checks), `block_reasons` (`[{skill, host, kind, message}]` with kinds `validation`, `audit`, `needs_yes`, `inactive_registry`, `shared_destination`, or a lowercased block action such as `block_drift` or `block_foreign`), and `validation` (`[{skill, host, ok, errors, warnings}]`; host rows that merely repeat skill-level errors/warnings are omitted). With `--json`, validation warnings stay in JSON and do not print to stderr.
 - **Applied JSON (`install|sync --json`, without `--dry-run`).** **Deliberate behaviour change:** `install --json` and `sync --json` apply by default and write one JSON document to stdout after the last state save or rollback (preview is always `--dry-run --json`; to apply, drop only `--dry-run`). The applied document keeps the preview keys with `dry_run: false` and adds `applied` (boolean, `true` when every write succeeded and no action was `blocked` or `failed`, including no-op syncs and post-commit cleanup warnings), `summary` (`{created, updated, removed, unchanged, blocked, failed}`, excluding `skipped`), `cleanup_warnings` (`[{skill, host, path, message}]`), and per-action `result` (`created`, `updated`, `removed`, `unchanged`, `blocked`, `failed`, or `skipped`), `requested_mode`, `mode` (actual mode after any fallback, or `null` when skipped/blocked/failed before completion), `fallback_reason`, and `error`. Early configuration errors (`unknown_skill`, `state_busy`, `sync --json --check`) still emit `{"error": ...}` and exit `2`; post-plan refusals (validation, audit, missing `--yes`, `inactive_registry`, incompatible shared destinations, or post-plan audit config errors) return the applied document with `applied: false` (missing `--yes` sets `blocked: false`, `applicable: false`, `kind: "needs_yes"`, and exits `2`; late host copy-edit conflicts add `kind: "conflict"` to `block_reasons` and exit `1`).
 - **Confirmation for multi-host writes.** Writing to more than one host asks for confirmation: review a dry run, then pass `--yes`. Installing only the built-in starter skills to default host paths is exempt.
 - **Existing folders are never overwritten.** If a host folder already contains an unmanaged directory at the destination path, `my-skills` stops instead of replacing it.
 - **Connections owned by another registry are protected.** A managed connection belongs to the registry whose `skills/` directory contains its recorded `source` path. `sync` silently leaves another registry's connections alone when pruning, `share --plan` recommends `skip` for them, and `install`, `sync`, `convert`, `uninstall`, and `share` refuse to modify or overwrite them.
 - **Locally edited copies are protected.** If you edit a copied skill inside a host folder, `sync` flags it and leaves your edits untouched.
 - **Failed installs roll back.** Each write stages in a temporary folder and swaps into place. If the swap or saving the install state fails, `my-skills` rolls back so you can fix the cause and re-run cleanly. When a committed update, conversion, removal, `share`, or `import` succeeds but deleting the temporary backup fails, `my-skills` prints a `warning: cleanup could not remove ...` diagnostic to stderr and keeps the committed result.
-- **Staged copy snapshots and late-edit protection.** Copy installs, refreshes, link fallbacks, and `convert --to copy` validate, audit, and stage from one private check snapshot per skill onto the destination volume. If the canonical skill is edited after the snapshot is taken, the originally checked bytes are installed and the copy is left `STALE`. Updates and conversions away from copy mode also re-hash the installed host directory immediately before moving it aside; if a late host edit changed the digest, that item returns `CONFLICT` (exit `1`), preserves the host edit, and leaves its record untouched. Compatible shared-destination copy aliases across hosts apply once and record all hosts, while incompatible shared-destination plans block before writing.
+- **Staged copy snapshots, late-edit protection, and shared destinations.** Copy installs, refreshes, link fallbacks, and `convert --to copy` validate, audit, and stage from one private check snapshot per skill onto the destination volume. If the canonical skill is edited after the snapshot is taken, the originally checked bytes are installed and the copy is left `STALE`. Updates and conversions away from copy mode also re-hash the installed host directory immediately before moving it aside; if a late host edit changed the digest, that item returns `CONFLICT` (exit `1`), preserves the host edit, and leaves its record untouched. Compatible shared-destination copy aliases across hosts apply once and record all hosts, while incompatible aliases block before writing. Single-host `install`, `sync`, `convert`, and `uninstall` block with `SHARED_DESTINATION` (`shared_destination`, exit `1`) before writing if a planned `Remove`, `Update`, or `Convert` would alter or delete an entry shared by an unselected recorded peer; pruning one peer while another keeps or refreshes the shared entry succeeds and leaves the shared tree intact until the last peer is removed.
 - **Writer locking (`state.json.lock` and `root.lock`).** Writing commands (`install`, `sync`, `uninstall`, `convert`, `bootstrap`, `share`, and hook-triggered sync) serialize on `state.json.lock` beside `state.json` (`share` acquires `my-skills.toml.edit-lock` first, then `state.json.lock`). After about one second of contention, stderr prints `Waiting for another my-skills command to finish...` once. The wait is capped at 30 seconds; on timeout, writers fail with `error: state is busy: <path>` and exit `2` (`state_busy` in JSON), while `post-*` Git hooks warn on stderr and exit `0` so Git finishes. Implicit active-root writes re-check eligibility under `root.lock` after acquiring `state.json.lock` so a newer `set-root` selection is preserved with a stderr note; explicit `set-root` propagates `root.lock` and write errors (exit `2`). The `MY_SKILLS_STATE_LOCK_TIMEOUT_MS` environment variable is test-only and overrides the wait up to 30 seconds. Readers stay unlocked.
 
 Install state is stored locally per machine (under `$XDG_STATE_HOME` or `~/.local/state/my-skills/`) and is never committed to Git.

@@ -20,7 +20,10 @@ and stage from one check snapshot per skill (so a canonical edit after checking
 leaves the installed copy `STALE`), and updates/conversions re-hash the host
 copy right before replacing it so a late host edit returns `CONFLICT` instead of
 being overwritten. Both real and `--dry-run` `convert --to copy` enforce the
-validation and audit gates before replacing a link.
+validation and audit gates before replacing a link. If multiple hosts share the
+same physical destination path, select every sharing host (or omit `--host`)
+for `update`, `convert`, or `uninstall`; single-host writes there block with
+`SHARED_DESTINATION` (exit `1`).
 
 ## Quick host diagnostics
 

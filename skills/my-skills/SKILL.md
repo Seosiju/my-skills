@@ -127,7 +127,7 @@ Read a reference only when the task needs it:
   `new --json`, dry-run and applied `install`/`sync --json`, error codes,
   `sync --check`, and multi-host rules.
 - [references/share-and-audit.md](references/share-and-audit.md) — Sharing
-  host-local skills (`share`), creating/importing skills (`import`), and
+  host-local skills (`share`), creating/importing skills (`new`, `import`), and
   security and bundle audits (`audit`, `--with-governance`).
 - [references/hosts.md](references/hosts.md) — `install_mode` (`link` vs `copy`)
   precedence, `doctor --quick`, `convert`, and Antigravity CLI (`agy`) notes.

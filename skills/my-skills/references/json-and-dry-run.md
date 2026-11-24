@@ -17,11 +17,13 @@ validation, audit, or dry-run plan uses its normal report shape.
 ## Creating skills (`new --json`)
 
 `my-skills new <name> [--group <group>] [--host <host>] [--description <text>] [--dry-run] [--json]`
-creates `skills/<name>/SKILL.md` and registers it disabled (`enabled = false`).
-JSON returns `skill`, `enabled`, `group`, `hosts`, `canonical_dir`,
-`canonical_path`, `created`, `next`, and `registry` (plus `dry_run: true` only
-with `--dry-run`). Exit `2` emits `invalid_name`, `already_exists`,
-`unknown_host`, `inactive_registry`, `usage`, or `config`.
+creates `skills/<name>/SKILL.md` (outside any host directory) and registers it
+disabled (`enabled = false`), enforcing host description limits (`768` chars
+for built-in hosts). JSON returns `skill`, `enabled`, `group`, `hosts`,
+`canonical_dir`, `canonical_path`, `created`, `next`, and `registry` (plus
+`dry_run: true` only with `--dry-run`). Exit `2` emits `invalid_name`,
+`already_exists`, `unknown_host`, `inactive_registry`, `usage` (including
+`--description` errors), or `config`.
 
 ## Resolving names and paths (`resolve`)
 
@@ -82,8 +84,11 @@ JSON:
 - `applicable`: `true` only if the write can proceed without blocking or missing
   `--yes`.
 - `block_reasons`: structured reasons explaining every refusal, including audit
-  blocks, `block_drift`, `block_foreign`, `needs_yes`, `inactive_registry`, and
-  late `conflict`.
+  blocks, `block_drift`, `block_foreign`, `shared_destination` (when a
+  single-host operation would alter a destination shared with an unselected
+  recorded peer), `needs_yes`, `inactive_registry`, and late `conflict`. Host
+  rows in `validation` that merely repeat skill-level errors or warnings are
+  omitted.
 
 Applied JSON (`--json` without `--dry-run`) adds:
 
