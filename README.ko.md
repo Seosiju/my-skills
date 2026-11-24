@@ -116,6 +116,8 @@ Windows에서는 링크 대신 디렉터리 junction을 씁니다. Antigravity C
 
 - [참고 문서](docs/reference.md)(영문): 전체 명령, 링크와 복사, 레지스트리를 찾는 순서,
   안전장치, 비밀값 보관 위치
+- [시스템 지도](docs/system-map.ko.md): 용어, 파일 위치, 연결 상태, 편집·커밋·sync 흐름, 코드 구조를
+  그림으로 정리
 - [기여 안내](CONTRIBUTING.md)(영문): 소스 빌드와 테스트
 - [변경 기록](CHANGELOG.md)
 
