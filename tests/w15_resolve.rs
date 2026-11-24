@@ -241,6 +241,192 @@ fn reports_foreign_untracked_and_unsafe_host_paths() {
 }
 
 #[test]
+fn orphaned_host_records_resolve_to_the_existing_draft() {
+    let fixture = fixture();
+    fixture.write_manifest("[skills.beta]\n");
+    let alpha = fixture.canonical("alpha");
+    let linked = fixture.host("claude").join("alpha");
+    let copied = fixture.host("agy").join("alpha");
+    fs::create_dir_all(linked.parent().unwrap()).unwrap();
+    link_dir(&alpha, &linked);
+    write(&copied.join("references/x.md"), "Copied reference.");
+    save_records(
+        &fixture,
+        &[
+            record("alpha", "claude", "link", &alpha, &linked),
+            record("alpha", "agy", "copy", &alpha, &copied),
+        ],
+    );
+
+    let canonical_file = alpha.join("references/x.md");
+    let canonical = resolve(&fixture, &canonical_file, 0);
+    assert_eq!(canonical["state"], "unregistered");
+    for (entry, host, mode) in [(linked, "claude", "link"), (copied, "agy", "copy")] {
+        let result = resolve(&fixture, entry.join("references/x.md"), 0);
+        assert_eq!(result["state"], canonical["state"], "{mode}");
+        assert_eq!(result["registered"], false);
+        assert_eq!(result["matched_host"], host);
+        assert_eq!(result["mode"], mode);
+        assert!(result["reason"].is_null());
+        assert_target(&result, &alpha, &canonical_file);
+    }
+}
+
+#[test]
+fn host_records_without_a_canonical_directory_are_unmanaged() {
+    let fixture = fixture();
+    let alpha = fixture.canonical("alpha");
+    let linked = fixture.host("claude").join("alpha");
+    let copied = fixture.host("agy").join("alpha");
+    fs::create_dir_all(linked.parent().unwrap()).unwrap();
+    link_dir(&alpha, &linked);
+    write(&copied.join("SKILL.md"), "Copied skill.");
+    save_records(
+        &fixture,
+        &[
+            record("alpha", "claude", "link", &alpha, &linked),
+            record("alpha", "agy", "copy", &alpha, &copied),
+        ],
+    );
+    fs::rename(&alpha, fixture.root.join("elsewhere/alpha")).unwrap();
+    assert!(fs::symlink_metadata(&linked).is_ok());
+    assert!(!linked.exists());
+
+    for registered in [false, true] {
+        fixture.write_manifest(if registered { "[skills.alpha]\n" } else { "" });
+        for (entry, host, mode) in [(&linked, "claude", "link"), (&copied, "agy", "copy")] {
+            for target in [entry.clone(), entry.join("SKILL.md")] {
+                let result = resolve(&fixture, target, 1);
+                assert_eq!(result["state"], "unmanaged");
+                assert_eq!(result["registered"], registered);
+                assert_eq!(result["matched_host"], host);
+                assert_eq!(result["mode"], mode);
+                assert!(result["canonical_path"].is_null());
+                assert!(
+                    result["reason"]
+                        .as_str()
+                        .unwrap()
+                        .contains("canonical skill directory"),
+                    "{result}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_host_entry_with_the_wrong_kind_is_unmanaged() {
+    for (mode, replacement) in [
+        ("link", "directory"),
+        ("link", "file"),
+        ("link", "missing"),
+        ("copy", "file"),
+        ("copy", "link"),
+        ("copy", "missing"),
+    ] {
+        let fixture = fixture();
+        let alpha = fixture.canonical("alpha");
+        let installed = fixture.host("claude").join("alpha");
+        let target = match replacement {
+            "directory" => {
+                let file = installed.join("host-only.md");
+                write(&file, "A local file.");
+                file
+            }
+            "file" => {
+                write(&installed, "A local file.");
+                installed.clone()
+            }
+            "link" => {
+                fs::create_dir_all(installed.parent().unwrap()).unwrap();
+                link_dir(&alpha, &installed);
+                installed.clone()
+            }
+            "missing" => installed.clone(),
+            _ => unreachable!(),
+        };
+        save_records(
+            &fixture,
+            &[record("alpha", "claude", mode, &alpha, &installed)],
+        );
+
+        let result = resolve(&fixture, target, 1);
+        assert_eq!(
+            result["state"], "unmanaged",
+            "{mode} replaced with {replacement}"
+        );
+        assert_eq!(result["matched_host"], "claude");
+        assert_eq!(result["mode"], mode);
+        assert!(result["canonical_path"].is_null());
+        assert!(
+            result["reason"]
+                .as_str()
+                .unwrap()
+                .contains(&format!("recorded {mode} connection")),
+            "{result}"
+        );
+    }
+}
+
+#[test]
+fn linked_canonical_roots_resolve_consistently_and_still_reject_link_escapes() {
+    let fixture = fixture();
+    let alpha = fixture.canonical("alpha");
+    let linked = fixture.host("claude").join("alpha");
+    let copied = fixture.host("agy").join("alpha");
+    let external = fixture.root.join("elsewhere/alpha");
+    fs::rename(&alpha, &external).unwrap();
+    link_dir(&external, &alpha);
+    fs::create_dir_all(linked.parent().unwrap()).unwrap();
+    link_dir(&alpha, &linked);
+    write(&copied.join("references/x.md"), "Copied reference.");
+    save_records(
+        &fixture,
+        &[
+            record("alpha", "claude", "link", &alpha, &linked),
+            record("alpha", "agy", "copy", &alpha, &copied),
+        ],
+    );
+
+    let named = resolve(&fixture, "alpha", 0);
+    assert_target(&named, &alpha, &alpha);
+    for target in [&alpha, &linked, &copied] {
+        let root = resolve(&fixture, target, 0);
+        assert_target(&root, &alpha, &alpha);
+        let file = resolve(&fixture, target.join("references/x.md"), 0);
+        assert_target(&file, &alpha, &alpha.join("references/x.md"));
+        assert_eq!(file["state"], named["state"]);
+        assert_eq!(file["registered"], named["registered"]);
+    }
+
+    let unrelated = fixture.root.join("unrelated");
+    write(&unrelated.join("x.md"), "Outside the skill.");
+    link_dir(&unrelated, &external.join("escape"));
+    for target in [&alpha, &linked, &copied] {
+        let result = resolve(&fixture, target.join("escape/x.md"), 1);
+        assert_eq!(result["state"], "unsafe");
+        assert!(result["canonical_path"].is_null());
+    }
+}
+
+#[test]
+fn broken_canonical_links_do_not_resolve_by_name_or_path() {
+    let fixture = fixture();
+    let alpha = fixture.canonical("alpha");
+    let external = fixture.root.join("elsewhere/alpha");
+    fs::rename(&alpha, &external).unwrap();
+    link_dir(&external, &alpha);
+    fs::rename(&external, fixture.root.join("elsewhere/moved-alpha")).unwrap();
+    assert!(!alpha.exists());
+
+    for target in [Path::new("alpha"), &alpha] {
+        let result = resolve(&fixture, target, 1);
+        assert_eq!(result["state"], "unmanaged");
+        assert!(result["canonical_path"].is_null());
+    }
+}
+
+#[test]
 fn shared_destinations_are_ambiguous_only_when_sources_differ() {
     let fixture = fixture();
     let host = fixture.host("claude");
