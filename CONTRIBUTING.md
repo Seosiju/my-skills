@@ -23,7 +23,7 @@ registry, point `MY_SKILLS_ROOT` to a disposable registry with test host paths.
 cargo run -- doctor --no-update-check
 cargo run -- skills --json
 cargo run -- bootstrap --dry-run
-cargo run -- install my-skills --host hermes --dry-run
+cargo run -- install my-skills --host codex --dry-run
 ```
 
 ## Contribution Guidelines
