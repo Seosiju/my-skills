@@ -25,8 +25,9 @@ Read-only commands and --dry-run never change the saved active registry.
 Hosts: without --host, a command acts on every enabled [targets.*] host.
 
 Exit codes: 0 ok; 1 blocked or failed check; 2 usage or configuration error.
---dry-run exits 1 only on validation failure; read `blocked` in --json output,
-or use `sync --check`, which exits 1 when anything is out of date."
+`install --dry-run` and `sync --dry-run` exit 1 only on validation failure; read
+`blocked` and `applicable` in their --json output, or use `sync --check`, which
+exits 1 when anything is out of date."
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -274,7 +275,8 @@ pub struct SkillsArgs {
     /// Only disabled skills
     #[arg(long)]
     pub disabled: bool,
-    /// Add governance details: audit result and provenance (source, revision)
+    /// Add governance details: audit status, profile, threshold, and hash, plus
+    /// provenance (source type, trust tier, last audit hash)
     #[arg(long)]
     pub with_status: bool,
 }
@@ -289,7 +291,8 @@ pub struct SyncArgs {
     /// Also connect disabled skills
     #[arg(long)]
     pub all: bool,
-    /// Report drift only; change nothing. Exits 1 when anything is out of date
+    /// Report drift only; change nothing. Exits 1 when anything is out of date.
+    /// Takes precedence over --dry-run; not combinable with --json
     #[arg(long)]
     pub check: bool,
     /// Confirm a write to more than one host
@@ -384,7 +387,7 @@ pub struct HooksArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum HooksAction {
-    /// Write the managed hooks into the active registry
+    /// Write the managed hooks into this registry's .git/hooks
     Install(HooksInstallArgs),
     /// Remove the managed hooks (hooks without the marker are left alone)
     Uninstall(HooksUninstallArgs),
@@ -397,12 +400,14 @@ pub enum HooksAction {
 
 #[derive(Debug, Args)]
 pub struct HooksInstallArgs {
+    /// Show which hooks would be written; write nothing
     #[arg(long)]
     pub dry_run: bool,
 }
 
 #[derive(Debug, Args)]
 pub struct HooksUninstallArgs {
+    /// Show which hooks would be removed; write nothing
     #[arg(long)]
     pub dry_run: bool,
 }
