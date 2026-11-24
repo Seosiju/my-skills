@@ -3,10 +3,11 @@
 //! and `write_confirmation.py`.
 //!
 //! Root resolution order (highest first):
-//! 1. `$MY_SKILLS_ROOT` (an invalid value is an error),
-//! 2. `my-skills.toml` in the current directory or a parent; cached only when
+//! 1. `--root <PATH>` (never cached),
+//! 2. `$MY_SKILLS_ROOT` (an invalid value is an error),
+//! 3. `my-skills.toml` in the current directory or a parent; cached only when
 //!    a write is requested and no valid active root exists yet,
-//! 3. the cached active root (`$XDG_CONFIG_HOME/my-skills/root`).
+//! 4. the cached active root (`$XDG_CONFIG_HOME/my-skills/root`).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -19,6 +20,7 @@ use crate::{Error, Result, platform::paths};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RootSource {
+    Flag,
     Env,
     Cwd,
     Cache,
@@ -27,6 +29,7 @@ pub enum RootSource {
 impl RootSource {
     pub fn label(self) -> &'static str {
         match self {
+            RootSource::Flag => "flag",
             RootSource::Env => "env",
             RootSource::Cwd => "cwd",
             RootSource::Cache => "cache",
@@ -84,7 +87,7 @@ fn write_refusal_message(root: &Path, active: &Path) -> String {
 static EXPLICIT_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
 /// Record the global `--root <PATH>` for this process. `cli::run` calls it
-/// once before dispatching. Wave 14 stream A makes resolution honour it.
+/// once before dispatching.
 pub fn set_explicit_root(path: Option<PathBuf>) {
     if let Some(path) = path {
         let _ = EXPLICIT_ROOT.set(path);
@@ -109,6 +112,11 @@ fn resolve(path: &Path) -> PathBuf {
 }
 
 fn write_root_cache(root: &Path) {
+    // Explicit invocations never update the saved active registry, including
+    // callers that record roots through `cache_repo_root` directly.
+    if explicit_root().is_some() {
+        return;
+    }
     let cache = root_cache_path();
     if let Some(parent) = cache.parent() {
         let _ = fs::create_dir_all(parent);
@@ -208,6 +216,21 @@ fn different_active_root(resolution: &RootResolution) -> Option<&Path> {
 }
 
 fn discover_root(start: Option<&Path>) -> Result<RootResolution> {
+    if let Some(path) = explicit_root() {
+        let root = resolve(&manifest::expand_os_path(path));
+        if !is_root(&root) {
+            return Err(Error::Manifest(format!(
+                "--root {} does not contain {MANIFEST_FILE}",
+                paths::display_path(path)
+            )));
+        }
+        return Ok(RootResolution {
+            root,
+            source: RootSource::Flag,
+            cached: read_root_cache(),
+        });
+    }
+
     if let Some(env) = std::env::var_os("MY_SKILLS_ROOT").filter(|v| !v.is_empty()) {
         let env = env.to_string_lossy().into_owned();
         let root = resolve(&manifest::expand_path(&env));

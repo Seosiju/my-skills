@@ -85,11 +85,12 @@ pub fn audit(args: &AuditArgs) -> ExitCode {
         Ok(m) => m,
         Err(code) => return code,
     };
-    let requested = match super::one_skill(&args.skills, &args.groups) {
-        Ok(requested) => requested,
-        Err(e) => return config_error(e),
-    };
-    let (skills, _) = match root::select_requested(&manifest, requested, args.all, None) {
+    let requested =
+        match crate::registry::manifest::select_names(&manifest, &args.skills, &args.groups) {
+            Ok(requested) => requested,
+            Err(e) => return config_error(e),
+        };
+    let skills = match crate::registry::manifest::selected_skills(&manifest, &requested, args.all) {
         Ok(selection) => selection,
         Err(e) => return config_error(e),
     };
@@ -104,18 +105,14 @@ pub fn audit(args: &AuditArgs) -> ExitCode {
             Err(e) => return config_error(e),
         }
     }
-    let bundle = if requested.is_some() {
-        Vec::new()
-    } else {
-        cross_skill_findings(&results)
-    };
+    let bundle = cross_skill_findings(&results);
     let threshold = policy.effective_threshold();
     let bundle_blocked = bundle_blocked(&bundle, threshold);
     let blocked = results.iter().any(|r| r.blocked()) || bundle_blocked;
 
     if args.json {
-        let value = if requested.is_some() {
-            results.first().map(result_json).unwrap_or(json!({}))
+        let value = if requested.len() == 1 {
+            result_json(&results[0])
         } else {
             json!({
                 "blocked": blocked,

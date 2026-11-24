@@ -2,6 +2,7 @@ mod support_h;
 
 use std::fs;
 
+use my_skills::platform::paths::display_path;
 use predicates::prelude::*;
 use serde_json::json;
 use support_h::{Fixture, json, plain, skill};
@@ -69,7 +70,7 @@ fn skills_json_filters_by_host_and_enabled_state() {
             .command()
             .args(["skills", "--json", "--host", "codex", "--enabled"]),
     );
-    // v1.1 adds `registry`; every v1.0 key keeps its value.
+    // Registry metadata and new row fields extend the existing shape.
     assert_eq!(data["registry"]["source"], "env");
     assert!(data["registry"]["path"].is_string());
     let mut data = data;
@@ -78,9 +79,11 @@ fn skills_json_filters_by_host_and_enabled_state() {
         data,
         json!({"skills": [
             {"name": "alpha", "enabled": true, "hosts": ["claude", "codex"], "description": "Alpha summary from frontmatter.",
-             "path": std::path::Path::new("skills").join("alpha"), "status": {"codex": "MISSING"}},
+             "path": std::path::Path::new("skills").join("alpha"), "status": {"codex": "MISSING"},
+             "canonical_path": display_path(&fixture.canonical("alpha")), "group": null},
             {"name": "gamma", "enabled": true, "hosts": [], "description": "Gamma summary from frontmatter.",
-             "path": std::path::Path::new("skills").join("gamma"), "status": {"codex": "MISSING"}}
+             "path": std::path::Path::new("skills").join("gamma"), "status": {"codex": "MISSING"},
+             "canonical_path": display_path(&fixture.canonical("gamma")), "group": null}
         ]})
     );
 }
