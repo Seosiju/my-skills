@@ -58,7 +58,7 @@ impl Fixture {
         for (host, enabled) in [
             ("claude", true),
             ("codex", true),
-            ("hermes", false),
+            ("custom", false),
             ("agy", false),
         ] {
             let path = serde_json::to_string(&self.host(host)).unwrap();

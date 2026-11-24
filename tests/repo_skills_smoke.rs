@@ -189,7 +189,7 @@ fn repo_manifest_supports_read_only_cli_commands() {
         "{bootstrap}"
     );
 
-    for host in ["hermes", "agy"] {
+    for host in ["claude", "codex", "agy"] {
         let plan = cli_stdout(
             &mut by_env(),
             &["install", "my-skills", "--host", host, "--dry-run"],
