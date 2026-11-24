@@ -29,8 +29,8 @@ Before changing skills, run:
 my-skills doctor
 ```
 
-Read the `Registry:` line. If it is not the registry the user expects, fix it
-before writing:
+Read the `Registry:` line (or `registry: {path, source}` in `--json` outputs).
+If it is not the registry the user expects, fix it before writing:
 
 ```bash
 my-skills set-root /path/to/registry
@@ -41,9 +41,13 @@ override.
 
 Do not point at a clone of the `my-skills` CLI project. The CLI source checkout
 contains `my-skills.toml` and `skills/` as seed sources and test fixtures, but it
-is not the user's registry. If there is already a different active root, running
-a command inside a clone does not silently switch it; use `set-root` only when
-the user explicitly wants to make a registry active.
+is not the user's registry. Read-only commands, `sync --check`, and `--dry-run`
+never save or change the active root. When another registry is already active,
+read-only commands run against a cwd registry with a stderr note, while real
+writes (including `bootstrap` and `hooks install`/`uninstall`) refuse with exit
+code `2` until you run from the active registry, switch with `set-root`, or pass
+`MY_SKILLS_ROOT`; use `set-root` only when the user explicitly wants to make a
+registry active.
 
 ## First-time setup (the front door)
 
@@ -83,7 +87,8 @@ my-skills init-registry
 ```
 
 As a temporary override, `export MY_SKILLS_ROOT=/path/to/registry` if one already
-exists elsewhere (for example on another machine you cloned).
+exists elsewhere (for example on another machine you cloned, or when running a
+one-off command against a second registry without switching the active root).
 
 ## List
 
@@ -92,8 +97,11 @@ my-skills skills
 ```
 
 Shows each skill, whether it is enabled, and its install status per host
-(`fresh`, `stale`, `drifted`, `missing`, or `-` when the skill does not target
-that host). Add `--json` when another agent or UI needs a structured list:
+(`fresh`, `stale`, `drifted`, `foreign`, `missing`, or `-` when the skill does
+not target that host). `foreign` means another registry owns the connection at
+that host path; `sync` leaves it alone during pruning and blocks writes with
+`BLOCK_FOREIGN`. Add `--json` when another agent or UI needs a structured list
+(plain UTF-8 with `registry: {path, source}`):
 
 ```bash
 my-skills skills --json
@@ -181,27 +189,36 @@ Never add `--yes` yourself to a multi-host write. `--yes` means the user already
 approved that exact multi-host plan. If the user has not explicitly approved all
 hosts, stop after the dry-run and ask which host to update.
 
-Before writing into host directories, show the dry-run plan for the command
-you intend to run.
+Before writing into host directories, preview the plan with `--dry-run --json`
+instead of parsing text:
 
 ```bash
 my-skills install <skill> --host <host> --dry-run --json
-my-skills sync <skill> --host <host> --dry-run
+my-skills sync <skill> --host <host> --dry-run --json
 ```
 
-For `install`, review both `actions` and `audit`. For `sync`, review removals
-as well as new and updated connections. If audit would block, surface the
-finding. When the plan is acceptable, run the corresponding command.
+Read `registry`, `blocked`, `applicable`, `block_reasons`, `validation`,
+`audit`, and `actions` from the JSON response. Both `install --dry-run` and
+`sync --dry-run` exit `1` only on validation failure and `0` even when
+`blocked: true` or `applicable: false` (such as an audit block, `block_drift`,
+`block_foreign`, `needs_yes`, or `inactive_registry`); use `sync --check` when
+you need a non-zero exit code for any drift (note: `sync --json` requires
+`--dry-run`, and `sync --check` takes precedence over `--dry-run` and cannot be
+combined with `--json`). For `sync`, review removals as well as new and updated
+connections. If `blocked` is `true` or audit would block, surface the finding
+and stop. When `applicable` is `true` (or only `needs_yes` remains for an
+already-approved multi-host scope), run the corresponding command:
 
 ```bash
 my-skills install <skill> --host <host>
 my-skills sync <skill> --host <host>
 ```
 
-Multi-host writes require `--yes` after a reviewed dry-run plan. Read-only
-checks such as `install --dry-run` and `sync --check` do not need `--yes`.
-Only use `--host all --yes` when the user's request explicitly names all hosts
-and the dry-run plan has been shown or otherwise reviewed.
+Multi-host writes require `--yes` after a reviewed dry-run plan (without `--yes`,
+dry-run JSON reports `applicable: false` with a `needs_yes` reason). Read-only
+checks such as `install --dry-run`, `sync --dry-run`, and `sync --check` do not
+need `--yes`. Only use `--host all --yes` when the user's request explicitly
+names all hosts and the dry-run plan has been shown or otherwise reviewed.
 
 ## Antigravity CLI (agy)
 
