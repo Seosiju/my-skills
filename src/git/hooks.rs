@@ -11,6 +11,7 @@ use std::{env, fmt};
 use serde::Serialize;
 
 use crate::check::validate;
+use crate::platform::paths;
 use crate::registry::manifest::{self, MANIFEST_FILE, Manifest};
 
 const NAMES: [&str; 4] = ["pre-commit", "post-merge", "post-rewrite", "post-checkout"];
@@ -122,7 +123,7 @@ pub(crate) struct HookStatus {
 
 impl HookStatus {
     pub(crate) fn print(&self) {
-        println!("  Directory: {}", self.path.display());
+        println!("  Directory: {}", display_hook_path(&self.path));
         println!(
             "  my-skills on PATH: {}",
             if self.on_path { "yes" } else { "no" }
@@ -136,6 +137,23 @@ impl HookStatus {
                 hook.version.as_deref().unwrap_or("-")
             );
         }
+    }
+}
+
+fn display_hook_path(path: &Path) -> String {
+    let displayed = paths::display_path(path);
+    #[cfg(windows)]
+    {
+        let normalized = displayed.replace('/', "\\");
+        Path::new(&normalized)
+            .components()
+            .collect::<PathBuf>()
+            .display()
+            .to_string()
+    }
+    #[cfg(not(windows))]
+    {
+        displayed
     }
 }
 
@@ -197,7 +215,7 @@ pub(crate) fn install(git: &Git<'_>, dry_run: bool) -> anyhow::Result<()> {
             foreign = true;
             eprintln!(
                 "Foreign hook at {}. Add this line to that hook:",
-                status.path.join(hook.name).display()
+                display_hook_path(&status.path.join(hook.name))
             );
             eprintln!("  my-skills hooks run {} \"$@\"", hook.name);
         }
@@ -212,7 +230,7 @@ pub(crate) fn install(git: &Git<'_>, dry_run: bool) -> anyhow::Result<()> {
     for hook in status.entries {
         let path = status.path.join(hook.name);
         if dry_run {
-            println!("would install: {}", path.display());
+            println!("would install: {}", display_hook_path(&path));
             continue;
         }
         let script = format!(
@@ -225,7 +243,7 @@ pub(crate) fn install(git: &Git<'_>, dry_run: bool) -> anyhow::Result<()> {
             hook.name
         );
         write_hook(&path, hook, &script)?;
-        println!("installed: {}", path.display());
+        println!("installed: {}", display_hook_path(&path));
     }
     Ok(())
 }
@@ -260,7 +278,7 @@ fn write_hook(path: &Path, hook: HookEntry, script: &str) -> anyhow::Result<()> 
         anyhow::ensure!(
             inspect(path, hook.name)?.status == HookState::Installed,
             "hook changed during install: {}",
-            path.display()
+            display_hook_path(path)
         );
         temp.persist(path)?;
     }
@@ -275,10 +293,10 @@ pub(crate) fn uninstall(git: &Git<'_>, dry_run: bool) -> anyhow::Result<()> {
             && inspect(&path, hook.name)?.status == HookState::Installed
         {
             if dry_run {
-                println!("would remove: {}", path.display());
+                println!("would remove: {}", display_hook_path(&path));
             } else {
                 fs::remove_file(&path)?;
-                println!("removed: {}", path.display());
+                println!("removed: {}", display_hook_path(&path));
             }
         }
     }
@@ -527,4 +545,43 @@ pub(crate) fn pre_commit(git: &Git<'_>) -> anyhow::Result<Vec<(String, String)>>
 
 fn skill_errors(path: &Path, name: &str, manifest: Option<&Manifest>) -> Vec<String> {
     validate::gate_errors(path, name, manifest)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_hook_path_normalizes_separators_on_windows() {
+        #[cfg(windows)]
+        {
+            assert_eq!(
+                display_hook_path(Path::new(
+                    r"C:/Users/example/my-agent-skills/.git/hooks\pre-commit"
+                )),
+                r"C:\Users\example\my-agent-skills\.git\hooks\pre-commit"
+            );
+            assert_eq!(
+                display_hook_path(Path::new(
+                    r"\\?\C:\Users\example\my-agent-skills\.git\hooks\pre-commit"
+                )),
+                r"C:\Users\example\my-agent-skills\.git\hooks\pre-commit"
+            );
+            assert_eq!(
+                display_hook_path(Path::new(
+                    r"//server/share/my-agent-skills/.git/hooks\pre-commit"
+                )),
+                r"\\server\share\my-agent-skills\.git\hooks\pre-commit"
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            assert_eq!(
+                display_hook_path(Path::new(
+                    "/Users/example/my-agent-skills/.git/hooks/pre-commit"
+                )),
+                "/Users/example/my-agent-skills/.git/hooks/pre-commit"
+            );
+        }
+    }
 }

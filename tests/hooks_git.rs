@@ -438,3 +438,113 @@ fn hook_scripts_prefer_path_and_forward_git_arguments_verbatim() {
     .success()
     .stdout("<hooks>\n<run>\n<post-checkout>\n<one value>\n<second>\n<1>\n<--example>\n");
 }
+
+#[cfg(windows)]
+#[test]
+fn hooks_cli_displays_clean_windows_paths_without_mixed_separators() {
+    let fixture = Fixture::isolated();
+    fixture.init();
+
+    let assert_clean_paths = |text: &str, prefix: &str| {
+        let lines: Vec<_> = text
+            .lines()
+            .filter_map(|line| line.strip_prefix(prefix))
+            .collect();
+        assert!(
+            !lines.is_empty(),
+            "expected lines with prefix {prefix:?} in:\n{text}"
+        );
+        for path in lines {
+            assert!(
+                !path.contains('/'),
+                "displayed path mixes forward slashes on Windows: {path}"
+            );
+            assert!(
+                !path.contains(r"\\?\"),
+                "displayed path contains verbatim prefix: {path}"
+            );
+            assert!(
+                path.contains('\\'),
+                "expected Windows separator in displayed path: {path}"
+            );
+        }
+    };
+
+    let dry_install = fixture
+        .command()
+        .args(["hooks", "install", "--dry-run"])
+        .assert()
+        .success();
+    assert_clean_paths(
+        std::str::from_utf8(&dry_install.get_output().stdout).unwrap(),
+        "would install: ",
+    );
+
+    let install = fixture
+        .command()
+        .args(["hooks", "install"])
+        .assert()
+        .success();
+    assert_clean_paths(
+        std::str::from_utf8(&install.get_output().stdout).unwrap(),
+        "installed: ",
+    );
+
+    let status = fixture
+        .command()
+        .args(["hooks", "status"])
+        .assert()
+        .success();
+    assert_clean_paths(
+        std::str::from_utf8(&status.get_output().stdout).unwrap(),
+        "  Directory: ",
+    );
+
+    let dry_uninstall = fixture
+        .command()
+        .args(["hooks", "uninstall", "--dry-run"])
+        .assert()
+        .success();
+    assert_clean_paths(
+        std::str::from_utf8(&dry_uninstall.get_output().stdout).unwrap(),
+        "would remove: ",
+    );
+
+    let uninstall = fixture
+        .command()
+        .args(["hooks", "uninstall"])
+        .assert()
+        .success();
+    assert_clean_paths(
+        std::str::from_utf8(&uninstall.get_output().stdout).unwrap(),
+        "removed: ",
+    );
+
+    fixture.write(".git/hooks/post-rewrite", "#!/bin/sh\necho foreign\n");
+    let foreign = fixture
+        .command()
+        .args(["hooks", "install"])
+        .assert()
+        .code(1);
+    let foreign_stderr = std::str::from_utf8(&foreign.get_output().stderr).unwrap();
+    let foreign_line = foreign_stderr
+        .lines()
+        .find(|line| line.starts_with("Foreign hook at "))
+        .expect("foreign hook warning line");
+    let foreign_path = foreign_line
+        .strip_prefix("Foreign hook at ")
+        .and_then(|rest| rest.strip_suffix(". Add this line to that hook:"))
+        .expect("foreign hook path");
+    assert!(
+        !foreign_path.contains('/'),
+        "foreign hook path mixes forward slashes on Windows: {foreign_path}"
+    );
+    assert!(
+        !foreign_path.contains(r"\\?\"),
+        "foreign hook path contains verbatim prefix: {foreign_path}"
+    );
+    assert!(
+        foreign_path.contains('\\'),
+        "expected Windows separator in foreign hook path: {foreign_path}"
+    );
+}
