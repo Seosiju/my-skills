@@ -248,6 +248,9 @@ pub struct SyncArgs {
     /// Print the plan without writing (v1)
     #[arg(long)]
     pub dry_run: bool,
+    /// Machine-readable plan; requires --dry-run
+    #[arg(long)]
+    pub json: bool,
     /// Print only changes and problems; for git hooks (v1)
     #[arg(long)]
     pub quiet: bool,
