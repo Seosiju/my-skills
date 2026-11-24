@@ -5,11 +5,13 @@
 //! Root resolution order (highest first):
 //! 1. `$MY_SKILLS_ROOT` (an invalid value is an error),
 //! 2. `my-skills.toml` in the current directory or a parent; cached only when
-//!    no valid active root exists yet,
+//!    a write is requested and no valid active root exists yet,
 //! 3. the cached active root (`$XDG_CONFIG_HOME/my-skills/root`).
 
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use serde::Serialize;
 
 use crate::registry::manifest::{self, CliOverrides, MANIFEST_FILE, Manifest, Skill};
 use crate::{Error, Result, platform::paths};
@@ -39,11 +41,24 @@ pub struct RootResolution {
     pub cached: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RegistryMeta {
+    pub path: String,
+    pub source: &'static str,
+}
+
 impl RootResolution {
     /// True when a real (non-dry-run) command would record `self.root` as the
     /// active registry because no valid cache exists yet.
     pub fn would_cache(&self) -> bool {
         self.source == RootSource::Cwd && self.cached.is_none()
+    }
+
+    pub fn meta(&self) -> RegistryMeta {
+        RegistryMeta {
+            path: paths::display_path(&self.root),
+            source: self.source.label(),
+        }
     }
 }
 
@@ -115,8 +130,8 @@ pub fn find_cwd_root(start: Option<&Path>) -> Result<PathBuf> {
     )))
 }
 
-/// Resolve the registry root. With `write_cache`, a first-ever discovery is
-/// cached, and a cwd registry that differs from the active one prints a note.
+/// Resolve the registry root. `write_cache` selects the real-write policy:
+/// record a first cwd discovery and refuse a cwd override of the active root.
 pub fn resolve_root(start: Option<&Path>, write_cache: bool) -> Result<RootResolution> {
     resolve_root_inner(start, write_cache, write_cache)
 }
@@ -126,6 +141,42 @@ fn resolve_root_inner(
     write_cache: bool,
     warn_mismatch: bool,
 ) -> Result<RootResolution> {
+    let mut resolution = discover_root(start)?;
+    if let Some(active) = different_active_root(&resolution) {
+        if write_cache {
+            return Err(Error::Manifest(format!(
+                "refusing to write to cwd registry {} while the active registry is {}. \
+                 Run from the active registry, run 'my-skills set-root <path>' to switch, \
+                 or set MY_SKILLS_ROOT=<path> for one command.",
+                paths::display_path(&resolution.root),
+                paths::display_path(active),
+            )));
+        }
+        if warn_mismatch {
+            eprintln!(
+                "note: using ./{MANIFEST_FILE} for this command; active registry is {}. \
+                 Run 'my-skills set-root' here to switch.",
+                paths::display_path(active)
+            );
+        }
+    } else if write_cache && resolution.would_cache() {
+        write_root_cache(&resolution.root);
+        resolution.cached = Some(resolution.root.clone());
+    }
+    Ok(resolution)
+}
+
+fn different_active_root(resolution: &RootResolution) -> Option<&Path> {
+    if resolution.source != RootSource::Cwd {
+        return None;
+    }
+    resolution
+        .cached
+        .as_deref()
+        .filter(|active| *active != resolve(&resolution.root))
+}
+
+fn discover_root(start: Option<&Path>) -> Result<RootResolution> {
     if let Some(env) = std::env::var_os("MY_SKILLS_ROOT").filter(|v| !v.is_empty()) {
         let env = env.to_string_lossy().into_owned();
         let root = resolve(&manifest::expand_path(&env));
@@ -141,22 +192,8 @@ fn resolve_root_inner(
         )));
     }
 
-    let mut cached = read_root_cache();
+    let cached = read_root_cache();
     if let Ok(cwd_root) = find_cwd_root(start) {
-        match &cached {
-            None if write_cache => {
-                write_root_cache(&cwd_root);
-                cached = Some(cwd_root.clone());
-            }
-            Some(active) if warn_mismatch && *active != resolve(&cwd_root) => {
-                eprintln!(
-                    "note: using ./{MANIFEST_FILE} for this command; active registry is {}. \
-                     Run 'my-skills set-root' here to switch.",
-                    active.display()
-                );
-            }
-            _ => {}
-        }
         return Ok(RootResolution {
             root: cwd_root,
             source: RootSource::Cwd,
@@ -180,8 +217,8 @@ fn resolve_root_inner(
 }
 
 /// Resolve the registry root and load its manifest. Pass `write_cache = false`
-/// for `--dry-run` paths so nothing is written to the config home while still
-/// keeping the stderr note when a different registry is active.
+/// for read-only and preview paths to keep the stderr note without writing
+/// to the config home.
 pub fn load_manifest_resolved(
     cli: &CliOverrides,
     write_cache: bool,
@@ -191,9 +228,9 @@ pub fn load_manifest_resolved(
     Ok((manifest, resolution))
 }
 
-/// v0.4.1 `load_manifest_from_cwd`.
+/// Load a manifest for inspection without writing the active-root cache.
 pub fn load_manifest_from_cwd(cli: &CliOverrides) -> Result<Manifest> {
-    load_manifest_resolved(cli, true).map(|(manifest, _)| manifest)
+    load_manifest_resolved(cli, false).map(|(manifest, _)| manifest)
 }
 
 /// `None` or `"all"` means every enabled target; otherwise one known host.
