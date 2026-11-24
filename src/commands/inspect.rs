@@ -48,7 +48,11 @@ pub fn validate(args: &ValidateArgs) -> ExitCode {
         Ok(m) => m,
         Err(code) => return code,
     };
-    let dirs = skill_dirs(&manifest, args.skill.as_deref());
+    let requested = match super::one_skill(&args.skills, &args.groups) {
+        Ok(requested) => requested,
+        Err(e) => return config_error(e),
+    };
+    let dirs = skill_dirs(&manifest, requested);
     if dirs.is_empty() {
         println!("no skills found to validate");
         return ExitCode::SUCCESS;
@@ -81,8 +85,11 @@ pub fn audit(args: &AuditArgs) -> ExitCode {
         Ok(m) => m,
         Err(code) => return code,
     };
-    let (skills, _) = match root::select_requested(&manifest, args.skill.as_deref(), args.all, None)
-    {
+    let requested = match super::one_skill(&args.skills, &args.groups) {
+        Ok(requested) => requested,
+        Err(e) => return config_error(e),
+    };
+    let (skills, _) = match root::select_requested(&manifest, requested, args.all, None) {
         Ok(selection) => selection,
         Err(e) => return config_error(e),
     };
@@ -97,7 +104,7 @@ pub fn audit(args: &AuditArgs) -> ExitCode {
             Err(e) => return config_error(e),
         }
     }
-    let bundle = if args.skill.is_some() {
+    let bundle = if requested.is_some() {
         Vec::new()
     } else {
         cross_skill_findings(&results)
@@ -107,7 +114,7 @@ pub fn audit(args: &AuditArgs) -> ExitCode {
     let blocked = results.iter().any(|r| r.blocked()) || bundle_blocked;
 
     if args.json {
-        let value = if args.skill.is_some() {
+        let value = if requested.is_some() {
             results.first().map(result_json).unwrap_or(json!({}))
         } else {
             json!({

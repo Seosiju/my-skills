@@ -4,8 +4,10 @@
 //! configuration error.
 
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub mod connect; // integrator: install, sync, uninstall, convert, bootstrap
+pub mod diff; // wave14 stream B: read-only canonical vs host comparison
 pub mod doctor; // stream G
 pub mod hooks; // stream G
 pub mod inspect; // integrator: validate, audit, status, set-root, data-path
@@ -34,4 +36,29 @@ pub fn print_would_cache_root(resolution: &crate::registry::root::RootResolution
             crate::platform::paths::display_path(&resolution.root)
         );
     }
+}
+
+static JSON_ERRORS: AtomicBool = AtomicBool::new(false);
+
+/// Record whether this invocation asked for `--json`. `cli::run` calls it once
+/// before dispatching; wave 14 stream B makes `config_error` honour it.
+pub fn set_json_errors(on: bool) {
+    JSON_ERRORS.store(on, Ordering::Relaxed);
+}
+
+/// True when errors should also be printed as JSON on stdout.
+pub fn json_errors() -> bool {
+    JSON_ERRORS.load(Ordering::Relaxed)
+}
+
+/// Wave 14 contract shim: one optional skill and no `--group` until the
+/// selection stream (A) implements several skills and groups.
+pub(crate) fn one_skill<'a>(
+    skills: &'a [String],
+    groups: &[String],
+) -> std::result::Result<Option<&'a str>, String> {
+    if skills.len() > 1 || !groups.is_empty() {
+        return Err("several skills and --group are not implemented yet".into());
+    }
+    Ok(skills.first().map(String::as_str))
 }

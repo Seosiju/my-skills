@@ -4,6 +4,7 @@
 //! `sync --no-prune/--dry-run/--quiet`, `convert`, `hooks`, and
 //! `doctor --json`. Each command's handler lives in `crate::commands`.
 
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -17,10 +18,14 @@ use crate::registry::manifest::InstallMode;
     version,
     about = "Personal skill drive: one canonical registry, linked into every agent host.",
     after_help = "\
-Registry: $MY_SKILLS_ROOT, else ./my-skills.toml (or a parent), else the active
-registry saved by `set-root`. Commands that write refuse to run from a registry
-that is not the active one; run `set-root` there or set MY_SKILLS_ROOT.
-Read-only commands and --dry-run never change the saved active registry.
+Registry: --root, else $MY_SKILLS_ROOT, else ./my-skills.toml (or a parent),
+else the active registry saved by `set-root`. Commands that write refuse to run
+from a registry that is not the active one; pass --root, set MY_SKILLS_ROOT, or
+run `set-root` there. Read-only commands, --dry-run, and --root never change the
+saved active registry.
+
+Skills: commands that take SKILL... also accept --group <GROUP> (repeatable),
+which adds every skill whose manifest `group` matches.
 
 Hosts: without --host, a command acts on every enabled [targets.*] host.
 
@@ -30,6 +35,10 @@ Exit codes: 0 ok; 1 blocked or failed check; 2 usage or configuration error.
 exits 1 when anything is out of date."
 )]
 pub struct Cli {
+    /// Use this registry for this command only (overrides MY_SKILLS_ROOT, the
+    /// current directory, and the saved active registry; never saved)
+    #[arg(long, global = true, value_name = "PATH")]
+    pub root: Option<PathBuf>,
     #[command(subcommand)]
     pub command: Command,
 }
@@ -95,18 +104,33 @@ pub enum Command {
     Convert(ConvertArgs),
     /// Install, remove, or inspect the registry's git hooks
     Hooks(HooksArgs),
+    /// Show how a host connection differs from its canonical skill (read-only)
+    Diff(DiffArgs),
 }
 
 #[derive(Debug, Args)]
 pub struct ValidateArgs {
-    /// Skill to validate (default: every skill directory under skills/)
-    pub skill: Option<String>,
+    /// Skills to validate (default: every skill directory under skills/)
+    pub skills: Vec<String>,
+    /// Also validate every skill in this manifest group (repeatable)
+    #[arg(long = "group", value_name = "GROUP")]
+    pub groups: Vec<String>,
+    /// Check host limits only for this host (default: every enabled host the
+    /// skill connects to, as the pre-commit hook does)
+    #[arg(long)]
+    pub host: Option<String>,
+    /// Machine-readable results
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Args)]
 pub struct AuditArgs {
-    /// Skill to audit (default: every enabled skill)
-    pub skill: Option<String>,
+    /// Skills to audit (default: every enabled skill)
+    pub skills: Vec<String>,
+    /// Also audit every skill in this manifest group (repeatable)
+    #[arg(long = "group", value_name = "GROUP")]
+    pub groups: Vec<String>,
     /// Include disabled skills
     #[arg(long)]
     pub all: bool,
@@ -120,6 +144,10 @@ pub struct DoctorArgs {
     /// Skip the network check for a newer my-skills release
     #[arg(long)]
     pub no_update_check: bool,
+    /// Fast local check: skip the update check, registry git status, full
+    /// validation, and the link probe
+    #[arg(long)]
+    pub quick: bool,
     /// Machine-readable output (v1)
     #[arg(long)]
     pub json: bool,
@@ -189,8 +217,11 @@ pub struct SetRootArgs {
 
 #[derive(Debug, Args)]
 pub struct InstallArgs {
-    /// Skill to connect (default: every enabled skill)
-    pub skill: Option<String>,
+    /// Skills to connect (default: every enabled skill)
+    pub skills: Vec<String>,
+    /// Also connect every skill in this manifest group (repeatable)
+    #[arg(long = "group", value_name = "GROUP")]
+    pub groups: Vec<String>,
     /// Connect only to this host (default: every enabled host)
     #[arg(long)]
     pub host: Option<String>,
@@ -247,8 +278,12 @@ pub struct ShareArgs {
 
 #[derive(Debug, Args)]
 pub struct SkillNameArgs {
-    /// Registered skill name
-    pub skill: String,
+    /// Registered skill names (required unless --group is given)
+    #[arg(required_unless_present = "groups")]
+    pub skills: Vec<String>,
+    /// Also select every skill in this manifest group (repeatable)
+    #[arg(long = "group", value_name = "GROUP")]
+    pub groups: Vec<String>,
     /// Show what would change; write nothing
     #[arg(long)]
     pub dry_run: bool,
@@ -275,16 +310,26 @@ pub struct SkillsArgs {
     /// Only disabled skills
     #[arg(long)]
     pub disabled: bool,
+    /// Only skills in this manifest group (repeatable)
+    #[arg(long = "group", value_name = "GROUP")]
+    pub groups: Vec<String>,
+    /// Compact rows: name, enabled, hosts, group, and status only
+    #[arg(long)]
+    pub brief: bool,
     /// Add governance details: audit status, profile, threshold, and hash, plus
     /// provenance (source type, trust tier, last audit hash)
-    #[arg(long)]
-    pub with_status: bool,
+    #[arg(long = "with-governance", alias = "with-status")]
+    pub with_governance: bool,
 }
 
 #[derive(Debug, Default, Args)]
 pub struct SyncArgs {
-    /// Sync only this skill (default: every registered skill; prunes orphans)
-    pub skill: Option<String>,
+    /// Sync only these skills (default: every registered skill, which also
+    /// prunes connections of skills no longer registered)
+    pub skills: Vec<String>,
+    /// Also sync every skill in this manifest group (repeatable)
+    #[arg(long = "group", value_name = "GROUP")]
+    pub groups: Vec<String>,
     /// Sync only this host (default: every enabled host)
     #[arg(long)]
     pub host: Option<String>,
@@ -318,8 +363,12 @@ pub struct SyncArgs {
 
 #[derive(Debug, Args)]
 pub struct UninstallArgs {
-    /// Skill whose connections to remove (required); the registry copy stays
-    pub skill: Option<String>,
+    /// Skills whose connections to remove (required unless --group); the
+    /// registry copies stay
+    pub skills: Vec<String>,
+    /// Also select every skill in this manifest group (repeatable)
+    #[arg(long = "group", value_name = "GROUP")]
+    pub groups: Vec<String>,
     /// Remove only from this host (default: every enabled host)
     #[arg(long)]
     pub host: Option<String>,
@@ -380,6 +429,21 @@ pub struct ConvertArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct DiffArgs {
+    /// Registered skill to compare
+    pub skill: String,
+    /// Compare only on this host (default: every enabled host with a connection)
+    #[arg(long)]
+    pub host: Option<String>,
+    /// Also print a unified diff for changed text files
+    #[arg(long)]
+    pub patch: bool,
+    /// Machine-readable output
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct HooksArgs {
     #[command(subcommand)]
     pub action: HooksAction,
@@ -421,7 +485,28 @@ pub struct HooksRunArgs {
     pub git_args: Vec<String>,
 }
 
+impl Command {
+    /// True when the user asked for machine-readable output, so errors should
+    /// be machine-readable too.
+    pub fn wants_json(&self) -> bool {
+        match self {
+            Command::Validate(args) => args.json,
+            Command::Audit(args) => args.json,
+            Command::Doctor(args) => args.json,
+            Command::Install(args) => args.json,
+            Command::Share(args) => args.json,
+            Command::Status(args) => args.json,
+            Command::Skills(args) => args.json,
+            Command::Sync(args) => args.json,
+            Command::Diff(args) => args.json,
+            _ => false,
+        }
+    }
+}
+
 pub fn run(cli: Cli) -> ExitCode {
+    crate::registry::root::set_explicit_root(cli.root);
+    commands::set_json_errors(cli.command.wants_json());
     match cli.command {
         Command::Validate(args) => commands::inspect::validate(&args),
         Command::Audit(args) => commands::inspect::audit(&args),
@@ -442,5 +527,6 @@ pub fn run(cli: Cli) -> ExitCode {
         Command::DataPath(args) => commands::inspect::data_path(&args),
         Command::Convert(args) => commands::connect::convert(&args),
         Command::Hooks(args) => commands::hooks::run(&args),
+        Command::Diff(args) => commands::diff::run(&args),
     }
 }

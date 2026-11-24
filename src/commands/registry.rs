@@ -74,7 +74,14 @@ pub fn skills(args: &SkillsArgs) -> ExitCode {
         } else {
             args.enabled.then_some(true)
         };
-        let rows = catalog::rows(&manifest, &state, host, enabled, &hosts, args.with_status)?;
+        let rows = catalog::rows(
+            &manifest,
+            &state,
+            host,
+            enabled,
+            &hosts,
+            args.with_governance,
+        )?;
         Ok(if args.json {
             json_with_registry(rows, &resolution)
         } else {
@@ -173,11 +180,19 @@ pub fn share(args: &ShareArgs) -> ExitCode {
 }
 
 pub fn enable(args: &SkillNameArgs) -> ExitCode {
-    set_enabled(&args.skill, true, args.dry_run)
+    match super::one_skill(&args.skills, &args.groups) {
+        Ok(Some(skill)) => set_enabled(skill, true, args.dry_run),
+        Ok(None) => super::config_error("enable requires a skill name"),
+        Err(e) => super::config_error(e),
+    }
 }
 
 pub fn disable(args: &SkillNameArgs) -> ExitCode {
-    set_enabled(&args.skill, false, args.dry_run)
+    match super::one_skill(&args.skills, &args.groups) {
+        Ok(Some(skill)) => set_enabled(skill, false, args.dry_run),
+        Ok(None) => super::config_error("disable requires a skill name"),
+        Err(e) => super::config_error(e),
+    }
 }
 
 fn set_enabled(name: &str, enabled: bool, dry_run: bool) -> ExitCode {

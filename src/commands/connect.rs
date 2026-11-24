@@ -35,6 +35,10 @@ pub fn install(args: &InstallArgs) -> ExitCode {
     if args.json && !args.dry_run {
         return config_error("install --json requires --dry-run");
     }
+    let requested = match super::one_skill(&args.skills, &args.groups) {
+        Ok(requested) => requested,
+        Err(e) => return config_error(e),
+    };
     let cli = CliOverrides {
         install_mode: args.mode.map(Into::into),
         ..CliOverrides::default()
@@ -43,15 +47,11 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         Ok(loaded) => loaded,
         Err(e) => return config_error(e),
     };
-    let (skills, hosts) = match root::select_requested(
-        &manifest,
-        args.skill.as_deref(),
-        args.all,
-        args.host.as_deref(),
-    ) {
-        Ok(selection) => selection,
-        Err(e) => return config_error(e),
-    };
+    let (skills, hosts) =
+        match root::select_requested(&manifest, requested, args.all, args.host.as_deref()) {
+            Ok(selection) => selection,
+            Err(e) => return config_error(e),
+        };
     if let Err(error) = remember_write_root(Some(&resolution), !args.dry_run) {
         return config_error(error);
     }
@@ -134,7 +134,8 @@ fn is_builtin_seed_default_install(
     skills: &[&Skill],
     hosts_: &[String],
 ) -> bool {
-    if args.skill.is_some()
+    if !args.skills.is_empty()
+        || !args.groups.is_empty()
         || args.host.is_some()
         || args.all
         || args.mode.is_some()
@@ -188,7 +189,11 @@ fn sync_manifest_with_resolution(
     // Prune needs disabled skills in scope too, so sync always looks at every
     // registered skill. `--all` keeps its v0.4.1 meaning: connect disabled
     // skills as well.
-    let scoped: Vec<Skill> = match &args.skill {
+    let requested = match super::one_skill(&args.skills, &args.groups) {
+        Ok(requested) => requested,
+        Err(e) => return config_error(e),
+    };
+    let scoped: Vec<Skill> = match requested {
         Some(name) => match manifest.skills.get(name) {
             Some(skill) => vec![skill.clone()],
             None => return config_error(format!("unknown skill(s): {name}")),
@@ -216,7 +221,7 @@ fn sync_manifest_with_resolution(
     let scope = SyncScope {
         skills: &skills,
         hosts: &hosts,
-        include_orphans: args.skill.is_none(),
+        include_orphans: requested.is_none(),
         prune: !args.no_prune,
     };
     let items = match plan::plan_sync(manifest, &state, &scope, None) {
@@ -338,8 +343,10 @@ fn print_plan_results_noop(items: &[PlanItem]) {
 // ---------------------------------------------------------------- uninstall
 
 pub fn uninstall(args: &UninstallArgs) -> ExitCode {
-    let Some(skill) = args.skill.as_deref() else {
-        return config_error("uninstall requires a skill name");
+    let skill = match super::one_skill(&args.skills, &args.groups) {
+        Ok(Some(skill)) => skill,
+        Ok(None) => return config_error("uninstall requires a skill name"),
+        Err(e) => return config_error(e),
     };
     let (manifest, resolution) =
         match load_connect_manifest(&CliOverrides::default(), !args.dry_run) {

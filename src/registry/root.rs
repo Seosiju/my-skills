@@ -10,6 +10,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use serde::Serialize;
 
@@ -78,6 +79,21 @@ fn write_refusal_message(root: &Path, active: &Path) -> String {
         paths::display_path(root),
         paths::display_path(active),
     )
+}
+
+static EXPLICIT_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
+/// Record the global `--root <PATH>` for this process. `cli::run` calls it
+/// once before dispatching. Wave 14 stream A makes resolution honour it.
+pub fn set_explicit_root(path: Option<PathBuf>) {
+    if let Some(path) = path {
+        let _ = EXPLICIT_ROOT.set(path);
+    }
+}
+
+/// The `--root` given for this process, if any.
+pub fn explicit_root() -> Option<&'static Path> {
+    EXPLICIT_ROOT.get().map(PathBuf::as_path)
 }
 
 pub fn root_cache_path() -> PathBuf {
