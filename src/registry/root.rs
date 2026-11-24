@@ -60,6 +60,24 @@ impl RootResolution {
             source: self.source.label(),
         }
     }
+
+    /// The error a real write would hit with this resolution: the root came
+    /// from the current directory and a different registry is active. A
+    /// preview resolves without the write policy, so it asks here to report
+    /// the refusal instead of claiming the command would apply.
+    pub fn write_refusal(&self) -> Option<String> {
+        different_active_root(self).map(|active| write_refusal_message(&self.root, active))
+    }
+}
+
+fn write_refusal_message(root: &Path, active: &Path) -> String {
+    format!(
+        "refusing to write to cwd registry {} while the active registry is {}. \
+         Run from the active registry, run 'my-skills set-root <path>' to switch, \
+         or set MY_SKILLS_ROOT=<path> for one command.",
+        paths::display_path(root),
+        paths::display_path(active),
+    )
 }
 
 pub fn root_cache_path() -> PathBuf {
@@ -144,12 +162,9 @@ fn resolve_root_inner(
     let mut resolution = discover_root(start)?;
     if let Some(active) = different_active_root(&resolution) {
         if write_cache {
-            return Err(Error::Manifest(format!(
-                "refusing to write to cwd registry {} while the active registry is {}. \
-                 Run from the active registry, run 'my-skills set-root <path>' to switch, \
-                 or set MY_SKILLS_ROOT=<path> for one command.",
-                paths::display_path(&resolution.root),
-                paths::display_path(active),
+            return Err(Error::Manifest(write_refusal_message(
+                &resolution.root,
+                active,
             )));
         }
         if warn_mismatch {
