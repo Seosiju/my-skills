@@ -7,6 +7,23 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-24
+
+### Fixed
+
+- If saving `state.json` fails while `install`, `sync`, `bootstrap`, or
+  `uninstall` changes a host entry, that change is now rolled back. Rerunning
+  the same command after fixing the cause succeeds instead of stopping with
+  `BLOCK_CONFLICT`.
+- `--dry-run` no longer writes the active-registry cache on a first run. The
+  preview prints `would remember <path> as the active registry` instead, and
+  still notes when another registry is active.
+- `doctor` tells you to find or fix the registry first when it cannot read the
+  manifest, and `bootstrap --dry-run` describes the hook step the way the real
+  run does.
+- Windows output: hook install paths no longer mix `/` and `\`, `set-root` no
+  longer shows the `\\?\` prefix, and audit reports use `/` in file paths.
+
 ## [1.0.0] - 2026-11-24
 
 - First stable release of the Rust CLI. It manages a canonical skill registry
