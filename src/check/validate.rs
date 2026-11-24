@@ -2,6 +2,7 @@
 //! `validation.py`. (v0.4.1 `checks.compose_validation`, which adds audit
 //! findings, is wired up by the integrator once stream E lands.)
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -10,6 +11,13 @@ use crate::drive::hosts::HostConfig;
 
 const MAX_NAME_LEN: usize = 64;
 const MAX_DESCRIPTION_LEN: usize = 1024;
+const OPTIONAL_FIELDS: &[&str] = &[
+    "license",
+    "compatibility",
+    "metadata",
+    "allowed-tools",
+    "allowed_tools",
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationResult {
@@ -50,15 +58,15 @@ pub fn validate_name(name: &str) -> Vec<String> {
 
 /// Same checks and message text as v0.4.1 `validate_skill`.
 pub fn validate_skill(path: &Path) -> ValidationResult {
-    validate(path, None)
+    validate(path, &[])
 }
 
-/// Same checks and message text as v0.4.1 `validate_skill_for_host`.
+/// Standard validation with host-specific length limits and field warnings.
 pub fn validate_skill_for_host(path: &Path, host: &HostConfig) -> ValidationResult {
-    validate(path, Some(host))
+    validate(path, &[host])
 }
 
-fn validate(path: &Path, host: Option<&HostConfig>) -> ValidationResult {
+fn validate(path: &Path, hosts: &[&HostConfig]) -> ValidationResult {
     let skill = if path.ends_with("..") {
         "..".into()
     } else {
@@ -159,27 +167,48 @@ fn validate(path: &Path, host: Option<&HostConfig>) -> ValidationResult {
         }
     }
 
-    if let Some(host) = host.filter(|_| result.ok()) {
+    if result.ok() {
+        host_diagnostics(&metadata, description_length, hosts, &mut result);
+    }
+    result
+}
+
+fn host_diagnostics(
+    metadata: &Mapping,
+    description_length: usize,
+    hosts: &[&HostConfig],
+    result: &mut ValidationResult,
+) {
+    let mut warned_hosts = Vec::new();
+    let mut extra = BTreeSet::new();
+    for host in hosts {
         if description_length > host.description_max_chars {
             result.errors.push(format!(
                 "{} description exceeds {} characters",
                 host.name, host.description_max_chars
             ));
         }
-        let mut extra: Vec<_> = metadata.iter()
-            .filter(|(key, _)| !matches!(&**key, Node::String(key) if host.frontmatter_keep_fields.contains(&key.as_str())))
+        let mut fields = metadata
+            .iter()
+            .filter(|(key, _)| {
+                !matches!(&**key, Node::String(key)
+                if OPTIONAL_FIELDS.contains(&key.as_str())
+                    || host.frontmatter_keep_fields.contains(&key.as_str()))
+            })
             .map(|(key, _)| key.python_string())
-            .collect();
-        extra.sort();
-        if !extra.is_empty() {
-            result.warnings.push(format!(
-                "{} may ignore unsupported frontmatter fields: {}",
-                host.name,
-                extra.join(", ")
-            ));
+            .peekable();
+        if fields.peek().is_some() {
+            warned_hosts.push(host.name);
+            extra.extend(fields);
         }
     }
-    result
+    if !warned_hosts.is_empty() {
+        result.warnings.push(format!(
+            "{} may ignore unsupported frontmatter fields: {}",
+            warned_hosts.join(", "),
+            extra.into_iter().collect::<Vec<_>>().join(", ")
+        ));
+    }
 }
 
 fn get<'a>(metadata: &'a Mapping, name: &str) -> Option<&'a Node> {
@@ -245,23 +274,27 @@ pub fn gate_validation(
 
     let mut result = compose_validation(path);
     let skill = manifest.and_then(|m| m.skills.get(name));
-    for host in crate::drive::hosts::ALL {
-        let enabled = manifest
-            .and_then(|m| m.targets.get(host.name))
-            .map_or(host.default_enabled, |target| target.enabled);
-        let listed =
-            skill.is_none_or(|s| s.hosts.is_empty() || s.hosts.iter().any(|h| h == host.name));
-        if only_host.map_or(enabled && listed, |name| name == host.name) {
-            let check = validate_skill_for_host(path, host);
-            for error in check.errors {
-                if !result.errors.contains(&error) {
-                    result.errors.push(error);
-                }
+    let hosts = crate::drive::hosts::ALL
+        .into_iter()
+        .filter(|host| {
+            let enabled = manifest
+                .and_then(|m| m.targets.get(host.name))
+                .map_or(host.default_enabled, |target| target.enabled);
+            let listed =
+                skill.is_none_or(|s| s.hosts.is_empty() || s.hosts.iter().any(|h| h == host.name));
+            only_host.map_or(enabled && listed, |name| name == host.name)
+        })
+        .collect::<Vec<_>>();
+    if !hosts.is_empty() {
+        let check = validate(path, &hosts);
+        for error in check.errors {
+            if !result.errors.contains(&error) {
+                result.errors.push(error);
             }
-            for warning in check.warnings {
-                if !result.warnings.contains(&warning) {
-                    result.warnings.push(warning);
-                }
+        }
+        for warning in check.warnings {
+            if !result.warnings.contains(&warning) {
+                result.warnings.push(warning);
             }
         }
     }

@@ -60,6 +60,17 @@ pub fn init_registry(args: &InitRegistryArgs) -> ExitCode {
 pub fn skills(args: &SkillsArgs) -> ExitCode {
     let result = (|| {
         let (manifest, resolution) = load_resolved(false)?;
+        let mut names = manifest::select_names(&manifest, &args.skills, &[])?;
+        if !args.groups.is_empty() {
+            let group_names = manifest::select_names(&manifest, &[], &args.groups)?;
+            if args.skills.is_empty() {
+                names = group_names;
+            } else {
+                names.retain(|name| group_names.binary_search(name).is_ok());
+            }
+        }
+        let selected =
+            (!args.skills.is_empty() || !args.groups.is_empty()).then_some(names.as_slice());
         let state = State::load(None)?;
         let host = args.host.as_deref();
         if let Some(host) = host.filter(|host| !manifest.targets.contains_key(*host)) {
@@ -80,7 +91,7 @@ pub fn skills(args: &SkillsArgs) -> ExitCode {
             host,
             enabled,
             &hosts,
-            &args.groups,
+            selected,
             args.with_governance,
         )?;
         Ok(if args.json {
