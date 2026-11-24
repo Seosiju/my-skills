@@ -273,6 +273,7 @@ pub fn gate_validation(
                 if let Some(threshold) = audit.threshold {
                     for finding in audit.findings.iter().filter(|f| f.severity >= threshold) {
                         let floor = format!("security: {}: {}", finding.file, finding.message);
+                        result.warnings.retain(|warning| warning != &floor);
                         if !result.errors.contains(&floor) {
                             result.errors.push(format!(
                                 "audit ({}): {}: {}: {}",

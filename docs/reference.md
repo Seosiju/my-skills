@@ -98,11 +98,12 @@ cwd write), `unknown_skill`, `unknown_group`, `unknown_host`, and `config`.
 (or `null`) in each row. Repeatable `--group` matches any of the supplied groups
 and combines with the host and enabled-state filters.
 
-`skills --json --brief` returns the same top-level `registry` and `skills`
-keys. Each brief row has only `name`, `enabled`, `hosts`, `group`, and `status`.
-`--with-governance` adds `governance: {audit, provenance}` to a brief row. Full
-rows put `audit` and `provenance` at the row level. `--with-status` is an alias
-for `--with-governance`. `--brief` applies to JSON output.
+`skills --json --brief` returns the top-level `registry` and `skills` keys.
+Each row has `name`, `enabled`, `hosts`, `group`, and `status`, plus `error`
+if skill metadata is missing or invalid. With `--with-governance`, brief rows
+nest `audit` and `provenance` under `governance`. Full rows put `audit` and
+`provenance` at the row level. `--with-status` is an alias for
+`--with-governance`. `--brief` applies to JSON output.
 
 ### Validation and audit
 
@@ -136,17 +137,23 @@ explicitly selected skill. For a default or multi-skill selection it returns
 ### Diff
 
 `my-skills diff <SKILL>` compares the canonical skill with each enabled host
-where the manifest wants a connection or an install record exists. Use
-`--host <HOST>` to narrow that set. A directory comparison lists files only on
-the host (`added`), only in the registry (`removed`), and with changed contents
-(`modified`), using the drive's ignore rules. Paths are relative to the skill
-root and use `/` separators. Link entries report whether the link points to the
-canonical skill without walking the linked directory.
+where the manifest wants a connection or an install record exists. Passing
+`--host <HOST>` checks that host even if it is disabled or the manifest does
+not want the connection. A destination without an install record shows
+`UNMANAGED` if an entry exists and `MISSING` otherwise.
+
+Diff uses the install record's destination when available. A directory
+comparison lists files only on the host (`added`), only in the registry
+(`removed`), and with changed contents (`modified`), using the drive's ignore
+rules. Paths are relative to the skill root and use `/` separators. For links,
+diff shows the target path and whether it matches the canonical skill without
+walking the linked directory.
 
 `--patch` shows unified diffs from canonical to host for changed UTF-8 text files
 up to 1 MiB. It notes binary, oversized, and empty-file changes. `diff` exits
 `0` when compared entries match, `1` for differences or missing entries, and
-`2` on error. It leaves the registry, host files, state, and root cache alone.
+`2` on error. A `FOREIGN` entry counts as different even when its files or link
+target match. Diff leaves the registry, host files, state, and root cache alone.
 
 ```json
 {
@@ -162,6 +169,7 @@ up to 1 MiB. It notes binary, oversized, and empty-file changes. `diff` exits
       "owner": null,
       "files": {"added": [], "removed": [], "modified": ["SKILL.md"]},
       "patch": null,
+      "link_target": null,
       "link_matches": null
     }
   ]
@@ -170,10 +178,11 @@ up to 1 MiB. It notes binary, oversized, and empty-file changes. `diff` exits
 
 `owner` is the owning registry's skills root for `FOREIGN` connections and
 `null` otherwise. `patch` is a string when a requested patch has output.
-`link_matches` is a boolean for link entries and `null` for other entries.
-For copies, status tracks both sides against their recorded install hashes. If identical
-edits were made to both sides, a copy can show `CONFLICT` while `diff` reports
-`different: false` and empty file lists.
+For a link, `link_target` is its display path and `link_matches` records
+whether it points to the canonical skill. Both fields are `null` for other
+entries. For copies, status tracks both sides against their recorded install
+hashes. Identical edits to a managed copy and its canonical skill can yield
+`CONFLICT` with `different: false` and empty file lists.
 
 ## Doctor
 

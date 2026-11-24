@@ -43,6 +43,13 @@ fn dest(fixture: &Fixture, host: &str, name: &str) -> PathBuf {
     fixture.base.join("hosts").join(host).join(name)
 }
 
+fn make_link(path: &Path, target: &Path) {
+    assert!(matches!(
+        link::create_link(path, target).unwrap(),
+        Created::Link(_)
+    ));
+}
+
 fn state_path(fixture: &Fixture) -> PathBuf {
     fixture.base.join("xdg-state/my-skills/state.json")
 }
@@ -181,6 +188,56 @@ fn validate_shares_the_gate_and_respects_host_and_group_selection() {
             .unwrap()
             .iter()
             .any(|error| { error.as_str().unwrap().starts_with("audit (") })
+    );
+}
+
+#[test]
+fn validate_reports_promoted_finding_once_and_keeps_other_warnings() {
+    let fixture = fixture();
+    let markdown = concat!(
+        "---\nname: example\ndescription: A valid example skill.\n",
+        "allowed-tools: Read\n---\n\n",
+        "![Example](https://example.invalid/pixel.png)\n",
+    );
+    fixture.write("skills/example/SKILL.md", markdown);
+    let check = |code| {
+        read_json(
+            &fixture
+                .command()
+                .args(["validate", "example", "--json"])
+                .assert()
+                .code(code),
+        )
+    };
+    let promoted = check(1);
+    let row = &promoted["skills"][0];
+    assert_eq!(row["errors"].as_array().unwrap().len(), 1);
+    assert!(
+        row["errors"][0]
+            .as_str()
+            .unwrap()
+            .contains("markdown-remote-image")
+    );
+    let warnings = row["warnings"].as_array().unwrap();
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.as_str().unwrap().contains("allowed-tools"))
+    );
+    assert!(
+        !warnings
+            .iter()
+            .any(|w| w.as_str().unwrap().contains("example.invalid/pixel.png"))
+    );
+
+    fixture.write("my-skills.local.toml", "[audit]\nthreshold = 'high'\n");
+    let unpromoted = check(0);
+    assert!(
+        unpromoted["skills"][0]["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| { w.as_str().unwrap().contains("example.invalid/pixel.png") })
     );
 }
 
@@ -561,6 +618,200 @@ fn diff_patch_reports_text_binary_and_large_files() {
 }
 
 #[test]
+fn diff_reports_the_actual_link_target_in_text_and_json() {
+    let fixture = fixture();
+    let installed = dest(&fixture, "claude", "example");
+    let target = fixture.base.join("outside/redirected");
+    fs::create_dir_all(installed.parent().unwrap()).unwrap();
+    fs::create_dir_all(&target).unwrap();
+    make_link(&installed, &target);
+    set_record(&fixture, "claude", "example", json!({"mode": "link"}));
+
+    let report = compare(&fixture, &["--host", "claude"], 1);
+    let row = host(&report, "host", "claude");
+    assert_eq!(row["status"], "DRIFTED");
+    assert_eq!(row["link_matches"], false);
+    assert_eq!(row["link_target"], display_path(&target));
+    fixture
+        .command()
+        .args(["diff", "example", "--host", "claude"])
+        .assert()
+        .code(1)
+        .stdout(contains(display_path(&target)));
+}
+
+#[test]
+fn diff_explicit_disabled_host_checks_managed_copy() {
+    let fixture = fixture();
+    fixture
+        .command()
+        .args(["install", "example", "--host", "agy"])
+        .assert()
+        .success();
+    fs::write(dest(&fixture, "agy", "example").join("SKILL.md"), "local\n").unwrap();
+
+    let report = compare(&fixture, &["--host", "agy"], 1);
+    let row = host(&report, "host", "agy");
+    assert_eq!(row["status"], "DRIFTED");
+    assert_eq!(row["files"]["modified"], json!(["SKILL.md"]));
+    let default = compare(&fixture, &[], 1);
+    assert!(
+        default["hosts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["host"] != "agy")
+    );
+}
+
+#[test]
+fn diff_explicit_host_reports_unmanaged_and_missing_even_when_excluded() {
+    let fixture = fixture();
+    fixture.write(
+        "my-skills.local.toml",
+        "[skills.example]\nhosts = ['claude']\n",
+    );
+    let installed = dest(&fixture, "agy", "example");
+    fs::create_dir_all(&installed).unwrap();
+    fs::write(installed.join("local.txt"), "host only\n").unwrap();
+
+    let unmanaged = compare(&fixture, &["--host", "agy"], 1);
+    let row = host(&unmanaged, "host", "agy");
+    assert_eq!(row["status"], "UNMANAGED");
+    assert_eq!(row["files"]["added"], json!(["local.txt"]));
+    assert_eq!(row.get("link_target"), Some(&Value::Null));
+
+    let missing = compare(&fixture, &["--host", "codex"], 1);
+    let row = host(&missing, "host", "codex");
+    assert_eq!(row["status"], "MISSING");
+    assert_eq!(
+        row["destination"],
+        display_path(&dest(&fixture, "codex", "example"))
+    );
+    assert!(!state_path(&fixture).exists());
+}
+
+#[test]
+fn diff_equal_foreign_copy_is_still_different() {
+    let fixture = fixture();
+    let installed = dest(&fixture, "codex", "example");
+    fs::create_dir_all(&installed).unwrap();
+    fs::copy(
+        fixture.registry.join("skills/example/SKILL.md"),
+        installed.join("SKILL.md"),
+    )
+    .unwrap();
+    let foreign = fixture.base.join("outside/skills");
+    set_record(
+        &fixture,
+        "codex",
+        "example",
+        json!({"source": display_path(&foreign.join("example"))}),
+    );
+
+    let report = compare(&fixture, &["--host", "codex"], 1);
+    let row = host(&report, "host", "codex");
+    assert_eq!(row["status"], "FOREIGN");
+    assert_eq!(row["owner"], display_path(&foreign));
+    assert_eq!(
+        row["files"],
+        json!({"added": [], "removed": [], "modified": []})
+    );
+}
+
+#[test]
+fn diff_uses_foreign_records_actual_destination() {
+    let fixture = fixture();
+    let installed = fixture.base.join("outside/custom/install");
+    fs::create_dir_all(&installed).unwrap();
+    fs::copy(
+        fixture.registry.join("skills/example/SKILL.md"),
+        installed.join("SKILL.md"),
+    )
+    .unwrap();
+    fs::write(installed.join("local.txt"), "host only\n").unwrap();
+    let foreign = fixture.base.join("outside/skills");
+    set_record(
+        &fixture,
+        "codex",
+        "example",
+        json!({
+            "source": display_path(&foreign.join("example")),
+            "destination": display_path(&installed),
+        }),
+    );
+    let before = fs::read(state_path(&fixture)).unwrap();
+
+    let report = compare(&fixture, &["--host", "codex", "--patch"], 1);
+    let row = host(&report, "host", "codex");
+    assert_eq!(row["status"], "FOREIGN");
+    assert_eq!(row["owner"], display_path(&foreign));
+    assert_eq!(row["destination"], display_path(&installed));
+    assert_eq!(row["files"]["added"], json!(["local.txt"]));
+    assert!(row["patch"].as_str().unwrap().contains("+host only"));
+    assert_eq!(fs::read(state_path(&fixture)).unwrap(), before);
+    assert!(!dest(&fixture, "codex", "example").exists());
+}
+
+#[test]
+fn diff_uses_owned_records_when_the_configured_path_changes() {
+    let fixture = fixture();
+    fixture
+        .command()
+        .args(["install", "example", "--host", "codex"])
+        .assert()
+        .success();
+    let installed = dest(&fixture, "codex", "example");
+    let changed_path = fixture.base.join("outside/new-target");
+    fixture.write(
+        "my-skills.local.toml",
+        &format!(
+            "[targets.codex]\npath = '{}'\n",
+            display_path(&changed_path)
+        ),
+    );
+
+    let fresh = compare(&fixture, &["--host", "codex"], 0);
+    let row = host(&fresh, "host", "codex");
+    assert_eq!(row["status"], "FRESH");
+    assert_eq!(row["destination"], display_path(&installed));
+
+    fs::write(installed.join("SKILL.md"), "edited copy\n").unwrap();
+    let drifted = compare(&fixture, &["--host", "codex"], 1);
+    let row = host(&drifted, "host", "codex");
+    assert_eq!(row["status"], "DRIFTED");
+    assert_eq!(row["files"]["modified"], json!(["SKILL.md"]));
+}
+
+#[test]
+fn diff_foreign_link_to_canonical_is_still_different() {
+    let fixture = fixture();
+    fixture.write(
+        "my-skills.local.toml",
+        "[skills.example]\nhosts = ['codex']\n",
+    );
+    let installed = dest(&fixture, "claude", "example");
+    let canonical = fixture.registry.join("skills/example");
+    fs::create_dir_all(installed.parent().unwrap()).unwrap();
+    make_link(&installed, &canonical);
+    set_record(
+        &fixture,
+        "claude",
+        "example",
+        json!({
+            "mode": "link",
+            "source": display_path(&fixture.base.join("outside/skills/example")),
+        }),
+    );
+
+    let report = compare(&fixture, &["--host", "claude"], 1);
+    let row = host(&report, "host", "claude");
+    assert_eq!(row["status"], "FOREIGN");
+    assert_eq!(row["link_matches"], true);
+    assert_eq!(row["link_target"], display_path(&canonical));
+}
+
+#[test]
 fn diff_reports_missing_foreign_and_link_targets_without_writing() {
     let fixture = fixture();
     let missing = compare(&fixture, &[], 1);
@@ -571,12 +822,6 @@ fn diff_reports_missing_foreign_and_link_targets_without_writing() {
     let canonical = fixture.registry.join("skills/example");
     let installed = dest(&fixture, "claude", "example");
     fs::create_dir_all(installed.parent().unwrap()).unwrap();
-    fn make_link(path: &Path, target: &Path) {
-        assert!(matches!(
-            link::create_link(path, target).unwrap(),
-            Created::Link(_)
-        ));
-    }
     make_link(&installed, &canonical);
     set_record(&fixture, "claude", "example", json!({"mode": "link"}));
     let linked = compare(&fixture, &["--host", "claude", "--patch"], 0);
@@ -632,8 +877,6 @@ fn diff_reports_missing_foreign_and_link_targets_without_writing() {
     assert_eq!(broken["hosts"][0]["status"], "BROKEN");
     assert_eq!(broken["hosts"][0]["link_matches"], true);
 
-    let disabled = compare(&fixture, &["--host", "agy"], 0);
-    assert_eq!(disabled["hosts"], json!([]));
     fixture
         .command()
         .args(["diff", "example", "--host", "claude"])

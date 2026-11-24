@@ -8,8 +8,12 @@ use serde::Serialize;
 use similar::TextDiff;
 use walkdir::WalkDir;
 
-use crate::drive::hash::hash_file;
+use crate::drive::hash::{hash_directory, hash_file};
 use crate::drive::ignore::{IGNORED_DIRS, is_ignored};
+use crate::drive::link::{self, EntryKind};
+use crate::drive::plan::Status;
+use crate::drive::state::InstallRecord;
+use crate::registry::manifest::InstallMode;
 use crate::{Error, Result};
 
 const MAX_PATCH_BYTES: u64 = 1024 * 1024;
@@ -74,6 +78,38 @@ pub fn compare(
         None
     };
     Ok((changes, patch))
+}
+
+/// Apply the planner's record-based checks when the recorded destination
+/// differs from the path used by plan::status_of.
+pub(crate) fn recorded_status(
+    canonical: &Path,
+    installed: &Path,
+    kind: EntryKind,
+    record: &InstallRecord,
+) -> Result<Status> {
+    Ok(match (record.mode, kind) {
+        (_, EntryKind::Missing) => Status::Missing,
+        (InstallMode::Link, EntryKind::Link(_)) if link::is_managed_link(installed, canonical) => {
+            if canonical.is_dir() {
+                Status::Fresh
+            } else {
+                Status::Broken
+            }
+        }
+        (InstallMode::Copy, EntryKind::Dir) => {
+            let installed_changed = hash_directory(installed)? != record.installed_hash;
+            let canonical_changed =
+                !canonical.is_dir() || hash_directory(canonical)? != record.source_hash;
+            match (installed_changed, canonical_changed) {
+                (true, true) => Status::Conflict,
+                (true, false) => Status::Drifted,
+                (false, true) => Status::Stale,
+                (false, false) => Status::Fresh,
+            }
+        }
+        _ => Status::Drifted,
+    })
 }
 
 fn inventory(root: &Path) -> Result<BTreeMap<String, FileEntry>> {
