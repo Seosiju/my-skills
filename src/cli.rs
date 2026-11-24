@@ -106,6 +106,10 @@ pub enum Command {
     Hooks(HooksArgs),
     /// Show how a host connection differs from its canonical skill (read-only)
     Diff(DiffArgs),
+    /// Find the canonical source behind a skill name or a skill path (read-only)
+    Resolve(ResolveArgs),
+    /// Create a skill draft in skills/<name>/ and register it, disabled
+    New(NewArgs),
 }
 
 #[derive(Debug, Args)]
@@ -235,7 +239,9 @@ pub struct InstallArgs {
     /// Exits 1 only on validation failure
     #[arg(long)]
     pub dry_run: bool,
-    /// Machine-readable plan with `blocked` and `applicable`; requires --dry-run
+    /// Machine-readable output. With --dry-run: the plan, with `blocked` and
+    /// `applicable`. Without it: the plan is applied and the result is
+    /// reported per action (`result`), with `applied` and `summary`
     #[arg(long)]
     pub json: bool,
     /// Connect even if the security audit would block
@@ -291,6 +297,11 @@ pub struct SkillNameArgs {
 
 #[derive(Debug, Args)]
 pub struct StatusArgs {
+    /// Only these skills (default: every registered skill)
+    pub skills: Vec<String>,
+    /// Also show every skill in this manifest group (repeatable)
+    #[arg(long = "group", value_name = "GROUP")]
+    pub groups: Vec<String>,
     /// Machine-readable output (v1)
     #[arg(long)]
     pub json: bool,
@@ -298,6 +309,9 @@ pub struct StatusArgs {
 
 #[derive(Debug, Args)]
 pub struct SkillsArgs {
+    /// Only these skills (default: every registered skill); combines with
+    /// the filters below as AND
+    pub skills: Vec<String>,
     /// Machine-readable output (per-host connection status is always included)
     #[arg(long)]
     pub json: bool,
@@ -338,7 +352,8 @@ pub struct SyncArgs {
     #[arg(long)]
     pub all: bool,
     /// Report drift only; change nothing. Exits 1 when anything is out of date.
-    /// Takes precedence over --dry-run; not combinable with --json
+    /// Does not validate or audit (use --dry-run --json for that). Takes
+    /// precedence over --dry-run; not combinable with --json
     #[arg(long)]
     pub check: bool,
     /// Confirm a write to more than one host
@@ -354,12 +369,18 @@ pub struct SyncArgs {
     /// Exits 1 only on validation failure
     #[arg(long)]
     pub dry_run: bool,
-    /// Machine-readable plan with `blocked` and `applicable`; requires --dry-run
+    /// Machine-readable output. With --dry-run: the plan, with `blocked` and
+    /// `applicable`. Without it: the plan is applied and the result is
+    /// reported per action (`result`), with `applied` and `summary`
     #[arg(long)]
     pub json: bool,
     /// Print only changes and problems; for git hooks (v1)
     #[arg(long)]
     pub quiet: bool,
+    /// Internal (not a flag): skills a git hook leaves untouched, neither
+    /// connected nor pruned, because their files have uncommitted changes
+    #[arg(skip)]
+    pub exclude: Vec<String>,
 }
 
 #[derive(Debug, Args)]
@@ -446,6 +467,42 @@ pub struct DiffArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct ResolveArgs {
+    /// A registered skill name, or a path to a skill directory or any file
+    /// inside one: canonical (skills/<name>/...) or a host connection such as
+    /// ~/.claude/skills/<name>/references/setup.md. TARGET is a path when it
+    /// is absolute, starts with '.' or '~', or contains a path separator;
+    /// otherwise it is a skill name. Exit 0 resolved (including an
+    /// unregistered draft under skills/), 1 unresolved or unsafe path,
+    /// 2 unknown skill name.
+    pub target: String,
+    /// Machine-readable output
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct NewArgs {
+    /// Skill name: lowercase letters, digits, and hyphens
+    pub name: String,
+    /// Manifest group for the new skill
+    #[arg(long)]
+    pub group: Option<String>,
+    /// Host the skill targets (repeatable; default: every enabled host)
+    #[arg(long = "host", value_name = "HOST")]
+    pub hosts: Vec<String>,
+    /// Frontmatter description (default: a placeholder to replace)
+    #[arg(long)]
+    pub description: Option<String>,
+    /// Show what would be created; write nothing
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Machine-readable output
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct HooksArgs {
     #[command(subcommand)]
     pub action: HooksAction,
@@ -480,7 +537,7 @@ pub struct HooksUninstallArgs {
 
 #[derive(Debug, Args)]
 pub struct HooksRunArgs {
-    /// pre-commit | post-merge | post-rewrite | post-checkout
+    /// pre-commit | post-commit | post-merge | post-rewrite | post-checkout
     pub hook: String,
     /// Arguments git passed to the hook
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -505,6 +562,8 @@ impl Command {
             Command::Skills(args) => args.json,
             Command::Sync(args) => args.json,
             Command::Diff(args) => args.json,
+            Command::Resolve(args) => args.json,
+            Command::New(args) => args.json,
             _ => false,
         }
     }
@@ -542,5 +601,7 @@ pub fn run(cli: Cli) -> ExitCode {
         Command::Convert(args) => commands::connect::convert(&args),
         Command::Hooks(args) => commands::hooks::run(&args),
         Command::Diff(args) => commands::diff::run(&args),
+        Command::Resolve(args) => commands::resolve::run(&args),
+        Command::New(args) => commands::registry::new_skill(&args),
     }
 }

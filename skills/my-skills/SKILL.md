@@ -36,19 +36,49 @@ with a stderr note, while real writes (including `bootstrap` and
 `hooks install`/`uninstall`) refuse with exit `2` until you run from the active
 registry, switch with `set-root`, or select one for the command with `--root`.
 
+## Finding the canonical file (0 or 1 calls)
+
+- **Link hosts:** the skill path in the host folder already points to the
+  canonical directory under `skills/<name>/`. Edit there directly (0 CLI calls).
+- **Copy hosts, nested files, or when unsure:** run `resolve` once:
+
+```bash
+my-skills resolve <path-or-skill> --json
+```
+
+Read `canonical_path` (or `canonical_dir`), `state`, `matched_host`, `mode`,
+and `write_refusal`. Exit `0` resolves `registered` skills and `unregistered`
+drafts under `skills/`; exit `1` flags `foreign`, `unmanaged`, `ambiguous`, or
+`unsafe` paths.
+
 ## Everyday commands
 
-- **List:** `my-skills skills` or `my-skills skills --json` (plain UTF-8 with
-  `registry: {path, source}`). Per-host statuses: `fresh`, `stale`, `drifted`,
-  `foreign`, `missing`, or `-` (host excluded). `foreign` means another registry
-  owns that connection; `sync` leaves it alone when pruning and blocks writes
-  with `BLOCK_FOREIGN`.
+- **List / status:** `my-skills skills [skill...] --json --brief` (intersects
+  names with `--group`, `--host`, `--enabled`/`--disabled`) and
+  `my-skills status [skill...] --group <group> --json`.
+  Per-host statuses: `fresh`, `stale`, `drifted`, `foreign`, `missing`, or `-`
+  (host excluded). `foreign` means another registry owns that connection;
+  `sync` leaves it alone when pruning and blocks writes with `BLOCK_FOREIGN`.
 - **Enable / disable:** use manifest toggles instead of editing TOML by hand,
   then validate (`my-skills enable <skill>`, `my-skills disable <skill>`,
   `my-skills validate <skill>`). A later `sync` prunes disabled connections
-  (preview removals with `sync --dry-run`).
-- Pass several skill names or repeat `--group <group>` with `install`, `sync`, `uninstall`, `enable`, `disable`, `audit`, or `validate`.
+  (preview removals with `sync --dry-run --json`).
+- Pass several skill names or repeat `--group <group>` with `install`, `sync`,
+  `uninstall`, `enable`, `disable`, `audit`, or `validate`.
 - Inspect drift or conflicts with `my-skills diff <skill> --host <host> --patch`.
+- **New skill:** `my-skills new <name> [--group <group>] [--host <host>]`
+  creates a disabled draft in `skills/<name>/SKILL.md` and registers it under
+  `my-skills.toml.edit-lock` (edit → `my-skills enable <name>` → validate/commit).
+- **Editing loop:** edit canonical `skills/<name>/...`, validate
+  (`my-skills validate <skill> --json`), then commit (`pre-commit` validates;
+  `post-commit` refreshes copy hosts automatically) and push in a Git registry
+  — zero extra `my-skills` calls after committing. In a non-Git registry, run
+  one call: `my-skills sync <skill> --host <host> --json` (after previewing with
+  `--dry-run --json`).
+- **Session reload:** after adding or changing skills, start a new host session
+  if needed — Claude Code picks up skills on restart, Codex detects changes
+  automatically (restart if needed), and Antigravity CLI requires a new
+  session and `/skills`.
 - Run `my-skills --help` for the full command list.
 
 ## Safe write loop (install and sync)
@@ -60,7 +90,7 @@ current host. **Never add `--yes` yourself** to a multi-host write — `--yes`
 means the user already approved that exact multi-host plan; otherwise stop after
 the dry-run and ask which host to update.
 
-1. Preview with `--dry-run --json` instead of parsing text:
+1. Preview is always `--dry-run --json` (instead of parsing text):
 
 ```bash
 my-skills install <skill> --host <host> --dry-run --json
@@ -71,12 +101,13 @@ my-skills sync <skill> --host <host> --dry-run --json
    `audit`, and `actions` (for `sync`, review removals as well as new/updated
    connections). Stop and surface findings if `blocked` is `true` or audit would
    block.
-3. Run the matching command only when `applicable` is `true` (or only
-   `needs_yes` remains for an already-approved multi-host scope):
+3. To apply, drop only `--dry-run` when `applicable` is `true` (or only
+   `needs_yes` remains for an already-approved multi-host scope), and check
+   `applied`, `summary`, `cleanup_warnings`, and each action's `result`:
 
 ```bash
-my-skills install <skill> --host <host>
-my-skills sync <skill> --host <host>
+my-skills install <skill> --host <host> --json
+my-skills sync <skill> --host <host> --json
 ```
 
 ## Never bypass audit
@@ -92,10 +123,11 @@ Read a reference only when the task needs it:
 
 - [references/setup.md](references/setup.md) — First-time CLI/registry setup,
   `my-skills.toml not found`, `init-registry` flags, `bootstrap`, and Git hooks.
-- [references/json-and-dry-run.md](references/json-and-dry-run.md) — Dry-run
-  and validation JSON, error codes, `sync --check`, and multi-host rules.
+- [references/json-and-dry-run.md](references/json-and-dry-run.md) — `resolve`,
+  `new --json`, dry-run and applied `install`/`sync --json`, error codes,
+  `sync --check`, and multi-host rules.
 - [references/share-and-audit.md](references/share-and-audit.md) — Sharing
-  host-local skills (`share`), creating/importing skills (`import`), and
+  host-local skills (`share`), creating/importing skills (`new`, `import`), and
   security and bundle audits (`audit`, `--with-governance`).
 - [references/hosts.md](references/hosts.md) — `install_mode` (`link` vs `copy`)
   precedence, `doctor --quick`, `convert`, and Antigravity CLI (`agy`) notes.
