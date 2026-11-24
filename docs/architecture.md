@@ -8,7 +8,7 @@ A Korean walkthrough with diagrams of the whole system (glossary, disk layout, c
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/architecture-dark.png">
-  <img alt="my-skills internal architecture: cli.rs dispatches to commands/, which coordinate src/registry/, src/drive/, src/check/, src/git/hooks.rs, src/platform/, and src/update.rs to read and write the active root cache, registry files, host skill folders, install state, .git/hooks, machine-local data, and GitHub Releases." src="images/architecture.png">
+  <img alt="my-skills internal architecture: cli.rs dispatches to commands/ (resolve.rs and command handlers), which coordinate src/registry/, src/drive/ (hosts/plan, staged copy snapshots in apply/link, state.rs, and drive/lock.rs for state.json.lock), src/check/, src/git/hooks.rs (5 hooks including pre-commit and post-commit), src/platform/, and src/update.rs to read and write the active root cache, registry files, host skill folders, install state and lock, .git/hooks, machine-local data, and GitHub Releases." src="images/architecture.png">
 </picture>
 
 ## Modules

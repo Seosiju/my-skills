@@ -35,55 +35,10 @@
 
 ## 2. 전체 그림
 
-```mermaid
-flowchart LR
-  subgraph GH["GitHub (공개)"]
-    TOOL["툴 저장소<br/>Rust 소스 + 시드 스킬"]
-    REL["Releases<br/>OS별 바이너리"]
-  end
-
-  subgraph PC["내 컴퓨터"]
-    CLI["my-skills CLI"]
-
-    subgraph REG["레지스트리 ~/my-agent-skills (Git)"]
-      MAN["my-skills.toml<br/>my-skills.local.toml"]
-      SK["skills/스킬이름/<br/>정본"]
-      HK[".git/hooks<br/>hook 5개"]
-    end
-
-    subgraph HOSTS["호스트 폴더"]
-      HC["~/.claude/skills"]
-      HX["~/.agents/skills"]
-      HA["~/.gemini/config/skills"]
-    end
-
-    subgraph LOCAL["기기 전용 상태"]
-      ST["state.json<br/>설치 기록"]
-      RC["root<br/>활성 레지스트리"]
-    end
-
-    AC["Claude Code"]
-    AX["Codex"]
-    AA["Antigravity CLI"]
-  end
-
-  PRIV["private 원격<br/>레지스트리 백업"]
-  OTHER["다른 기기<br/>(같은 구조)"]
-
-  TOOL -->|"태그 → CI 빌드"| REL
-  REL -->|"설치 · my-skills update"| CLI
-  CLI -->|"init-registry 때 시드 복사"| SK
-  CLI -->|"읽기"| MAN
-  CLI -->|"link 또는 copy"| HOSTS
-  CLI -->|"기록"| ST
-  CLI -->|"기록"| RC
-  HK -->|"커밋 · pull 때 호출"| CLI
-  HC --> AC
-  HX --> AX
-  HA --> AA
-  SK <-->|"git push / pull"| PRIV
-  PRIV <-->|"git pull → hook이 sync"| OTHER
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/system-map-overview-dark.png">
+  <img alt="my-skills 전체 그림: 공개 GitHub의 툴 저장소와 Releases에서 my-skills CLI를 받아 설치·업데이트하고, 레지스트리 ~/my-agent-skills(my-skills.toml, skills/ 정본, .git/hooks 5개)를 기준으로 Claude Code(~/.claude/skills), Codex(~/.agents/skills), Antigravity CLI(~/.gemini/config/skills) 호스트 폴더에 link 또는 copy로 연결하며, 기기 전용 상태(state.json·.lock, root 캐시)를 기록하고 private 원격을 통해 다른 기기와 Git으로 동기화하는 구조." src="images/system-map-overview.png">
+</picture>
 
 세 가지만 기억하면 된다.
 
