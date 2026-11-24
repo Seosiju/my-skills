@@ -48,7 +48,7 @@ agy -p '/skills' --output-format json
 ```
 
 프로젝트 경로는 `.agents/skills`입니다. 전역 경로의 일반 폴더·symlink 발견은
-macOS의 **Antigravity CLI 1.2.16**에서 확인했으며, 해당 `/skills` 검증은 모델
+macOS의 **Antigravity CLI 1.2.16**과 **1.5.15**에서 확인했으며, 해당 `/skills` 검증은 모델
 턴·토큰이 0이었습니다. Windows에서 `my-skills`는 기본적으로 디렉터리 junction으로
 연결하는데, **Antigravity CLI 1.5.14**에서는 일반 폴더는 발견되지만 junction은
 발견되지 않았습니다. Windows에서는 다른 호스트는 링크로 유지하면서
@@ -135,6 +135,10 @@ my-skills --version
 지정합니다. 기존 `my-skills`가 있다면 PATH에서 새 실행 파일이 선택되는지 확인합니다.
 소스 빌드 방법은 [CONTRIBUTING.md](CONTRIBUTING.md)를 참고하세요.
 
+이미 열려 있던 터미널과 에이전트 세션은 예전 PATH를 그대로 씁니다. 설치한 뒤에는
+새로 열어서 쓰세요. 특히 registry에서 Git을 실행하기 전에 새로 열어야 hook이 예전
+`my-skills`를 실행하지 않습니다.
+
 ## 빠른 시작
 
 CLI를 설치한 뒤 tool repo 밖에서 다음 명령을 실행합니다.
@@ -153,6 +157,15 @@ my-skills install              # 활성 스킬을 에이전트에 배포
 ```bash
 my-skills doctor
 my-skills skills --json
+```
+
+`skills`는 모든 스킬과 호스트별 설치 위치를 보여줍니다:
+
+```text
+SKILL             ENABLED  CLAUDE   CODEX    HERMES
+----------------  -------  -------  -------  -------
+cli-inventory     yes      fresh    fresh    missing
+my-skills         yes      fresh    fresh    fresh
 ```
 
 ## CLI 업데이트
@@ -183,15 +196,6 @@ my-skills update --dry-run
 
 ```bash
 my-skills update --channel main
-```
-
-`skills`는 모든 스킬과 호스트별 설치 위치를 보여줍니다:
-
-```text
-SKILL             ENABLED  CLAUDE   CODEX    HERMES
-----------------  -------  -------  -------  -------
-cli-inventory     yes      fresh    fresh    missing
-my-skills         yes      fresh    fresh    fresh
 ```
 
 ## 공개 CLI, 비공개 registry
@@ -239,7 +243,7 @@ my-agent-skills/
 빈 registry가 필요하면 `--no-defaults`를, git 없는 plain folder를 원하면 `--no-git`을
 사용하세요. 다른 기기에서는 기존 registry를 복제하고 그 안에서
 `my-skills bootstrap`을 실행해 호스트 연결을 조정합니다. Git hook을 설정하려면
-`my-skills hooks install`을 별도로 실행합니다.
+`my-skills hooks install`을 별도로 실행합니다([모든 기기를 맞춰 두기](#모든-기기를-맞춰-두기) 참고).
 
 ## 명령이 registry를 찾는 순서
 
@@ -259,7 +263,8 @@ my-skills doctor
 ```
 
 아직 active root가 없는 머신에서는 편의를 위해 현재 디렉터리에서 처음 발견한
-registry를 기록할 수 있습니다. 기여자용 clone에도 패키징과 테스트를 위한 seed
+registry를 기록할 수 있습니다. `--dry-run`은 기록하지 않고 `would remember <path> as the active registry`라고
+미리 보여 줍니다. 기여자용 clone에도 패키징과 테스트를 위한 seed
 `skills/` 및 `my-skills.toml`이 있으므로, 실제 스킬을 변경하기 전에는
 `my-skills doctor`의 `Registry:` 줄을 확인하세요.
 
@@ -287,6 +292,29 @@ my-skills audit --all --json
 my-skills install my-private-skill --dry-run
 my-skills install my-private-skill --yes
 ```
+
+## 모든 기기를 맞춰 두기
+
+registry는 Git 저장소입니다. 비공개 원격 저장소에 push하고 기기마다 clone한 뒤,
+clone마다 한 번 Git hook을 설치합니다:
+
+```bash
+my-skills hooks install
+my-skills hooks status
+```
+
+- `pre-commit`은 커밋에 들어가는 스킬과 manifest 변경을 검증하고, 깨진 스킬은
+  커밋을 막습니다.
+- `post-merge`, `post-rewrite`, `post-checkout`(브랜치 전환)은 `sync`를 실행합니다.
+  그래서 `git pull` 한 번이면 그 기기의 모든 호스트에 새 스킬이 연결되고, 복사본이
+  갱신되고, 끈 스킬은 제거됩니다.
+- link로 연결하면 원본 스킬을 고친 내용이 같은 기기의 모든 에이전트에 바로
+  보입니다. 다른 기기와 나누려면 커밋하고 push합니다.
+
+hook은 PATH의 `my-skills`를 쓰고, 없으면 `hooks install` 때 기록한 실행 파일
+경로를 씁니다. 실행 파일을 옮겼다면 `my-skills hooks install`을 다시 실행하세요.
+hook 안의 sync가 실패하면 경고만 출력하고 Git 명령은 실패시키지 않으므로, pull
+결과가 이상하면 `my-skills status`로 확인하세요.
 
 ## 포함된 스킬
 
@@ -387,6 +415,7 @@ my-skills install cli-inventory --host claude --mode link
 - **충돌 = 차단.** 이미 존재하는 비관리 대상은 절대 덮어쓰지 않습니다.
 - **드리프트 보호.** 로컬에서 편집된 복사본은 덮어쓰지 않고 보고합니다.
 - **원자적 쓰기.** 설치는 임시 디렉터리에 준비한 뒤 제자리로 교체하며, 실패 시 롤백합니다.
+  설치 기록(state) 저장이 실패해도 되돌리므로, 원인을 없앤 뒤 같은 명령을 다시 실행하면 됩니다.
 
 설치 state는 머신-로컬(`$XDG_STATE_HOME` 또는 `~/.local/state/my-skills/`)이며
 절대 커밋되지 않습니다.

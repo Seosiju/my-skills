@@ -48,8 +48,8 @@ agy -p '/skills' --output-format json
 ```
 
 The project path is `.agents/skills`. Global-path discovery for both regular
-folders and symlinks was verified on macOS with **Antigravity CLI 1.2.16**; `/skills`
-used zero model turns and tokens in that verification. On Windows, `my-skills`
+folders and symlinks was verified on macOS with **Antigravity CLI 1.2.16** and again
+with **1.5.15**; `/skills` used zero model turns and tokens in that verification. On Windows, `my-skills`
 links skills with directory junctions by default, which **Antigravity CLI 1.5.14**
 did not discover while regular folders worked. Windows users can set
 `install_mode = "copy"` under `[targets.agy]` in `my-skills.local.toml` while
@@ -136,6 +136,10 @@ For a specific release, set `MY_SKILLS_VERSION` to its tag before running the
 installer. If another `my-skills` is already installed, check that PATH selects
 the new binary. See [CONTRIBUTING.md](CONTRIBUTING.md) for source builds.
 
+Terminals and agent sessions that were already open keep their old PATH. Open
+a new one after installing, especially before running Git in your registry, so
+the hooks do not pick up an older `my-skills`.
+
 ## Quick start
 
 After installing the CLI, run the following from outside the tool repo:
@@ -154,6 +158,15 @@ commands work from any directory:
 ```bash
 my-skills doctor
 my-skills skills --json
+```
+
+`skills` shows every skill and where it's installed across your hosts:
+
+```text
+SKILL             ENABLED  CLAUDE   CODEX    HERMES
+----------------  -------  -------  -------  -------
+cli-inventory     yes      fresh    fresh    missing
+my-skills         yes      fresh    fresh    fresh
 ```
 
 ## Updating the CLI
@@ -184,15 +197,6 @@ including prereleases:
 
 ```bash
 my-skills update --channel main
-```
-
-`skills` shows every skill and where it's installed across your hosts:
-
-```text
-SKILL             ENABLED  CLAUDE   CODEX    HERMES
-----------------  -------  -------  -------  -------
-cli-inventory     yes      fresh    fresh    missing
-my-skills         yes      fresh    fresh    fresh
 ```
 
 ## Public CLI, Private Registry
@@ -240,7 +244,8 @@ my-agent-skills/
 Pass `--no-defaults` for a blank registry, or `--no-git` if you want a plain
 folder with no git repository. On another machine, clone an existing registry
 and run `my-skills bootstrap` from that clone to reconcile its host connections.
-Run `my-skills hooks install` separately to set up its Git hooks.
+Run `my-skills hooks install` separately to set up its Git hooks (see
+[Keep every machine in sync](#keep-every-machine-in-sync)).
 
 ## Where commands look for your registry
 
@@ -262,7 +267,8 @@ my-skills doctor
 ```
 
 On a machine with no active root yet, first-run discovery from the current
-directory can record that registry for convenience. Contributor clones also
+directory can record that registry for convenience. A `--dry-run` never records
+it; the preview prints `would remember <path> as the active registry` instead. Contributor clones also
 contain seed `skills/` and `my-skills.toml` files for packaging and tests, so
 use `my-skills doctor` and check the `Registry:` line before making real skill
 changes.
@@ -291,6 +297,29 @@ my-skills audit --all --json
 my-skills install my-private-skill --dry-run
 my-skills install my-private-skill --yes
 ```
+
+## Keep every machine in sync
+
+Your registry is a Git repository. Push it to a private remote, clone it on each
+machine, and install the Git hooks once per clone:
+
+```bash
+my-skills hooks install
+my-skills hooks status
+```
+
+- `pre-commit` validates the skills and manifest changes in the commit and blocks
+  a broken skill.
+- `post-merge`, `post-rewrite`, and `post-checkout` (branch switches) run `sync`,
+  so a `git pull` connects new skills, updates copies, and removes disabled ones
+  on every host of that machine.
+- With links, an edit to a canonical skill is visible to every agent on the same
+  machine right away. Commit and push it to share it with your other machines.
+
+The hooks call `my-skills` from PATH and fall back to the binary path recorded by
+`hooks install`. Rerun `my-skills hooks install` if you move the binary. A sync
+failure in a hook prints a warning but does not fail the Git command, so run
+`my-skills status` if a pull looks incomplete.
 
 ## Included skills
 
@@ -392,6 +421,8 @@ while an explicit `--host <name>` still converts as requested.
 - **Collision = block.** A pre-existing, unmanaged destination is never overwritten.
 - **Drift-protected.** A locally edited copy is reported, not clobbered.
 - **Atomic writes.** Installs stage to a temp dir and swap into place; failures roll back.
+  That includes a failed save of the install state, so rerunning the same command
+  after fixing the cause succeeds.
 
 Install state is machine-local (`$XDG_STATE_HOME` or `~/.local/state/my-skills/`)
 and never committed.
