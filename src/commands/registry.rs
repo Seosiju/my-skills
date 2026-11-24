@@ -2,6 +2,8 @@
 
 use std::process::ExitCode;
 
+use serde::Serialize;
+
 use crate::check::audit::format_gate;
 use crate::cli::*;
 use crate::drive::state::State;
@@ -57,7 +59,7 @@ pub fn init_registry(args: &InitRegistryArgs) -> ExitCode {
 
 pub fn skills(args: &SkillsArgs) -> ExitCode {
     let result = (|| {
-        let manifest = load()?;
+        let (manifest, resolution) = load_resolved(false)?;
         let state = State::load(None)?;
         let host = args.host.as_deref();
         if let Some(host) = host.filter(|host| !manifest.targets.contains_key(*host)) {
@@ -74,7 +76,7 @@ pub fn skills(args: &SkillsArgs) -> ExitCode {
         };
         let rows = catalog::rows(&manifest, &state, host, enabled, &hosts, args.with_status)?;
         Ok(if args.json {
-            json_output(&rows)
+            json_with_registry(rows, &resolution)
         } else {
             rows.table(&hosts)
         })
@@ -89,15 +91,17 @@ pub fn skills(args: &SkillsArgs) -> ExitCode {
 }
 
 pub fn share(args: &ShareArgs) -> ExitCode {
-    let (manifest, resolution) = match load_resolved(!args.dry_run) {
+    let preview = args.plan || args.dry_run;
+    let write = !preview && args.skill.is_some() && args.enable != args.disable;
+    let (manifest, resolution) = match load_resolved(write) {
         Ok(loaded) => loaded,
         Err(err) => return super::config_error(err),
     };
-    if args.plan || args.dry_run {
+    if preview {
         return match share::plan_share(&manifest, &args.from_host) {
             Ok(plan) => {
                 let output = if args.json {
-                    json_output(&plan)
+                    json_with_registry(plan, &resolution)
                 } else {
                     plan.table()
                 };
@@ -121,6 +125,13 @@ pub fn share(args: &ShareArgs) -> ExitCode {
         Ok(state) => state,
         Err(err) => return super::config_error(err),
     };
+    if let Some(record) = state
+        .get(skill, &args.from_host)
+        .filter(|record| !record.belongs_to(&manifest.skills_dir()))
+    {
+        println!("[BLOCKED] {skill}: {}", record.foreign_reason());
+        return ExitCode::from(1);
+    }
     match share::share(
         &manifest,
         &mut state,
@@ -193,7 +204,7 @@ fn set_enabled(name: &str, enabled: bool, dry_run: bool) -> ExitCode {
         super::print_would_cache_root(&resolution);
         return ExitCode::SUCCESS;
     }
-    let result = load().and_then(|manifest| {
+    let result = load_resolved(true).and_then(|(manifest, _)| {
         let path = manifest.root.join(MANIFEST_FILE);
         share::ensure_outside_hosts(&path, share::target_paths(&manifest))?;
         edit::set_skill_enabled(&path, name, enabled)
@@ -287,8 +298,18 @@ pub fn import(args: &ImportArgs) -> ExitCode {
     }
 }
 
-fn load() -> Result<Manifest> {
-    root::load_manifest_from_cwd(&CliOverrides::default())
+fn json_with_registry(output: impl Serialize, resolution: &root::RootResolution) -> String {
+    #[derive(Serialize)]
+    struct WithRegistry<T> {
+        #[serde(flatten)]
+        output: T,
+        registry: root::RegistryMeta,
+    }
+
+    json_output(&WithRegistry {
+        output,
+        registry: resolution.meta(),
+    })
 }
 
 fn load_resolved(write_cache: bool) -> Result<(Manifest, root::RootResolution)> {
