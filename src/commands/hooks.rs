@@ -1,8 +1,10 @@
 //! Registry git hook commands.
 
+use std::collections::BTreeSet;
 use std::process::ExitCode;
 
 use crate::cli::{HooksAction, HooksArgs, HooksRunArgs, SyncArgs};
+use crate::drive::state::{State, StateLock, default_state_path};
 use crate::registry::manifest::{self, CliOverrides};
 use crate::{git::hooks, registry::root};
 
@@ -75,13 +77,60 @@ fn in_linked_worktree() -> bool {
 
 /// Refresh hosts after a commit that passed pre-commit. The commit already
 /// happened, so every outcome exits 0 and problems are warnings on stderr.
+///
+/// The state lock is taken before any git check and held through the sync, so
+/// edits made while this hook waits for another writer are seen by the checks
+/// rather than copied. A millisecond window remains between the last check and
+/// the copy itself; the status re-check at the end reports such edits.
 fn post_commit() -> ExitCode {
-    let plan = (|| -> anyhow::Result<hooks::PostCommit> {
-        let root = root::resolve_root(None, false)?.root;
-        let manifest = manifest::load_manifest(&root, &CliOverrides::default())?;
-        hooks::post_commit(&hooks::Git::discover(&root)?, &manifest)
-    })();
-    let plan = match plan {
+    let could_not_sync = || eprintln!("warning: post-commit could not sync the registry");
+    let resolution = match root::resolve_root(None, false) {
+        Ok(resolution) => resolution,
+        Err(error) => {
+            eprintln!("warning: post-commit could not inspect the commit: {error:#}");
+            return ExitCode::SUCCESS;
+        }
+    };
+    let git = match hooks::Git::discover(&resolution.root) {
+        Ok(git) => git,
+        Err(error) => {
+            eprintln!("warning: post-commit could not inspect the commit: {error:#}");
+            return ExitCode::SUCCESS;
+        }
+    };
+    // A linked worktree never syncs, so it need not wait for the lock.
+    if git.in_linked_worktree().unwrap_or(false) {
+        return ExitCode::SUCCESS;
+    }
+    if let Some(refusal) = resolution.write_refusal() {
+        eprintln!("error: {refusal}");
+        could_not_sync();
+        return ExitCode::SUCCESS;
+    }
+    let _state_lock = match StateLock::acquire(&default_state_path()) {
+        Ok(lock) => lock,
+        Err(error) => {
+            eprintln!("error: {error}");
+            could_not_sync();
+            return ExitCode::SUCCESS;
+        }
+    };
+    if let Err(error) = resolution.recheck_write() {
+        eprintln!("error: {error}");
+        could_not_sync();
+        return ExitCode::SUCCESS;
+    }
+    let manifest = match manifest::load_manifest(&resolution.root, &CliOverrides::default()) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            eprintln!("warning: post-commit could not inspect the commit: {error:#}");
+            return ExitCode::SUCCESS;
+        }
+    };
+    let recorded: BTreeSet<String> = State::load(None)
+        .map(|state| state.records().map(|record| record.skill.clone()).collect())
+        .unwrap_or_default();
+    let plan = match hooks::post_commit(&git, &manifest, &recorded) {
         Ok(hooks::PostCommit::Sync(plan)) => plan,
         Ok(hooks::PostCommit::Skip(warning)) => {
             if let Some(warning) = warning {
@@ -94,21 +143,43 @@ fn post_commit() -> ExitCode {
             return ExitCode::SUCCESS;
         }
     };
-    for skill in &plan.dirty {
+    for skill in &plan.warn {
         eprintln!("warning: post-commit left {skill} alone: it has uncommitted changes");
     }
     if !plan.full && plan.skills.is_empty() {
         return ExitCode::SUCCESS;
     }
-    let result = super::connect::sync(&SyncArgs {
-        skills: plan.skills,
-        yes: true,
-        quiet: true,
-        exclude: plan.dirty,
-        ..Default::default()
-    });
+    let result = super::connect::sync_locked(
+        &manifest,
+        &SyncArgs {
+            skills: plan.skills.clone(),
+            yes: true,
+            quiet: true,
+            exclude: plan.exclude.clone(),
+            ..Default::default()
+        },
+        &resolution,
+    );
     if result != ExitCode::SUCCESS {
-        eprintln!("warning: post-commit could not sync the registry");
+        could_not_sync();
+    }
+    // Edits made while the sync ran may have been copied along with the commit.
+    if let Ok(dirty) = hooks::dirty_skills(&git, &manifest) {
+        let synced = |name: &String| {
+            !plan.exclude.contains(name)
+                && (if plan.full {
+                    manifest.skills.contains_key(name) || recorded.contains(name)
+                } else {
+                    plan.skills.contains(name)
+                })
+        };
+        let changed: Vec<_> = dirty.iter().filter(|name| synced(name)).cloned().collect();
+        if !changed.is_empty() {
+            eprintln!(
+                "warning: post-commit: {} changed while syncing; the host copies may include                  uncommitted edits (the next commit or sync refreshes them)",
+                changed.join(", ")
+            );
+        }
     }
     ExitCode::SUCCESS
 }

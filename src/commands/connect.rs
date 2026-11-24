@@ -212,6 +212,15 @@ pub fn sync_manifest(manifest: &Manifest, args: &SyncArgs) -> ExitCode {
     sync_manifest_with_resolution(manifest, args, None, None)
 }
 
+/// Sync for a caller that already holds the state lock (the post-commit hook).
+pub fn sync_locked(
+    manifest: &Manifest,
+    args: &SyncArgs,
+    resolution: &root::RootResolution,
+) -> ExitCode {
+    sync_manifest_with_resolution(manifest, args, Some(resolution), None)
+}
+
 fn sync_manifest_with_resolution(
     manifest: &Manifest,
     args: &SyncArgs,
@@ -259,6 +268,8 @@ fn sync_manifest_with_resolution(
         Ok(items) => items,
         Err(e) => return config_error(e),
     };
+    // Excluded skills are untouched, including by the orphan prune.
+    items.retain(|item| !args.exclude.contains(&item.skill));
 
     if args.check {
         // Status of every wanted pair (v0.4.1 output), plus what a real sync
@@ -952,7 +963,33 @@ fn validate_selected<'a>(
             }
         }
     }
-    unique_validation(checks)
+    drop_repeated_host_rows(unique_validation(checks))
+}
+
+/// A host row that only repeats the skill-level errors and warnings adds
+/// nothing; keep it when it says something different, or when it was clean.
+fn drop_repeated_host_rows(rows: Vec<ValidationCheck<'_>>) -> Vec<ValidationCheck<'_>> {
+    let skill_level: Vec<_> = rows
+        .iter()
+        .filter(|row| row.host.is_none())
+        .map(|row| (row.skill, row.errors.clone(), row.warnings.clone()))
+        .collect();
+    rows.into_iter()
+        .filter_map(|mut row| {
+            if row.host.is_some()
+                && let Some((_, errors, warnings)) =
+                    skill_level.iter().find(|(skill, ..)| *skill == row.skill)
+            {
+                let said_something = !row.errors.is_empty() || !row.warnings.is_empty();
+                row.errors.retain(|error| !errors.contains(error));
+                row.warnings.retain(|warning| !warnings.contains(warning));
+                if said_something && row.errors.is_empty() && row.warnings.is_empty() {
+                    return None;
+                }
+            }
+            Some(row)
+        })
+        .collect()
 }
 
 fn unique_validation<'a>(
