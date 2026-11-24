@@ -473,6 +473,20 @@ fn previews_report_an_empty_audit_when_it_did_not_run() {
     let expected = serde_json::json!({"blocked": false, "skills": [], "skipped": false});
     let noop = json(&dry_run(&fixture, "sync").arg("--json").assert().success());
     assert_eq!(noop["audit"], expected);
+    // Nothing to write means no audit gate, with or without --skip-audit, and
+    // the text preview agrees with the JSON.
+    let noop_skip = json(
+        &dry_run(&fixture, "sync")
+            .args(["--json", "--skip-audit"])
+            .assert()
+            .success(),
+    );
+    assert_eq!(noop_skip["audit"], expected);
+    dry_run(&fixture, "sync")
+        .arg("--skip-audit")
+        .assert()
+        .success()
+        .stdout(contains("audit skipped").not());
 
     write_skill(&fixture, &"x".repeat(800), "Example body.");
     for command in ["install", "sync"] {

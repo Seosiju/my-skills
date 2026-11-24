@@ -305,9 +305,8 @@ fn sync_manifest_with_resolution(
         if !args.json {
             println!("Dry run — planned actions (nothing written):");
             print_plan(&items);
-            if args.skip_audit {
-                println!("WARN: audit skipped by explicit --skip-audit");
-            } else if let Some(gate) = gate.as_ref().filter(|gate| gate.blocked()) {
+            // Same rule as the JSON `audit` object: report only a gate that ran.
+            if let Some(gate) = gate.as_ref().filter(|gate| gate.skipped || gate.blocked()) {
                 println!("{}", format_gate(gate, "AUDIT WOULD BLOCK"));
             }
             if let Some(resolution) = resolution {
