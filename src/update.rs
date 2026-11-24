@@ -17,6 +17,7 @@ use tempfile::TempDir;
 use url::Url;
 
 use crate::cli::Channel;
+use crate::platform::paths;
 
 pub(crate) const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const API_BASE: &str = "https://api.github.com";
@@ -252,7 +253,7 @@ impl UpdateDownload {
                 let _ = work.keep();
                 bail!(
                     "{error:#}; could not restore the old executable ({rollback}); backup at {}",
-                    backup.display()
+                    paths::display_path(&backup)
                 );
             }
             return Err(error);

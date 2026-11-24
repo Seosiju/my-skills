@@ -255,7 +255,7 @@ pub fn set_root(args: &SetRootArgs) -> ExitCode {
 pub fn data_path(args: &DataPathArgs) -> ExitCode {
     match skill_data_path(&args.skill, args.create) {
         Ok(path) => {
-            println!("{}", path.display());
+            println!("{}", paths::display_path(&path));
             ExitCode::SUCCESS
         }
         Err(e) => config_error(e),

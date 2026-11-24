@@ -4,7 +4,7 @@
 //! Planning reads the filesystem but never writes it. `apply::apply`
 //! executes the plan.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::drive::hash::hash_directory;
 use crate::drive::link::{self, EntryKind};
@@ -167,16 +167,20 @@ pub fn wants(manifest: &Manifest, skill: &Skill, host: &str) -> bool {
 
 /// Read-only status of one (skill, host) pair (spec §6.2).
 pub fn status_of(manifest: &Manifest, skill: &Skill, host: &str, state: &State) -> Result<Status> {
+    if !host_supported(skill, host) {
+        return Ok(Status::Unsupported);
+    }
     let record = state.get(&skill.name, host);
     if record.is_some_and(|record| !record.belongs_to(&manifest.skills_dir())) {
         return Ok(Status::Foreign);
     }
-    if !host_supported(skill, host) {
-        return Ok(Status::Unsupported);
-    }
     let source = manifest.skill_dir(&skill.name);
     let dest = destination(manifest, host, &skill.name)?;
-    let kind = link::entry_kind(&dest)?;
+    connection_status(&dest, &source, record)
+}
+
+fn connection_status(dest: &Path, source: &Path, record: Option<&InstallRecord>) -> Result<Status> {
+    let kind = link::entry_kind(dest)?;
     let Some(record) = record else {
         return Ok(if kind == EntryKind::Missing {
             Status::Missing
@@ -185,12 +189,12 @@ pub fn status_of(manifest: &Manifest, skill: &Skill, host: &str, state: &State) 
         });
     };
     match record.mode {
-        InstallMode::Link => Ok(link_status(&dest, &source, kind)),
-        InstallMode::Copy => copy_status(&dest, &source, kind, record),
+        InstallMode::Link => Ok(link_status(dest, source, kind)),
+        InstallMode::Copy => copy_status(dest, source, kind, record),
     }
 }
 
-fn link_status(dest: &std::path::Path, source: &std::path::Path, kind: EntryKind) -> Status {
+fn link_status(dest: &Path, source: &Path, kind: EntryKind) -> Status {
     match kind {
         EntryKind::Missing => Status::Missing,
         EntryKind::Link(_) if link::is_managed_link(dest, source) => {
@@ -205,8 +209,8 @@ fn link_status(dest: &std::path::Path, source: &std::path::Path, kind: EntryKind
 }
 
 fn copy_status(
-    dest: &std::path::Path,
-    source: &std::path::Path,
+    dest: &Path,
+    source: &Path,
     kind: EntryKind,
     record: &InstallRecord,
 ) -> Result<Status> {
@@ -495,13 +499,17 @@ pub fn plan_convert(
                 continue;
             };
             let source = manifest.skill_dir(&skill.name);
-            let status = status_of(manifest, skill, host, state)?;
-            if status == Status::Foreign {
+            if !record.belongs_to(&manifest.skills_dir()) {
                 items.push(PlanItem::block_foreign(source, record));
                 continue;
             }
             let dest = PathBuf::from(&record.destination);
             let expected = destination(manifest, host, &skill.name)?;
+            let status = if host_supported(skill, host) {
+                connection_status(&expected, &source, Some(record))?
+            } else {
+                Status::Unsupported
+            };
             let item = |action, reason: &str| {
                 PlanItem::new(
                     &skill.name,
@@ -516,7 +524,7 @@ pub fn plan_convert(
             let planned = if record.mode == to {
                 item(Action::Noop, "already in the requested mode")
             } else if dest != expected {
-                // status_of judged the manifest's current path; converting a
+                // connection_status judged the manifest's current path; converting a
                 // connection recorded elsewhere would act on a different entry.
                 item(
                     Action::BlockDrift,
