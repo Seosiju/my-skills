@@ -20,11 +20,50 @@ pub fn not_implemented(name: &str) -> ExitCode {
     ExitCode::from(2)
 }
 
-/// Print `error: <err>` to stderr and return exit code 2, as v0.4.1 does for
-/// manifest and configuration errors.
+/// Print a configuration error to stderr and, for JSON invocations, stdout.
 pub fn config_error(err: impl std::fmt::Display) -> ExitCode {
-    eprintln!("error: {err}");
+    let message = err.to_string();
+    eprintln!("error: {message}");
+    if json_errors() {
+        let (code, hint) = config_error_details(&message);
+        print_json_error(code, &message, hint);
+    }
     ExitCode::from(2)
+}
+
+/// Stable codes for errors currently passed through the display-only handler.
+/// Match the originating diagnostics here so existing human output stays intact.
+fn config_error_details(message: &str) -> (&'static str, Option<&'static str>) {
+    match message {
+        "install --json requires --dry-run"
+        | "sync --json requires --dry-run"
+        | "sync --json is not supported with --check; use --dry-run --json" => {
+            ("usage", Some("Use --dry-run --json to request a plan."))
+        }
+        "share requires a skill name unless --plan is used"
+        | "share requires exactly one of --enable or --disable"
+        | "uninstall requires a skill name"
+        | "enable requires a skill name"
+        | "disable requires a skill name" => ("usage", None),
+        m if m.starts_with("refusing to write to cwd registry ") => (
+            "inactive_registry",
+            Some("Run from the active registry or select a registry with my-skills set-root."),
+        ),
+        m if m.starts_with("unknown skill: ") || m.starts_with("unknown skill(s): ") => {
+            ("unknown_skill", None)
+        }
+        m if m.starts_with("unknown group: ") => ("unknown_group", None),
+        m if m.starts_with("unknown host: ") => ("unknown_host", None),
+        _ => ("config", None),
+    }
+}
+
+/// Emit one JSON error record on stdout, including before CLI dispatch.
+pub fn print_json_error(code: &str, message: &str, hint: Option<&str>) {
+    println!(
+        "{}",
+        serde_json::json!({"error": {"code": code, "message": message, "hint": hint}})
+    );
 }
 
 /// Print a dry-run preview line when a real run would record the resolved
@@ -40,8 +79,7 @@ pub fn print_would_cache_root(resolution: &crate::registry::root::RootResolution
 
 static JSON_ERRORS: AtomicBool = AtomicBool::new(false);
 
-/// Record whether this invocation asked for `--json`. `cli::run` calls it once
-/// before dispatching; wave 14 stream B makes `config_error` honour it.
+/// Record whether this invocation asked for JSON output before dispatch.
 pub fn set_json_errors(on: bool) {
     JSON_ERRORS.store(on, Ordering::Relaxed);
 }

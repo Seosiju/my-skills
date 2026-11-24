@@ -13,26 +13,22 @@ use crate::check::audit::{
     AuditFinding, Severity, cross_skill_findings, finding_json, policy_from_settings, result_json,
     run_audit,
 };
-use crate::check::validate::compose_validation;
+use crate::check::validate::gate_validation;
 use crate::cli::*;
 use crate::drive::link::{self, EntryKind};
 use crate::drive::plan;
 use crate::drive::state::State;
 use crate::platform::data::skill_data_path;
 use crate::platform::paths;
-use crate::registry::manifest::{CliOverrides, InstallMode, Manifest};
+use crate::registry::manifest::{CliOverrides, InstallMode, Manifest, select_names};
 use crate::registry::root;
 
 fn load() -> Result<Manifest, ExitCode> {
     root::load_manifest_from_cwd(&CliOverrides::default()).map_err(config_error)
 }
 
-fn skill_dirs(manifest: &Manifest, skill: Option<&str>) -> Vec<PathBuf> {
-    let skills_dir = manifest.skills_dir();
-    if let Some(name) = skill {
-        return vec![skills_dir.join(name)];
-    }
-    let Ok(entries) = fs::read_dir(&skills_dir) else {
+fn skill_dirs(manifest: &Manifest) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(manifest.skills_dir()) else {
         return Vec::new();
     };
     let mut dirs: Vec<PathBuf> = entries
@@ -44,40 +40,58 @@ fn skill_dirs(manifest: &Manifest, skill: Option<&str>) -> Vec<PathBuf> {
 }
 
 pub fn validate(args: &ValidateArgs) -> ExitCode {
-    let manifest = match load() {
-        Ok(m) => m,
-        Err(code) => return code,
-    };
-    let requested = match super::one_skill(&args.skills, &args.groups) {
-        Ok(requested) => requested,
+    let (manifest, resolution) = match root::load_manifest_resolved(&CliOverrides::default(), false)
+    {
+        Ok(loaded) => loaded,
         Err(e) => return config_error(e),
     };
-    let dirs = skill_dirs(&manifest, requested);
-    if dirs.is_empty() {
-        println!("no skills found to validate");
-        return ExitCode::SUCCESS;
+    let host = args.host.as_deref();
+    if let Some(host) = host.filter(|host| !manifest.targets.contains_key(*host)) {
+        return config_error(format!("unknown host: {host}"));
     }
-    let mut had_error = false;
-    for dir in dirs {
-        let result = compose_validation(&dir);
-        let name = dir
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        println!("[{}] {name}", if result.ok() { "OK" } else { "FAIL" });
-        for error in &result.errors {
-            println!("  error: {error}");
-            had_error = true;
-        }
-        for warning in &result.warnings {
-            println!("  warn:  {warning}");
-        }
-    }
-    if had_error {
-        ExitCode::from(1)
+    let dirs = if args.skills.is_empty() && args.groups.is_empty() {
+        skill_dirs(&manifest)
     } else {
-        ExitCode::SUCCESS
+        match select_names(&manifest, &args.skills, &args.groups) {
+            Ok(names) => names.iter().map(|name| manifest.skill_dir(name)).collect(),
+            Err(e) => return config_error(e),
+        }
+    };
+    if let Err(error) = policy_from_settings(&manifest.audit) {
+        return config_error(error);
     }
+    let mut ok = true;
+    let mut skills = Vec::new();
+    if dirs.is_empty() && !args.json {
+        println!("no skills found to validate");
+    }
+    for dir in dirs {
+        let name = dir.file_name().unwrap_or_default().to_string_lossy();
+        let result = gate_validation(&dir, &name, Some(&manifest), host);
+        ok &= result.ok();
+        if args.json {
+            skills.push(json!({
+                "skill": result.skill,
+                "ok": result.ok(),
+                "errors": result.errors,
+                "warnings": result.warnings,
+            }));
+        } else {
+            let status = if result.ok() { "OK" } else { "FAIL" };
+            println!("[{status}] {}", result.skill);
+            for error in &result.errors {
+                println!("  error: {error}");
+            }
+            for warning in &result.warnings {
+                println!("  warn:  {warning}");
+            }
+        }
+    }
+    if args.json {
+        let report = json!({"registry": resolution.meta(), "ok": ok, "skills": skills});
+        println!("{report:#}");
+    }
+    ExitCode::from(u8::from(!ok))
 }
 
 pub fn audit(args: &AuditArgs) -> ExitCode {
