@@ -9,7 +9,7 @@ Detailed reference for commands, registry lookup, install modes, safety checks, 
 | `my-skills skills` | List registered skills (`--json`, `--host <HOST>`, `--enabled`, `--disabled`, `--with-status`). |
 | `my-skills status` | Show connection status for every skill and host (`--json`). |
 | `my-skills install [SKILL]` | Connect enabled skills to host folders (`--host <HOST>`, `--all`, `--mode link\|copy`, `--dry-run`, `--json`, `--skip-audit`, `--yes`). |
-| `my-skills sync [SKILL]` | Match host folders to `my-skills.toml` (your manifest) and remove unwanted managed installs (`--host <HOST>`, `--all`, `--check`, `--no-prune`, `--dry-run`, `--quiet`, `--skip-audit`, `--yes`). |
+| `my-skills sync [SKILL]` | Match host folders to `my-skills.toml` (your manifest) and remove unwanted managed installs (`--host <HOST>`, `--all`, `--check`, `--no-prune`, `--dry-run`, `--json`, `--quiet`, `--skip-audit`, `--yes`). |
 | `my-skills uninstall [SKILL]` | Remove managed host connections without touching the source skill (`--host <HOST>`, `--dry-run`, `--yes`). |
 | `my-skills enable <SKILL>` / `disable <SKILL>` | Turn a registered skill on or off in `my-skills.toml` (`--dry-run`). |
 | `my-skills import <SOURCE>` | Copy an external skill folder into `skills/` and register it as disabled (`--enable`, `--force`, `--skip-audit`, `--dry-run`). |
@@ -22,17 +22,22 @@ Detailed reference for commands, registry lookup, install modes, safety checks, 
 Two small details to keep in mind:
 
 - `import` rejects source folders that contain symlinks so audits and copies cover the same file tree.
-- A bare `sync` checks disabled and unregistered skills too so it can remove old installs. Pass `--no-prune` to keep them, or `--check` to report changes without writing.
+- A bare `sync` checks disabled and unregistered skills too so it can remove old installs. Pass `--no-prune` to keep them, or `--check` to report changes without writing. `sync --check` takes precedence over `--dry-run` and cannot be combined with `--json`. Both `install --json` and `sync --json` require `--dry-run`.
+- JSON outputs emit plain UTF-8 (no `\uXXXX` escapes), and `skills --json`, `share --plan|--dry-run --json`, and `install|sync --dry-run --json` include `registry: {path, source}`. On Windows, displayed paths strip `\\?\` and use `\`. Audit `result_hash` fingerprints are unchanged.
 
 ## How my-skills finds your registry
 
 Most commands look for your registry in this order:
 
 1. The `MY_SKILLS_ROOT` environment variable, for a single-command override.
-2. A `my-skills.toml` file in the current folder or a parent folder, for that command only.
-3. The saved active registry recorded by `init-registry` or `set-root`.
+2. A `my-skills.toml` file in the current folder or a parent folder.
+3. The saved active registry recorded by `init-registry`, `set-root`, or the first real write.
 
-If you already have a saved active registry and run a command inside a different registry folder, `my-skills` uses the current folder for that one run and prints a note to stderr. It does not change your saved active registry.
+If you already have a saved active registry and run a command inside a different registry folder:
+
+- **Read-only and preview commands** (`validate`, `audit`, `status`, `skills`, `data-path`, `share --plan`/`--dry-run`, `sync --check`, and every `--dry-run`) use the current folder for that run and print a note to stderr without changing your saved active registry.
+- **Commands that write** (`install`, `sync`, `enable`, `disable`, `import`, `share`, `uninstall`, `convert`, `bootstrap` without `--dry-run` or `--skip-skill-install`, and `hooks install`/`uninstall`) **refuse with exit code `2`** and write nothing. The error names both registries and the three ways out: run from the active registry, switch permanently with `my-skills set-root <path>`, or set `MY_SKILLS_ROOT=<path>` for one command.
+- Managed Git hooks installed by `my-skills hooks install` export `MY_SKILLS_ROOT` for their own registry; running `my-skills hooks run post-merge|post-rewrite|post-checkout` without `MY_SKILLS_ROOT` inside a non-active clone skips syncing with a warning instead of writing.
 
 To switch your saved active registry permanently:
 
@@ -41,7 +46,7 @@ my-skills set-root /path/to/your/registry
 my-skills doctor
 ```
 
-On a machine with no saved active registry yet, the first command run inside a registry saves that folder automatically so later commands work from anywhere. Dry runs (`--dry-run`) never save or change the active registry; they print what they would remember instead. Run `my-skills doctor` and check the `Registry:` line whenever you want to be sure which registry a command will use.
+On a machine with no saved active registry yet, only the **first real write** from a registry (`install`, `sync`, `enable`, `disable`, `import`, `share`, `uninstall`, `convert`, `bootstrap` unless `--dry-run` or `--skip-skill-install`, or `hooks install`/`uninstall`) saves that folder automatically so later commands work from anywhere. Read-only commands, `sync --check`, every `--dry-run`, and usage errors never write or change the saved active registry; previews print `would remember <path> as the active registry` instead. Run `my-skills doctor` and check the `Registry:` line whenever you want to be sure which registry a command will use.
 
 ## Link or copy
 
@@ -73,9 +78,11 @@ With `--host all`, `convert` skips any host that has an explicit `[targets.<host
 
 `my-skills` avoids silent overwrites and half-finished installs:
 
-- **Dry runs.** Pass `--dry-run` to preview changes without writing anything.
+- **Dry runs.** Pass `--dry-run` to preview changes without writing anything. Both `install --dry-run` and `sync --dry-run` run validation and audit just like the real command, exit `1` only on validation failure, and exit `0` otherwise — even when audit, drift, foreign ownership, missing `--yes`, or an inactive cwd registry would refuse the real run. In text mode, the first stdout line starts with `BLOCKED:` whenever items (`install`/`sync`) or an inactive cwd registry (`install`/`sync`/`uninstall`/`convert`) would refuse the real run, and multi-host previews without `--yes` end with `Re-run with --yes to apply: ...`. Use `sync --check` when you want a non-zero exit code for any out-of-date state.
+- **Dry-run JSON (`install|sync --dry-run --json`).** Emits `actions`, `audit`, `registry` (`{path, source}`), `dry_run`, `blocked`, `applicable` (whether the same command without `--dry-run` would exit `0`, including `--yes` and active-registry checks), `block_reasons` (`[{skill, host, kind, message}]` with kinds `validation`, `audit`, `needs_yes`, `inactive_registry`, or a lowercased block action such as `block_drift` or `block_foreign`), and `validation` (`[{skill, host, ok, errors, warnings}]`). With `--json`, validation warnings stay in JSON and do not print to stderr.
 - **Confirmation for multi-host writes.** Writing to more than one host asks for confirmation: review a dry run, then pass `--yes`. Installing only the built-in starter skills to default host paths is exempt.
 - **Existing folders are never overwritten.** If a host folder already contains an unmanaged directory at the destination path, `my-skills` stops instead of replacing it.
+- **Connections owned by another registry are protected.** A managed connection belongs to the registry whose `skills/` directory contains its recorded `source` path. `sync` silently leaves another registry's connections alone when pruning, `share --plan` recommends `skip` for them, and `install`, `sync`, `convert`, `uninstall`, and `share` refuse to modify or overwrite them.
 - **Locally edited copies are protected.** If you edit a copied skill inside a host folder, `sync` flags it and leaves your edits untouched.
 - **Failed installs roll back.** Each write stages in a temporary folder and swaps into place. If the swap or saving the install state fails, `my-skills` rolls back so you can fix the cause and re-run cleanly.
 
@@ -92,9 +99,10 @@ Install state is stored locally per machine (under `$XDG_STATE_HOME` or `~/.loca
 | `MISSING` | The skill is registered for this host, but not installed yet. |
 | `UNMANAGED` | A folder already exists at the host path with no managed install record. |
 | `BROKEN` | A managed link points to a source skill folder that no longer exists. |
+| `FOREIGN` | A managed connection at this host path belongs to another registry and is left untouched. |
 | `UNSUPPORTED` | The skill's `hosts` list excludes this host. |
 
-When `sync` tries to connect a wanted skill, `DRIFTED`, `CONFLICT`, `UNMANAGED`, and `BROKEN` block that connection and make the command exit non-zero.
+When `install`, `sync`, `convert`, `uninstall`, or `share` acts on a skill, `DRIFTED`, `CONFLICT`, `UNMANAGED`, `BROKEN`, and `FOREIGN` (planned as `BLOCK_FOREIGN`) block that connection and make the real command exit non-zero. During `sync` pruning, connections owned by another registry are silently left alone.
 
 ## Machine-local data and secrets
 

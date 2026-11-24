@@ -7,6 +7,77 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-24
+
+### Added
+
+- `sync --dry-run --json` for machine-readable sync previews (`sync --json`
+  without `--dry-run` exits `2`; `sync --check` takes precedence over
+  `--dry-run` and cannot be combined with `--json`).
+- Structured fields in `install --dry-run --json` and `sync --dry-run --json`:
+  `registry` (`{path, source}`), `dry_run`, `blocked`, `applicable` (whether
+  the same command without `--dry-run` would exit `0`, including `--yes` and
+  active-registry checks), `block_reasons` (`validation`, `audit`, `needs_yes`,
+  `inactive_registry`, or a lowercased block action such as `block_drift` or
+  `block_foreign`), and `validation` (`[{skill, host, ok, errors, warnings}]`),
+  while keeping the existing `actions` and `audit` keys.
+- `registry` (`{path, source}`) metadata in `skills --json` and
+  `share --plan|--dry-run --json`.
+- Cross-registry connection ownership protection (`FOREIGN` status and
+  `BLOCK_FOREIGN` action): connections whose `state.json` record points into
+  another registry's `skills/` directory are never pruned, updated, converted,
+  uninstalled, or overwritten. `sync` silently leaves another registry's
+  connections alone when pruning, and `share --plan` recommends `skip` for
+  foreign-owned host copies.
+- Complete option descriptions across `--help`, plus top-level registry
+  resolution, default host scope, and exit-code rules.
+
+### Changed
+
+- **Deliberate behaviour change — write refusal from a non-active cwd
+  registry:** when the current directory's `my-skills.toml` differs from the
+  saved active registry, real write commands (`install`, `sync`, `enable`,
+  `disable`, `import`, `share`, `uninstall`, `convert`, `bootstrap`, and
+  `hooks install`/`uninstall`) now refuse with exit code `2` instead of writing
+  to the cwd registry. The error names both registries and the three ways out:
+  run from the active registry, run `my-skills set-root <path>`, or set
+  `MY_SKILLS_ROOT=<path>` for one command. Read-only commands still run against
+  the cwd registry with a stderr note.
+- **Deliberate behaviour change — `sync --dry-run` validation and audit
+  parity:** `sync --dry-run` now runs the same validation and audit checks as a
+  real `sync`, and exits `1` when validation fails (matching
+  `install --dry-run`; otherwise `0` even when audit, plan items, `--yes`, or
+  an inactive cwd registry would refuse the real run). Use `sync --check` when
+  you need a non-zero exit code for any out-of-date state.
+- Read-only and preview commands (`validate`, `audit`, `status`, `skills`,
+  `data-path`, `share --plan`/`--dry-run`, `sync --check`, every `--dry-run`,
+  and usage errors) never write the active-registry cache. Only the first real
+  write from a registry — including `bootstrap` (unless `--dry-run` or
+  `--skip-skill-install`) and `hooks install`/`uninstall` — records it.
+- Text dry-runs (`install`, `sync`, `uninstall`, and `convert` with
+  `--dry-run`) print a top-line `BLOCKED:` summary whenever items or an
+  inactive cwd registry would refuse the real run, and end with
+  `Re-run with --yes to apply: ...` when multi-host confirmation is required.
+  With `--json`, validation warnings stay in JSON instead of being printed to
+  stderr.
+- JSON output (`skills --json`, `share --plan|--dry-run --json`, and dry-run
+  JSON) now emits plain UTF-8 instead of `\uXXXX` escapes (roughly 45% smaller
+  for non-ASCII descriptions). Audit `result_hash` fingerprints are unchanged.
+
+### Fixed
+
+- `sync` no longer prunes or overwrites copy or link connections installed by
+  another registry on the same machine, and `sync --check` no longer treats
+  `FOREIGN` records on hosts a skill does not target as drift.
+- `audit.skipped` in dry-run JSON is now `true` only when an audit gate runs
+  with `--skip-audit` (or `[audit] enabled = false`), not when no writes
+  required auditing or validation stopped early; `sync --dry-run --skip-audit`
+  now prints the skipped-audit warning in text output.
+- Windows paths in JSON and CLI output (`doctor`, `skills`, `share`, `audit`,
+  `install`/`sync --dry-run`, `hooks`, stderr notes, manifest errors,
+  `data-path`, and `update --dry-run`) strip the `\\?\` verbatim prefix and use
+  consistent `\` separators.
+
 ## [1.0.3] - 2026-11-24
 
 ### Removed

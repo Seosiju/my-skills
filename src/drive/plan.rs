@@ -4,7 +4,7 @@
 //! Planning reads the filesystem but never writes it. `apply::apply`
 //! executes the plan.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::drive::hash::hash_directory;
 use crate::drive::link::{self, EntryKind};
@@ -23,6 +23,7 @@ pub enum Status {
     Missing,
     Unmanaged,
     Unsupported,
+    Foreign,
 }
 
 impl Status {
@@ -36,6 +37,7 @@ impl Status {
             Status::Missing => "MISSING",
             Status::Unmanaged => "UNMANAGED",
             Status::Unsupported => "UNSUPPORTED",
+            Status::Foreign => "FOREIGN",
         }
     }
 }
@@ -49,6 +51,7 @@ pub enum Action {
     Convert,
     BlockConflict,
     BlockDrift,
+    BlockForeign,
     Conflict,
     SkipUnsupported,
     NotManaged,
@@ -64,6 +67,7 @@ impl Action {
             Action::Convert => "CONVERT",
             Action::BlockConflict => "BLOCK_CONFLICT",
             Action::BlockDrift => "BLOCK_DRIFT",
+            Action::BlockForeign => "BLOCK_FOREIGN",
             Action::Conflict => "CONFLICT",
             Action::SkipUnsupported => "SKIP_UNSUPPORTED",
             Action::NotManaged => "NOT_MANAGED",
@@ -73,7 +77,7 @@ impl Action {
     pub fn is_block(self) -> bool {
         matches!(
             self,
-            Action::BlockConflict | Action::BlockDrift | Action::Conflict
+            Action::BlockConflict | Action::BlockDrift | Action::BlockForeign | Action::Conflict
         )
     }
 
@@ -126,6 +130,18 @@ impl PlanItem {
         self.source_hash = hash;
         self
     }
+
+    fn block_foreign(source: PathBuf, record: &InstallRecord) -> Self {
+        Self::new(
+            &record.skill,
+            &record.host,
+            source,
+            PathBuf::from(&record.destination),
+            Action::BlockForeign,
+            &record.foreign_reason(),
+            record.mode,
+        )
+    }
 }
 
 /// `target.path / skill`.
@@ -154,10 +170,18 @@ pub fn status_of(manifest: &Manifest, skill: &Skill, host: &str, state: &State) 
     if !host_supported(skill, host) {
         return Ok(Status::Unsupported);
     }
+    let record = state.get(&skill.name, host);
+    if record.is_some_and(|record| !record.belongs_to(&manifest.skills_dir())) {
+        return Ok(Status::Foreign);
+    }
     let source = manifest.skill_dir(&skill.name);
     let dest = destination(manifest, host, &skill.name)?;
-    let kind = link::entry_kind(&dest)?;
-    let Some(record) = state.get(&skill.name, host) else {
+    connection_status(&dest, &source, record)
+}
+
+fn connection_status(dest: &Path, source: &Path, record: Option<&InstallRecord>) -> Result<Status> {
+    let kind = link::entry_kind(dest)?;
+    let Some(record) = record else {
         return Ok(if kind == EntryKind::Missing {
             Status::Missing
         } else {
@@ -165,12 +189,12 @@ pub fn status_of(manifest: &Manifest, skill: &Skill, host: &str, state: &State) 
         });
     };
     match record.mode {
-        InstallMode::Link => Ok(link_status(&dest, &source, kind)),
-        InstallMode::Copy => copy_status(&dest, &source, kind, record),
+        InstallMode::Link => Ok(link_status(dest, source, kind)),
+        InstallMode::Copy => copy_status(dest, source, kind, record),
     }
 }
 
-fn link_status(dest: &std::path::Path, source: &std::path::Path, kind: EntryKind) -> Status {
+fn link_status(dest: &Path, source: &Path, kind: EntryKind) -> Status {
     match kind {
         EntryKind::Missing => Status::Missing,
         EntryKind::Link(_) if link::is_managed_link(dest, source) => {
@@ -185,8 +209,8 @@ fn link_status(dest: &std::path::Path, source: &std::path::Path, kind: EntryKind
 }
 
 fn copy_status(
-    dest: &std::path::Path,
-    source: &std::path::Path,
+    dest: &Path,
+    source: &Path,
     kind: EntryKind,
     record: &InstallRecord,
 ) -> Result<Status> {
@@ -237,6 +261,9 @@ pub fn plan_install_one(
             &format!("{host} not in skill.hosts"),
             mode,
         ));
+    }
+    if let Some(record) = record.filter(|record| !record.belongs_to(&manifest.skills_dir())) {
+        return Ok(PlanItem::block_foreign(source, record));
     }
 
     let kind = link::entry_kind(&dest)?;
@@ -316,6 +343,9 @@ pub fn plan_uninstall_one(
             InstallMode::Link,
         ));
     };
+    if !record.belongs_to(&manifest.skills_dir()) {
+        return Ok(PlanItem::block_foreign(source, record));
+    }
     let dest = PathBuf::from(&record.destination);
     let kind = link::entry_kind(&dest)?;
     let item = |action, reason: &str| {
@@ -380,26 +410,46 @@ pub fn plan_sync(
             if wants(manifest, skill, host) {
                 items.push(plan_install_one(manifest, skill, host, state, host_mode)?);
             } else if scope.prune && state.get(&skill.name, host).is_some() {
-                let mut item = plan_uninstall_one(manifest, &skill.name, host, state)?;
-                if item.action == Action::Remove {
-                    item.reason = format!("{} (no longer wanted)", item.reason);
-                }
-                items.push(item);
+                items.extend(plan_prune(
+                    manifest,
+                    &skill.name,
+                    host,
+                    state,
+                    "no longer wanted",
+                )?);
             }
         }
         if scope.prune && scope.include_orphans {
             for record in state.records() {
                 if &record.host == host && !manifest.skills.contains_key(&record.skill) {
-                    let mut item = plan_uninstall_one(manifest, &record.skill, host, state)?;
-                    if item.action == Action::Remove {
-                        item.reason = format!("{} (skill no longer registered)", item.reason);
-                    }
-                    items.push(item);
+                    items.extend(plan_prune(
+                        manifest,
+                        &record.skill,
+                        host,
+                        state,
+                        "skill no longer registered",
+                    )?);
                 }
             }
         }
     }
     Ok(items)
+}
+
+fn plan_prune(
+    manifest: &Manifest,
+    skill: &str,
+    host: &str,
+    state: &State,
+    reason: &str,
+) -> Result<Option<PlanItem>> {
+    let mut item = plan_uninstall_one(manifest, skill, host, state)?;
+    match item.action {
+        Action::BlockForeign => return Ok(None),
+        Action::Remove => item.reason = format!("{} ({reason})", item.reason),
+        _ => {}
+    }
+    Ok(Some(item))
 }
 
 /// Partition hosts for `convert --to <mode>`.
@@ -449,9 +499,17 @@ pub fn plan_convert(
                 continue;
             };
             let source = manifest.skill_dir(&skill.name);
+            if !record.belongs_to(&manifest.skills_dir()) {
+                items.push(PlanItem::block_foreign(source, record));
+                continue;
+            }
             let dest = PathBuf::from(&record.destination);
             let expected = destination(manifest, host, &skill.name)?;
-            let status = status_of(manifest, skill, host, state)?;
+            let status = if host_supported(skill, host) {
+                connection_status(&expected, &source, Some(record))?
+            } else {
+                Status::Unsupported
+            };
             let item = |action, reason: &str| {
                 PlanItem::new(
                     &skill.name,
@@ -466,7 +524,7 @@ pub fn plan_convert(
             let planned = if record.mode == to {
                 item(Action::Noop, "already in the requested mode")
             } else if dest != expected {
-                // status_of judged the manifest's current path; converting a
+                // connection_status judged the manifest's current path; converting a
                 // connection recorded elsewhere would act on a different entry.
                 item(
                     Action::BlockDrift,

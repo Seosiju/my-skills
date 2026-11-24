@@ -143,8 +143,12 @@ pub struct CliOverrides {
 /// default. Disabled targets without a path or built-in default are omitted.
 pub fn load_manifest(root: &Path, cli: &CliOverrides) -> Result<Manifest> {
     let main_path = root.join(MANIFEST_FILE);
-    let main = read_table(&main_path)?
-        .ok_or_else(|| Error::Manifest(format!("manifest not found: {}", main_path.display())))?;
+    let main = read_table(&main_path)?.ok_or_else(|| {
+        Error::Manifest(format!(
+            "manifest not found: {}",
+            paths::display_path(&main_path)
+        ))
+    })?;
     let local_path = root.join(LOCAL_MANIFEST_FILE);
     let local = read_table(&local_path)?.unwrap_or_default();
 
@@ -173,7 +177,7 @@ pub fn load_manifest(root: &Path, cli: &CliOverrides) -> Result<Manifest> {
             _ => {
                 return Err(Error::Manifest(format!(
                     "invalid install_mode in {}: {value}; expected \"link\" or \"copy\"",
-                    path.display(),
+                    paths::display_path(path),
                 )));
             }
         };
@@ -227,15 +231,18 @@ fn read_table(path: &Path) -> Result<Option<Table>> {
         Err(error) => return Err(Error::io(path, error)),
     }
     let contents = fs::read_to_string(path).map_err(|error| match error.kind() {
-        ErrorKind::InvalidData => {
-            Error::Manifest(format!("invalid TOML in {}: {error}", path.display()))
-        }
+        ErrorKind::InvalidData => Error::Manifest(format!(
+            "invalid TOML in {}: {error}",
+            paths::display_path(path)
+        )),
         _ => Error::io(path, error),
     })?;
-    contents
-        .parse()
-        .map(Some)
-        .map_err(|error| Error::Manifest(format!("invalid TOML in {}: {error}", path.display())))
+    contents.parse().map(Some).map_err(|error| {
+        Error::Manifest(format!(
+            "invalid TOML in {}: {error}",
+            paths::display_path(path)
+        ))
+    })
 }
 
 struct Layers<'a> {
@@ -346,7 +353,7 @@ fn resolve_targets(
                 _ => {
                     return Err(Error::Manifest(format!(
                         "invalid install_mode for target '{name}' in {}: {value}; expected \"link\" or \"copy\"",
-                        path.display(),
+                        paths::display_path(path),
                     )));
                 }
             }),

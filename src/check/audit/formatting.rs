@@ -62,7 +62,8 @@ pub fn finding_json(finding: &AuditFinding) -> Value {
 pub fn result_json(result: &AuditResult) -> Value {
     json!({
         "skill": result.skill,
-        "path": result.root.to_string_lossy(),
+        // Display only; the result_hash input above never includes the path.
+        "path": crate::platform::paths::display_path(&result.root),
         "profile": result.profile,
         "threshold": threshold_label(result.threshold),
         "blocked": result.blocked(),

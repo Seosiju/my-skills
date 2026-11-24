@@ -2,12 +2,14 @@
 
 use std::process::ExitCode;
 
+use serde::Serialize;
+
 use crate::check::audit::format_gate;
 use crate::cli::*;
 use crate::drive::state::State;
 use crate::registry::catalog::{self, display_path, json_output};
 use crate::registry::edit;
-use crate::registry::manifest::{CliOverrides, MANIFEST_FILE, Manifest};
+use crate::registry::manifest::{self, CliOverrides, MANIFEST_FILE, Manifest};
 use crate::registry::seeds::{self, Scaffold};
 use crate::registry::share::{self, Failure};
 use crate::{Error, Result, registry::root};
@@ -57,7 +59,7 @@ pub fn init_registry(args: &InitRegistryArgs) -> ExitCode {
 
 pub fn skills(args: &SkillsArgs) -> ExitCode {
     let result = (|| {
-        let manifest = load()?;
+        let (manifest, resolution) = load_resolved(false)?;
         let state = State::load(None)?;
         let host = args.host.as_deref();
         if let Some(host) = host.filter(|host| !manifest.targets.contains_key(*host)) {
@@ -74,7 +76,7 @@ pub fn skills(args: &SkillsArgs) -> ExitCode {
         };
         let rows = catalog::rows(&manifest, &state, host, enabled, &hosts, args.with_status)?;
         Ok(if args.json {
-            json_output(&rows)
+            json_with_registry(rows, &resolution)
         } else {
             rows.table(&hosts)
         })
@@ -89,15 +91,17 @@ pub fn skills(args: &SkillsArgs) -> ExitCode {
 }
 
 pub fn share(args: &ShareArgs) -> ExitCode {
-    let (manifest, resolution) = match load_resolved(!args.dry_run) {
+    let preview = args.plan || args.dry_run;
+    let write = !preview && args.skill.is_some() && args.enable != args.disable;
+    let (manifest, resolution) = match load_resolved(write) {
         Ok(loaded) => loaded,
         Err(err) => return super::config_error(err),
     };
-    if args.plan || args.dry_run {
+    if preview {
         return match share::plan_share(&manifest, &args.from_host) {
             Ok(plan) => {
                 let output = if args.json {
-                    json_output(&plan)
+                    json_with_registry(plan, &resolution)
                 } else {
                     plan.table()
                 };
@@ -193,11 +197,23 @@ fn set_enabled(name: &str, enabled: bool, dry_run: bool) -> ExitCode {
         super::print_would_cache_root(&resolution);
         return ExitCode::SUCCESS;
     }
-    let result = load().and_then(|manifest| {
+    let result = (|| {
+        let resolution = root::resolve_root(None, false)?;
+        if let Some(refusal) = resolution.write_refusal() {
+            return Err(Error::Manifest(refusal));
+        }
+        let manifest = manifest::load_manifest(&resolution.root, &CliOverrides::default())?;
+        if !manifest.skills.contains_key(name) {
+            return Err(Error::Manifest(format!("unknown skill: {name}")));
+        }
         let path = manifest.root.join(MANIFEST_FILE);
         share::ensure_outside_hosts(&path, share::target_paths(&manifest))?;
-        edit::set_skill_enabled(&path, name, enabled)
-    });
+        let edit = edit::prepare_enabled(&path, name, enabled)?;
+        if resolution.would_cache() {
+            root::resolve_root(None, true)?;
+        }
+        edit.commit()
+    })();
     if let Err(err) = result {
         return super::config_error(err);
     }
@@ -287,8 +303,18 @@ pub fn import(args: &ImportArgs) -> ExitCode {
     }
 }
 
-fn load() -> Result<Manifest> {
-    root::load_manifest_from_cwd(&CliOverrides::default())
+fn json_with_registry(output: impl Serialize, resolution: &root::RootResolution) -> String {
+    #[derive(Serialize)]
+    struct WithRegistry<T> {
+        #[serde(flatten)]
+        output: T,
+        registry: root::RegistryMeta,
+    }
+
+    json_output(&WithRegistry {
+        output,
+        registry: resolution.meta(),
+    })
 }
 
 fn load_resolved(write_cache: bool) -> Result<(Manifest, root::RootResolution)> {

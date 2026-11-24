@@ -105,6 +105,7 @@ pub(crate) fn plan_share(manifest: &Manifest, host: &str) -> Result<SharePlan> {
         })
         .collect::<Result<Vec<_>>>()?;
     children.sort();
+    let state = State::load(None)?;
     let mut candidates = Vec::new();
     for source in children {
         match entry_kind(&source)? {
@@ -116,7 +117,7 @@ pub(crate) fn plan_share(manifest: &Manifest, host: &str) -> Result<SharePlan> {
                 ) => {}
             _ => continue,
         }
-        candidates.push(plan_candidate(manifest, &source, &policy)?);
+        candidates.push(plan_candidate(manifest, host, &source, &policy, &state)?);
     }
     Ok(SharePlan {
         from_host: host.into(),
@@ -125,8 +126,14 @@ pub(crate) fn plan_share(manifest: &Manifest, host: &str) -> Result<SharePlan> {
     })
 }
 
-fn plan_candidate(manifest: &Manifest, source: &Path, policy: &AuditPolicy) -> Result<Candidate> {
-    let (name, description, hash, risks) = match open_source(source) {
+fn plan_candidate(
+    manifest: &Manifest,
+    host: &str,
+    source: &Path,
+    policy: &AuditPolicy,
+    state: &State,
+) -> Result<Candidate> {
+    let (name, description, hash, mut risks) = match open_source(source) {
         Ok(dir) => match visit(&dir, source, Path::new(""), None) {
             Ok(()) => {
                 let (name, description) = candidate_metadata(source);
@@ -141,6 +148,9 @@ fn plan_candidate(manifest: &Manifest, source: &Path, policy: &AuditPolicy) -> R
         },
         Err(failure) => unsafe_candidate(source, failure)?,
     };
+    if let Some(reason) = foreign_record_reason(manifest, state, &name, host) {
+        risks.push(Risk::error(reason));
+    }
     // Invalid frontmatter may propose a path outside the registry.
     let dest_name = if validate_name(&name).is_empty() {
         &name
@@ -166,6 +176,18 @@ fn plan_candidate(manifest: &Manifest, source: &Path, policy: &AuditPolicy) -> R
         choices,
         recommended,
     })
+}
+
+fn foreign_record_reason(
+    manifest: &Manifest,
+    state: &State,
+    name: &str,
+    host: &str,
+) -> Option<String> {
+    state
+        .get(name, host)
+        .filter(|record| !record.belongs_to(&manifest.skills_dir()))
+        .map(InstallRecord::foreign_reason)
 }
 
 fn unsafe_candidate(
@@ -366,6 +388,9 @@ pub(crate) fn share(
     force: bool,
     skip_audit: bool,
 ) -> Operation<ShareOutcome> {
+    if let Some(reason) = foreign_record_reason(manifest, state, skill, host) {
+        return Err(Failure::Blocked(format!("{skill}: {reason}")));
+    }
     let root = host_root(manifest, host)?;
     let path = Path::new(skill);
     if path.components().count() != 1 || path.file_name() != Some(path.as_os_str()) {
@@ -425,6 +450,9 @@ pub(crate) fn share(
     // State was initially loaded for the CLI's error ordering. Refresh it
     // with the manifest lock held so another share's adoption is retained.
     *state = State::load(Some(&state.path))?;
+    if let Some(reason) = foreign_record_reason(manifest, state, &name, host) {
+        return Err(Failure::Blocked(format!("{name}: {reason}")));
+    }
     let now = utc_now();
     state.put(InstallRecord {
         skill: name.clone(),

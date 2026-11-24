@@ -225,14 +225,13 @@ fn repo_manifest_supports_read_only_cli_commands() {
     }
     assert_dir_entries(&config, &[]);
 
-    // First-run CWD discovery during catalog loading records the active root.
-    assert_eq!(cli_stdout(&mut by_cwd(), &["skills", "--json"]), catalog);
-    assert_dir_entries(&config, &["my-skills"]);
-    assert_dir_entries(&config.join("my-skills"), &["root"]);
-    assert_eq!(
-        fs::read_to_string(config.join("my-skills/root")).unwrap(),
-        format!("{}\n", registry.display())
-    );
+    // First-run CWD discovery during catalog loading leaves the config empty.
+    let cwd_catalog = cli_stdout(&mut by_cwd(), &["skills", "--json"]);
+    let cwd_json: Value = serde_json::from_str(&cwd_catalog).unwrap();
+    assert_eq!(cwd_json["skills"], json["skills"]);
+    assert_eq!(cwd_json["registry"]["path"], displayed_registry);
+    assert_eq!(cwd_json["registry"]["source"], "cwd");
+    assert_dir_entries(&config, &[]);
     for dir in [
         "home",
         "xdg-state",

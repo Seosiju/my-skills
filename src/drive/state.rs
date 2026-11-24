@@ -8,12 +8,13 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write as _};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::drive::link::LinkKind;
+use crate::platform::paths;
 use crate::registry::manifest::InstallMode;
 use crate::{Error, Result};
 
@@ -70,6 +71,63 @@ impl InstallRecord {
     pub fn key(&self) -> (String, String) {
         (self.skill.clone(), self.host.clone())
     }
+
+    pub(crate) fn belongs_to(&self, skills_root: &Path) -> bool {
+        source_is_within(Path::new(&self.source), skills_root)
+    }
+
+    pub(crate) fn foreign_reason(&self) -> String {
+        format!(
+            "connection belongs to another registry ({})",
+            paths::display_path(Path::new(&self.source))
+        )
+    }
+}
+
+/// A record's source is always `<skills root>/<name>`. Compare its parent,
+/// not the source itself, so a skill directory that is a symlink into a
+/// checkout elsewhere still belongs to the registry that lists it.
+fn source_is_within(source: &Path, skills_root: &Path) -> bool {
+    let Some(parent) = lexical_path(source).parent().map(Path::to_path_buf) else {
+        return false;
+    };
+    ownership_path(&parent) == ownership_path(skills_root)
+}
+
+fn ownership_path(path: &Path) -> PathBuf {
+    // A missing skill can still have a symlinked registry or skills root.
+    // Resolve its existing ancestors before folding the missing suffix.
+    let canonical = path.ancestors().find_map(|ancestor| {
+        let canonical = fs::canonicalize(ancestor).ok()?;
+        let suffix = path.strip_prefix(ancestor).ok()?;
+        Some(canonical.join(suffix))
+    });
+    lexical_path(canonical.as_deref().unwrap_or(path))
+}
+
+fn lexical_path(path: &Path) -> PathBuf {
+    #[cfg(windows)]
+    let text = paths::display_path(path).to_lowercase();
+    #[cfg(windows)]
+    let path = Path::new(&text);
+
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir
+                if matches!(
+                    normalized.components().next_back(),
+                    Some(Component::Normal(_))
+                ) =>
+            {
+                normalized.pop();
+            }
+            Component::ParentDir if normalized.has_root() => {}
+            _ => normalized.push(component.as_os_str()),
+        }
+    }
+    normalized
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,9 +144,7 @@ struct StateFile<'a> {
 
 /// `paths::state_home()/my-skills/state.json`.
 pub fn default_state_path() -> PathBuf {
-    crate::platform::paths::state_home()
-        .join("my-skills")
-        .join("state.json")
+    paths::state_home().join("my-skills").join("state.json")
 }
 
 impl State {
@@ -259,4 +315,86 @@ fn python_json_bytes(json: &str) -> String {
     }
     escaped.push('\n');
     escaped
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ownership_includes_missing_skills_but_excludes_siblings() {
+        let temp = tempfile::tempdir().unwrap();
+        let skills = temp.path().join("skills");
+        fs::create_dir(&skills).unwrap();
+        let missing = skills.join("unused/../alpha");
+
+        assert!(source_is_within(&missing, &skills));
+        assert!(!source_is_within(&skills, &skills));
+        assert!(!source_is_within(
+            &temp.path().join("skills-old/alpha"),
+            &skills,
+        ));
+        assert!(!source_is_within(&skills.join("../alpha"), &skills));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn ownership_matches_verbatim_windows_paths_case_insensitively() {
+        let temp = tempfile::tempdir().unwrap();
+        let skills = temp.path().join("skills");
+        fs::create_dir(&skills).unwrap();
+        let canonical = skills.canonicalize().unwrap();
+        let source = canonical.join("ALPHA");
+        let plain = paths::display_path(&canonical).to_uppercase();
+
+        assert!(source.to_string_lossy().starts_with(r"\\?\"));
+        assert!(!source.exists());
+        assert!(source_is_within(&source, Path::new(&plain)));
+        assert_eq!(
+            lexical_path(Path::new(r"\\?\UNC\SERVER\SHARE\Skills\Alpha")),
+            lexical_path(Path::new(r"\\server\share\skills\alpha")),
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ownership_resolves_symlinks_in_existing_ancestors() {
+        let temp = tempfile::tempdir().unwrap();
+        let skills = temp.path().join("skills");
+        let outside = temp.path().join("outside");
+        let alias = temp.path().join("alias");
+        fs::create_dir(&skills).unwrap();
+        fs::create_dir(&outside).unwrap();
+        std::os::unix::fs::symlink(&skills, &alias).unwrap();
+        std::os::unix::fs::symlink(&outside, skills.join("escape")).unwrap();
+
+        assert!(source_is_within(&alias.join("missing"), &skills));
+        assert!(!source_is_within(&skills.join("escape/missing"), &skills));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ownership_keeps_a_symlinked_skill_dir_in_its_registry() {
+        let temp = tempfile::tempdir().unwrap();
+        let skills = temp.path().join("skills");
+        let checkout = temp.path().join("checkout");
+        fs::create_dir(&skills).unwrap();
+        fs::create_dir(&checkout).unwrap();
+        std::os::unix::fs::symlink(&checkout, skills.join("alpha")).unwrap();
+
+        assert!(source_is_within(&skills.join("alpha"), &skills));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn ownership_keeps_a_junctioned_skill_dir_in_its_registry() {
+        let temp = tempfile::tempdir().unwrap();
+        let skills = temp.path().join("skills");
+        let checkout = temp.path().join("checkout");
+        fs::create_dir(&skills).unwrap();
+        fs::create_dir(&checkout).unwrap();
+        junction::create(&checkout, skills.join("alpha")).unwrap();
+
+        assert!(source_is_within(&skills.join("alpha"), &skills));
+    }
 }

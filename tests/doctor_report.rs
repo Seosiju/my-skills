@@ -59,14 +59,9 @@ fn test_doctor_reports_registry_source_version_state_and_data() {
         "Skills:   2 registered, 1 enabled".to_owned(),
         format!(
             "State:    {}",
-            fixture
-                .base
-                .join("xdg-state")
-                .join("my-skills")
-                .join("state.json")
-                .display()
+            paths::display_path(&fixture.base.join("xdg-state/my-skills/state.json"))
         ),
-        format!("Data:     {}", data.display()),
+        format!("Data:     {}", paths::display_path(&data)),
         "Manifest: valid".to_owned(),
     ] {
         assert!(
@@ -177,7 +172,7 @@ fn test_doctor_agy_detection_and_default_activation() {
                 Path::new(".gemini/config/skills")
             };
             assert!(
-                line.ends_with(&fixture.base.join("home").join(path).display().to_string()),
+                line.ends_with(&paths::display_path(&fixture.base.join("home").join(path))),
                 "{line}"
             );
         }
@@ -235,7 +230,7 @@ fn invalid_manifest_reports_failure_but_keeps_the_resolved_registry() {
     let report = parse(&result);
     assert_eq!(
         report["registry"]["path"],
-        json!(fixture.registry.canonicalize().unwrap())
+        paths::display_path(&fixture.registry.canonicalize().unwrap())
     );
     assert_eq!(report["registry"]["source"], "env");
     assert_eq!(report["manifest"]["status"], "invalid");

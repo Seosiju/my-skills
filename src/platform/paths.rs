@@ -64,13 +64,13 @@ pub fn strip_verbatim_prefix(text: &str) -> String {
     text.to_owned()
 }
 
-/// Keep Windows verbatim prefixes for filesystem calls and omit them in
-/// user-facing paths, as pathlib does for normally spelled absolute paths.
+/// Show Windows paths with native separators and without verbatim prefixes.
+/// Filesystem calls still use the original paths.
 pub fn display_path(path: &Path) -> String {
     let text = path.to_string_lossy();
     #[cfg(windows)]
     {
-        strip_verbatim_prefix(&text)
+        strip_verbatim_prefix(&text.replace('/', "\\"))
     }
     #[cfg(not(windows))]
     {
