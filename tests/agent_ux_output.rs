@@ -6,6 +6,7 @@ use std::process::Command;
 
 use assert_cmd::{assert::Assert, prelude::*};
 use my_skills::platform::paths;
+use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use serde_json::Value;
 use support_g::{Fixture, MANIFEST};
@@ -312,4 +313,226 @@ fn sync_check_does_not_cache_a_registry_discovered_from_cwd() {
         .code(1)
         .stdout(contains("MISSING"));
     assert!(!fixture.base.join("xdg-config").exists());
+}
+
+fn with_different_active_registry() -> Fixture {
+    let fixture = registry(false);
+    let active = fixture.base.join("active");
+    fs::create_dir(&active).unwrap();
+    fs::write(active.join("my-skills.toml"), MANIFEST).unwrap();
+    fixture.cache(&active);
+    fixture
+}
+
+#[test]
+fn inactive_registry_blocks_install_and_sync_json_plans() {
+    let fixture = with_different_active_registry();
+    for command in ["install", "sync"] {
+        let real = fixture
+            .command()
+            .env_remove("MY_SKILLS_ROOT")
+            .args([command, "--yes"])
+            .assert()
+            .code(2)
+            .stderr(contains("refusing to write to cwd registry"));
+        let stderr = std::str::from_utf8(&real.get_output().stderr).unwrap();
+        let message = stderr.trim().strip_prefix("error: ").unwrap();
+        let out = dry_run(&fixture, command)
+            .env_remove("MY_SKILLS_ROOT")
+            .args(["--json", "--yes"])
+            .assert()
+            .success();
+        let plan = json(&out);
+        assert_eq!(plan["blocked"], true, "{command}: {plan}");
+        assert_eq!(plan["applicable"], false);
+        assert_eq!(
+            plan["block_reasons"],
+            serde_json::json!([{
+                "skill": null,
+                "host": null,
+                "kind": "inactive_registry",
+                "message": message,
+            }])
+        );
+        assert_eq!(plan["actions"][0]["action"], "CREATE");
+    }
+    assert!(!fixture.base.join("hosts").exists());
+}
+
+#[test]
+fn inactive_registry_refusal_starts_each_text_plan() {
+    let fixture = with_different_active_registry();
+    let mut first_lines = Vec::new();
+    for args in [
+        &["install", "--dry-run"][..],
+        &["sync", "--dry-run"][..],
+        &["uninstall", "example", "--dry-run"][..],
+        &["convert", "--to", "link", "--dry-run"][..],
+    ] {
+        let out = fixture
+            .command()
+            .env_remove("MY_SKILLS_ROOT")
+            .args(args)
+            .assert()
+            .success()
+            .stdout(contains("planned actions"));
+        first_lines.push(stdout(&out).lines().next().unwrap().to_owned());
+    }
+    assert!(
+        first_lines
+            .iter()
+            .all(|line| line.starts_with("BLOCKED: refusing to write to cwd registry ")),
+        "{first_lines:?}"
+    );
+
+    write_skill(&fixture, &"x".repeat(800), "Example body.");
+    for command in ["install", "sync"] {
+        let out = dry_run(&fixture, command)
+            .env_remove("MY_SKILLS_ROOT")
+            .assert()
+            .code(1);
+        let mut lines = stdout(&out).lines();
+        assert_eq!(lines.next().unwrap(), first_lines[0]);
+        assert_eq!(
+            lines.next().unwrap(),
+            "BLOCKED: 1 item(s) would be refused (validation 1, audit 0, plan 0)"
+        );
+    }
+}
+
+#[test]
+fn sync_check_wins_over_dry_run() {
+    let fixture = registry(false);
+    let check = fixture.command().args(["sync", "--check"]).assert().code(1);
+    let combined = fixture
+        .command()
+        .args(["sync", "--check", "--dry-run"])
+        .assert()
+        .code(1);
+    assert_eq!(stdout(&combined), stdout(&check));
+    assert!(stdout(&combined).contains("MISSING"));
+}
+
+#[test]
+fn sync_json_conflicts_with_check_even_with_dry_run() {
+    let fixture = registry(false);
+    for extra in [&["--dry-run"][..], &[][..]] {
+        fixture
+            .command()
+            .args(["sync", "--check", "--json"])
+            .args(extra)
+            .assert()
+            .code(2)
+            .stderr(contains(
+                "sync --json is not supported with --check; use --dry-run --json",
+            ));
+    }
+}
+
+#[test]
+fn connect_usage_errors_leave_empty_config_home_alone() {
+    let mut cached = Vec::new();
+    for (args, error) in [
+        (
+            &["install", "--json"][..],
+            "install --json requires --dry-run",
+        ),
+        (&["uninstall"][..], "uninstall requires a skill name"),
+        (&["sync", "--json"][..], "sync --json requires --dry-run"),
+        (&["install", "absent"][..], "unknown skill"),
+        (&["sync", "absent"][..], "unknown skill"),
+        (&["convert", "absent", "--to", "link"][..], "unknown skill"),
+        (
+            &["uninstall", "example", "--host", "absent"][..],
+            "unknown host",
+        ),
+        (&["bootstrap", "--host", "absent"][..], "unknown host"),
+    ] {
+        let fixture = registry(false);
+        fixture
+            .command()
+            .env_remove("MY_SKILLS_ROOT")
+            .args(args)
+            .assert()
+            .code(2)
+            .stderr(contains(error));
+        if fixture.base.join("xdg-config").exists() {
+            cached.push(args);
+        }
+    }
+    assert!(
+        cached.is_empty(),
+        "usage errors created a cache: {cached:?}"
+    );
+}
+
+#[test]
+fn previews_report_an_empty_audit_when_it_did_not_run() {
+    let fixture = registry(false);
+    fixture.command().arg("sync").assert().success();
+    let expected = serde_json::json!({"blocked": false, "skills": [], "skipped": false});
+    let noop = json(&dry_run(&fixture, "sync").arg("--json").assert().success());
+    assert_eq!(noop["audit"], expected);
+
+    write_skill(&fixture, &"x".repeat(800), "Example body.");
+    for command in ["install", "sync"] {
+        let rejected = json(&dry_run(&fixture, command).arg("--json").assert().code(1));
+        assert_eq!(rejected["audit"], expected, "{command}");
+    }
+}
+
+#[test]
+fn sync_preview_reports_an_explicit_skip_audit() {
+    let fixture = registry(false);
+    dry_run(&fixture, "sync")
+        .arg("--skip-audit")
+        .assert()
+        .success()
+        .stdout(contains("WARN: audit skipped by explicit --skip-audit"));
+    let plan = json(
+        &dry_run(&fixture, "sync")
+            .args(["--json", "--skip-audit"])
+            .assert()
+            .success(),
+    );
+    assert_eq!(
+        plan["audit"],
+        serde_json::json!({"blocked": false, "skills": [], "skipped": true})
+    );
+}
+
+#[test]
+fn multi_host_confirmation_is_the_last_line_of_text_plans() {
+    let fixture = registry(true);
+    let expected =
+        "Re-run with --yes to apply: this command writes to multiple hosts (claude, codex).";
+    let mut last_lines = Vec::new();
+    for args in [
+        &["install", "--dry-run"][..],
+        &["sync", "--dry-run"][..],
+        &["uninstall", "example", "--dry-run"][..],
+        &["convert", "--to", "link", "--dry-run"][..],
+    ] {
+        let out = fixture
+            .command()
+            .env_remove("MY_SKILLS_ROOT")
+            .args(args)
+            .assert()
+            .success()
+            .stdout(contains("as the active registry"));
+        assert!(!stdout(&out).starts_with("BLOCKED:"));
+        last_lines.push(stdout(&out).lines().last().unwrap().to_owned());
+        fixture
+            .command()
+            .args(args)
+            .arg("--yes")
+            .assert()
+            .success()
+            .stdout(contains(expected).not());
+    }
+    assert_eq!(last_lines, [expected; 4]);
+
+    fixture.command().args(["sync", "--yes"]).assert().success();
+    let noop = dry_run(&fixture, "sync").assert().success();
+    assert!(!stdout(&noop).contains(expected));
 }
