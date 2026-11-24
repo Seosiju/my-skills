@@ -279,6 +279,34 @@ fn raw_index_blobs_ignore_worktree_attributes_and_checkout_filters() {
 }
 
 #[test]
+fn pre_commit_checks_the_signature_of_staged_binary_assets() {
+    let fixture = Fixture::isolated();
+    fixture.init();
+    fixture.write("skills/example/SKILL.md", &skill("example"));
+    let path = "skills/example/pixel.png";
+    let png = include_bytes!("fixtures/binary-assets/pixel.png");
+    fs::write(fixture.registry.join(path), png).unwrap();
+    fixture.git(&["add", "."]);
+    fixture
+        .command()
+        .args(["hooks", "run", "pre-commit"])
+        .assert()
+        .success();
+
+    fs::write(fixture.registry.join(path), b"not PNG\0").unwrap();
+    fixture.git(&["add", "--", path]);
+    fs::write(fixture.registry.join(path), png).unwrap();
+    fixture
+        .command()
+        .args(["hooks", "run", "pre-commit"])
+        .assert()
+        .code(1)
+        .stderr(contains(
+            "[BLOCKED] example: security: pixel.png: file contains a NUL byte",
+        ));
+}
+
+#[test]
 fn pre_commit_validates_staged_manifest_layout_host_limits_and_audit() {
     let fixture = Fixture::isolated();
     fixture.init();
