@@ -197,13 +197,26 @@ pub(crate) fn apply_prepared(
     audit: Option<&AuditMeta>,
     prepared: Option<&PreparedConnection>,
 ) -> Result<Applied> {
+    apply_prepared_group(item, &[], state, audit, prepared)
+}
+
+pub(crate) fn apply_prepared_group(
+    item: &PlanItem,
+    aliases: &[&PlanItem],
+    state: &mut State,
+    audit: Option<&AuditMeta>,
+    prepared: Option<&PreparedConnection>,
+) -> Result<Applied> {
     let dest = &item.destination;
+    let targets = std::iter::once(item).chain(aliases.iter().copied());
     match (item.action, prepared) {
         (Action::Create, Some(PreparedConnection::Link { entry, kind, .. })) => {
             let connection = Connection::Link(*kind);
-            let record = record_for(item, &connection, hash_directory(&item.source)?, audit);
-            replace_entry(entry, dest, EntryKind::Missing, || {
-                commit_record(state, record).map_err(|err| Error::StateSave(Box::new(err)))
+            let hash = hash_directory(&item.source)?;
+            let records =
+                targets.map(|target| record_for(target, &connection, hash.clone(), audit));
+            replace_entry(entry, dest, EntryKind::Missing, None, || {
+                commit_records(state, records).map_err(|err| Error::StateSave(Box::new(err)))
             })?;
             Ok(Applied::new(Outcome::Created(connection), None))
         }
@@ -214,7 +227,8 @@ pub(crate) fn apply_prepared(
                 connection,
             }),
         ) => {
-            let record = record_for(item, connection, snapshot.hash.clone(), audit);
+            let records =
+                targets.map(|target| record_for(target, connection, snapshot.hash.clone(), audit));
             let stage = stage_near(dest)?;
             let entry = stage.path().join(&item.skill);
             copy_tree(&snapshot.path, &entry)?;
@@ -233,8 +247,9 @@ pub(crate) fn apply_prepared(
                 }
                 _ => unreachable!("only copy writes have a snapshot"),
             };
-            let warning = replace_entry(&entry, dest, expected, || {
-                let result = commit_record(state, record);
+            let digest = installed_copy_hash(item, state, expected);
+            let warning = replace_entry(&entry, dest, expected, digest.as_deref(), || {
+                let result = commit_records(state, records);
                 if item.action == Action::Convert {
                     result
                 } else {
@@ -245,7 +260,7 @@ pub(crate) fn apply_prepared(
         }
         (Action::Remove, _) => remove(item, state),
         (Action::Convert, None) if item.mode == InstallMode::Link => {
-            convert_copy_to_link(item, state, audit)
+            convert_copy_to_link(item, aliases, state, audit)
         }
         (action, _) if action.writes() => Err(Error::Refused("connection was not prepared".into())),
         _ => Ok(Applied::new(Outcome::Unchanged, None)),
@@ -274,6 +289,7 @@ fn remove(item: &PlanItem, state: &mut State) -> Result<Applied> {
 
 fn convert_copy_to_link(
     item: &PlanItem,
+    aliases: &[&PlanItem],
     state: &mut State,
     audit: Option<&AuditMeta>,
 ) -> Result<Applied> {
@@ -284,9 +300,13 @@ fn convert_copy_to_link(
     match link::create_link(&entry, &canonical)? {
         Created::Link(kind) => {
             let connection = Connection::Link(kind);
-            let record = record_for(item, &connection, hash_directory(&item.source)?, audit);
-            let warning = replace_entry(&entry, dest, EntryKind::Dir, || {
-                commit_record(state, record)
+            let hash = hash_directory(&item.source)?;
+            let records = std::iter::once(item)
+                .chain(aliases.iter().copied())
+                .map(|target| record_for(target, &connection, hash.clone(), audit));
+            let digest = installed_copy_hash(item, state, EntryKind::Dir);
+            let warning = replace_entry(&entry, dest, EntryKind::Dir, digest.as_deref(), || {
+                commit_records(state, records)
             })?;
             Ok(Applied::new(Outcome::Converted(connection), warning))
         }
@@ -297,8 +317,25 @@ fn convert_copy_to_link(
     }
 }
 
-fn commit_record(state: &mut State, record: InstallRecord) -> Result<()> {
-    commit_record_change(state, record.key(), Some(record))
+fn installed_copy_hash(item: &PlanItem, state: &State, expected: EntryKind) -> Option<String> {
+    if expected != EntryKind::Dir {
+        return None;
+    }
+    state
+        .get(&item.skill, &item.host)
+        .map(|record| record.installed_hash.clone())
+}
+
+fn commit_records(
+    state: &mut State,
+    records: impl IntoIterator<Item = InstallRecord>,
+) -> Result<()> {
+    commit_record_changes(
+        state,
+        records
+            .into_iter()
+            .map(|record| (record.key(), Some(record))),
+    )
 }
 
 /// Save a record change and restore the previous record in memory if it fails.
@@ -307,15 +344,30 @@ fn commit_record_change(
     key: (String, String),
     record: Option<InstallRecord>,
 ) -> Result<()> {
-    let previous = match record {
-        Some(record) => state.installs.insert(key.clone(), record),
-        None => state.installs.remove(&key),
-    };
+    commit_record_changes(state, [(key, record)])
+}
+
+fn commit_record_changes(
+    state: &mut State,
+    changes: impl IntoIterator<Item = ((String, String), Option<InstallRecord>)>,
+) -> Result<()> {
+    let previous: Vec<_> = changes
+        .into_iter()
+        .map(|(key, record)| {
+            let original = match record {
+                Some(record) => state.installs.insert(key.clone(), record),
+                None => state.installs.remove(&key),
+            };
+            (key, original)
+        })
+        .collect();
     if let Err(err) = state.save() {
-        match previous {
-            Some(previous) => state.put(previous),
-            None => {
-                state.installs.remove(&key);
+        for (key, original) in previous {
+            match original {
+                Some(record) => state.put(record),
+                None => {
+                    state.installs.remove(&key);
+                }
             }
         }
         return Err(err);
@@ -393,7 +445,7 @@ pub fn copy_install(source: &Path, dest: &Path) -> Result<()> {
     } else {
         EntryKind::Dir
     };
-    if let Some(warning) = replace_entry(&entry, dest, expected, || Ok(()))? {
+    if let Some(warning) = replace_entry(&entry, dest, expected, None, || Ok(()))? {
         eprintln!("warning: {warning}");
     }
     Ok(())
@@ -405,10 +457,14 @@ fn replace_entry(
     staged: &Path,
     dest: &Path,
     expected: EntryKind,
+    installed_hash: Option<&str>,
     commit: impl FnOnce() -> Result<()>,
 ) -> Result<Option<CleanupWarning>> {
     let kind = link::entry_kind(dest)?;
     if kind != expected {
+        if installed_hash.is_some() {
+            return Err(Error::CopyConflict(display_path(dest)));
+        }
         return Err(Error::Refused(format!(
             "{} is {kind:?}; expected {expected:?}",
             dest.display()
@@ -416,6 +472,13 @@ fn replace_entry(
     }
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).map_err(|err| Error::io(parent, err))?;
+    }
+    // A host editor can change the copy while the batch is being checked.
+    // Compare with the plan's record immediately before moving it aside.
+    if let Some(installed_hash) = installed_hash
+        && hash_directory(dest)? != installed_hash
+    {
+        return Err(Error::CopyConflict(display_path(dest)));
     }
     let backup = (kind != EntryKind::Missing)
         .then(|| move_to_backup(dest))
@@ -679,6 +742,65 @@ mod tests {
             );
         }
         assert_eq!(State::load(Some(&state_path)).unwrap(), state);
+    }
+
+    #[test]
+    fn a_late_host_edit_blocks_update_and_conversion() {
+        use crate::drive::plan;
+        use crate::registry::manifest::{CliOverrides, load_manifest};
+
+        for convert in [false, true] {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            let contents = format!(
+                "[skills.alpha]\n[targets.claude]\npath = {}\n",
+                serde_json::to_string(&root.join("claude")).unwrap()
+            );
+            fs::write(root.join("my-skills.toml"), contents).unwrap();
+            let manifest = load_manifest(root, &CliOverrides::default()).unwrap();
+            let skill = &manifest.skills["alpha"];
+            let source = manifest.skill_dir("alpha");
+            fs::create_dir_all(&source).unwrap();
+            fs::write(source.join("SKILL.md"), "Original.").unwrap();
+            let state_path = root.join("state.json");
+            let mut state = State::load(Some(&state_path)).unwrap();
+            let create =
+                plan::plan_install_one(&manifest, skill, "claude", &state, InstallMode::Copy)
+                    .unwrap();
+            apply(&create, &mut state, None).unwrap();
+            fs::write(source.join("SKILL.md"), "New canonical content.").unwrap();
+            let item = if convert {
+                plan::plan_convert(
+                    &manifest,
+                    &state,
+                    &[skill],
+                    &["claude".into()],
+                    InstallMode::Link,
+                )
+                .unwrap()
+                .remove(0)
+            } else {
+                plan::plan_install_one(&manifest, skill, "claude", &state, InstallMode::Copy)
+                    .unwrap()
+            };
+            assert_eq!(
+                item.action,
+                if convert {
+                    Action::Convert
+                } else {
+                    Action::Update
+                }
+            );
+
+            let installed = item.destination.join("SKILL.md");
+            fs::write(&installed, "A late host edit.").unwrap();
+            let before = fs::read(&state_path).unwrap();
+            let error = apply(&item, &mut state, None).unwrap_err();
+            assert!(error.to_string().contains("CONFLICT"), "{error}");
+            assert_eq!(fs::read_to_string(installed).unwrap(), "A late host edit.");
+            assert_eq!(fs::read(&state_path).unwrap(), before);
+            assert_eq!(state, State::load(Some(&state_path)).unwrap());
+        }
     }
 
     #[test]

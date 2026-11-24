@@ -170,6 +170,20 @@ fn converting_a_live_link_to_copy_checks_the_snapshot_before_replacing_it() {
     fixture
         .command()
         .args([
+            "convert",
+            "alpha",
+            "--to",
+            "copy",
+            "--host",
+            "claude",
+            "--dry-run",
+        ])
+        .assert()
+        .code(1)
+        .stdout(contains("[BLOCKED] alpha: validation failed"));
+    fixture
+        .command()
+        .args([
             "convert", "alpha", "--to", "copy", "--host", "claude", "--yes",
         ])
         .assert()
@@ -180,4 +194,152 @@ fn converting_a_live_link_to_copy_checks_the_snapshot_before_replacing_it() {
         link::entry_kind(&fixture.host("claude").join("alpha")).unwrap(),
         EntryKind::Link(_)
     ));
+}
+
+#[test]
+fn sync_previews_validate_the_files_the_copy_will_keep() {
+    let fixture = repo();
+    let source = skill(
+        &fixture.registry.join("skills"),
+        "beta",
+        "A fixture skill.",
+        "[Supporting note](__pycache__/fixture.md)",
+    );
+    fs::create_dir(source.join("__pycache__")).unwrap();
+    fs::write(source.join("__pycache__/fixture.md"), "Fixture note.").unwrap();
+    let manifest = fixture.manifest();
+    let text = fs::read_to_string(&manifest)
+        .unwrap()
+        .replace("install_mode = 'link'", "install_mode = 'copy'");
+    fs::write(manifest, text).unwrap();
+    let before = fs::read(fixture.state()).unwrap();
+
+    let preview = fixture
+        .command()
+        .args(["sync", "beta", "--host", "claude", "--dry-run", "--json"])
+        .assert()
+        .code(1);
+    let report: Value = serde_json::from_slice(&preview.get_output().stdout).unwrap();
+    assert_eq!(report["blocked"], true);
+    assert_eq!(report["applicable"], false);
+    assert!(
+        report["block_reasons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|reason| reason["kind"] == "validation"
+                && reason["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("__pycache__/fixture.md"))
+    );
+    fixture
+        .command()
+        .args(["sync", "beta", "--host", "claude", "--yes"])
+        .assert()
+        .code(1)
+        .stdout(contains("__pycache__/fixture.md"));
+    assert!(!fixture.host("claude").join("beta").exists());
+    assert_eq!(fs::read(fixture.state()).unwrap(), before);
+}
+
+#[test]
+fn mixed_modes_report_validation_and_audit_once_per_skill() {
+    let fixture = repo();
+    fixture
+        .command()
+        .args(["install", "alpha", "--host", "codex", "--mode", "copy"])
+        .assert()
+        .success();
+    let state = fs::read(fixture.state()).unwrap();
+    skill(
+        &fixture.registry.join("skills"),
+        "alpha",
+        "A fixture skill.",
+        "![Remote](https://example.invalid/fixture.png)",
+    );
+    fixture
+        .command()
+        .args(["sync", "alpha", "--yes"])
+        .assert()
+        .code(1)
+        .stdout(contains("alpha: blocked").count(1))
+        .stdout(contains("markdown-remote-image").count(1));
+    let preview =
+        support_h::json(
+            fixture
+                .command()
+                .args(["sync", "alpha", "--dry-run", "--json", "--yes"]),
+        );
+    assert_eq!(preview["audit"]["skills"].as_array().unwrap().len(), 1);
+    assert_eq!(preview["block_reasons"].as_array().unwrap().len(), 1);
+
+    break_alpha(&fixture);
+    fixture
+        .command()
+        .args(["sync", "alpha", "--yes"])
+        .assert()
+        .code(1)
+        .stdout(contains("[BLOCKED] alpha: validation failed").count(1));
+    let preview = fixture
+        .command()
+        .args(["sync", "alpha", "--dry-run", "--json", "--yes"])
+        .assert()
+        .code(1);
+    let json: Value = serde_json::from_slice(&preview.get_output().stdout).unwrap();
+    assert_eq!(
+        json["validation"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["host"].is_null())
+            .count(),
+        1
+    );
+    assert_eq!(
+        json["block_reasons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["host"].is_null())
+            .count(),
+        1
+    );
+    assert_eq!(fs::read(fixture.state()).unwrap(), state);
+}
+
+#[test]
+fn convert_to_copy_preview_reports_audit_block() {
+    let fixture = repo();
+    let before = fs::read(fixture.state()).unwrap();
+    skill(
+        &fixture.registry.join("skills"),
+        "alpha",
+        "A fixture skill.",
+        "![Remote](https://example.invalid/fixture.png)",
+    );
+    fixture
+        .command()
+        .args([
+            "convert",
+            "alpha",
+            "--to",
+            "copy",
+            "--host",
+            "claude",
+            "--dry-run",
+        ])
+        .assert()
+        .code(1)
+        .stdout(contains("AUDIT WOULD BLOCK"))
+        .stdout(contains("markdown-remote-image"));
+    fixture
+        .command()
+        .args([
+            "convert", "alpha", "--to", "copy", "--host", "claude", "--yes",
+        ])
+        .assert()
+        .code(1)
+        .stdout(contains("AUDIT BLOCKED"));
+    assert_eq!(fs::read(fixture.state()).unwrap(), before);
 }
