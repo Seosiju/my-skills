@@ -402,7 +402,7 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
                 );
             }
         }
-        println!("  then: my-skills hooks install");
+        println!("  would suggest: run `my-skills hooks install` to check commits");
         return ExitCode::SUCCESS;
     }
     if !args.skip_skill_install {

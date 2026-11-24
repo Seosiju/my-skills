@@ -569,7 +569,7 @@ pub fn agy_windows_link_warning(
             .records()
             .any(|record| record.host == "agy" && record.mode == InstallMode::Link)
     });
-    if !(agy_enabled && effective_is_link) && !has_link_connection {
+    if !(has_link_connection || (agy_enabled && effective_is_link)) {
         return None;
     }
     let message = match (effective_is_link, has_link_connection) {
@@ -581,6 +581,11 @@ pub fn agy_windows_link_warning(
         (true, false) => {
             "Antigravity CLI (agy) on Windows may not discover junction-linked skills; \
              set `[targets.agy] install_mode = \"copy\"` in my-skills.local.toml."
+        }
+        (false, true) if manifest.is_none() => {
+            "Antigravity CLI (agy) on Windows may not discover junction-linked skills. \
+             First check the Registry line and fix the registry or run `my-skills set-root <path>`. \
+             Then convert existing agy links with `my-skills convert --to copy --host agy`."
         }
         (false, true) => {
             "Antigravity CLI (agy) on Windows may not discover junction-linked skills; \

@@ -616,11 +616,14 @@ fn agy_windows_link_warning_decision_is_os_and_mode_aware() {
             .is_none()
     );
 
-    // No manifest + existing agy link still warns on Windows (convert only).
+    // No manifest + existing agy link: fix the registry before converting.
     let no_manifest_warning =
         agy_windows_link_warning("windows", None, Some(&agy_link_state)).unwrap();
     assert!(
-        no_manifest_warning.contains("my-skills convert --to copy --host agy")
+        no_manifest_warning.contains(concat!(
+            "First check the Registry line and fix the registry or run `my-skills set-root <path>`. ",
+            "Then convert existing agy links with `my-skills convert --to copy --host agy`."
+        ))
             && !no_manifest_warning.contains("my-skills.local.toml"),
         "{no_manifest_warning}"
     );
