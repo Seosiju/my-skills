@@ -277,7 +277,11 @@ fn assert_error(assert: &Assert, code: &str, text: &str) {
 fn json_errors_include_usage_selection_and_config_codes() {
     let fixture = fixture();
     for (args, code, message) in [
-        (&["sync", "--json"][..], "usage", "requires --dry-run"),
+        (
+            &["sync", "--check", "--json"][..],
+            "usage",
+            "not supported with --check",
+        ),
         (
             &["share", "--from", "codex", "--json"][..],
             "usage",
