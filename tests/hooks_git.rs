@@ -548,3 +548,52 @@ fn hooks_cli_displays_clean_windows_paths_without_mixed_separators() {
         "expected Windows separator in foreign hook path: {foreign_path}"
     );
 }
+
+#[cfg(windows)]
+#[test]
+fn status_io_error_displays_clean_windows_hook_path() {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    let fixture = Fixture::isolated();
+    fixture.init();
+    fixture.write(".git/hooks/pre-commit", "#!/bin/sh\n");
+    let hook = fixture
+        .registry
+        .join(".git")
+        .join("hooks")
+        .join("pre-commit");
+
+    // Hold the hook file exclusively so `inspect`'s `File::open` fails with an I/O error.
+    let _lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .share_mode(0)
+        .open(&hook)
+        .unwrap();
+
+    for args in [&["hooks", "status"][..], &["hooks", "install"][..]] {
+        let result = fixture.command().args(args).assert().code(1);
+        let stderr = std::str::from_utf8(&result.get_output().stderr).unwrap();
+        let line = stderr
+            .lines()
+            .find_map(|line| line.strip_prefix("error: "))
+            .unwrap_or_else(|| {
+                panic!("expected 'error: ...' line in stderr for {args:?}:\n{stderr}")
+            });
+        let (path_part, _) = line.split_once(": ").unwrap_or_else(|| {
+            panic!("expected '<path>: <source>' in stderr for {args:?}:\n{stderr}")
+        });
+        assert!(
+            !path_part.contains('/'),
+            "hook I/O error path mixes forward slashes on Windows ({args:?}): {stderr}"
+        );
+        assert!(
+            !path_part.contains(r"\\?\"),
+            "hook I/O error path contains verbatim prefix ({args:?}): {stderr}"
+        );
+        assert!(
+            path_part.ends_with(r"\.git\hooks\pre-commit"),
+            "unexpected hook I/O error path ({args:?}): {stderr}"
+        );
+    }
+}
