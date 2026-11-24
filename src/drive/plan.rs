@@ -4,6 +4,7 @@
 //! Planning reads the filesystem but never writes it. `apply::apply`
 //! executes the plan.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::drive::hash::hash_directory;
@@ -208,6 +209,16 @@ fn link_status(dest: &Path, source: &Path, kind: EntryKind) -> Status {
     }
 }
 
+fn copy_source_hash(source: &Path) -> Result<String> {
+    // Copying follows a linked skill root while refusing links inside the
+    // tree. Hash the same root for freshness checks.
+    if matches!(link::entry_kind(source)?, EntryKind::Link(_)) {
+        let resolved = fs::canonicalize(source).map_err(|err| Error::io(source, err))?;
+        return hash_directory(&resolved);
+    }
+    hash_directory(source)
+}
+
 fn copy_status(
     dest: &Path,
     source: &Path,
@@ -221,7 +232,7 @@ fn copy_status(
         EntryKind::Dir => {}
     }
     let install_modified = hash_directory(dest)? != record.installed_hash;
-    let source_changed = !source.is_dir() || hash_directory(source)? != record.source_hash;
+    let source_changed = !source.is_dir() || copy_source_hash(source)? != record.source_hash;
     Ok(match (install_modified, source_changed) {
         (true, true) => Status::Conflict,
         (true, false) => Status::Drifted,
@@ -295,7 +306,7 @@ pub fn plan_install_one(
         InstallMode::Copy => {
             let status = copy_status(&dest, &source, kind, record)?;
             let hash = if source.is_dir() {
-                Some(hash_directory(&source)?)
+                Some(copy_source_hash(&source)?)
             } else {
                 None
             };

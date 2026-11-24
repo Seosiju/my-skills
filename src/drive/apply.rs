@@ -2,10 +2,13 @@
 //! I1 (canonical untouched), I2 (links removed as links), I4 (no silent
 //! fallback), I6 (atomic or reversible writes).
 
+use std::collections::{BTreeMap, btree_map::Entry};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use tempfile::TempDir;
 use walkdir::WalkDir;
 
 use crate::drive::hash::hash_directory;
@@ -13,6 +16,7 @@ use crate::drive::ignore::is_ignored;
 use crate::drive::link::{self, Created, EntryKind, LinkKind};
 use crate::drive::plan::{Action, PlanItem};
 use crate::drive::state::{InstallRecord, State};
+use crate::platform::paths::display_path;
 use crate::registry::manifest::InstallMode;
 use crate::{Error, Result};
 
@@ -45,60 +49,214 @@ pub struct AuditMeta {
     pub audit_threshold: String,
 }
 
-/// Apply one plan item and persist its state before reporting success.
-/// Blocked and informational items are not applied.
-pub fn apply(item: &PlanItem, state: &mut State, audit: Option<&AuditMeta>) -> Result<Outcome> {
-    match item.action {
-        Action::Create => create(item, state, audit, link::create_link),
-        Action::Update => {
-            copy_install_with(&item.source, &item.destination, || {
-                commit_install(item, state, &Connection::Copy, audit)
-            })?;
-            Ok(Outcome::Updated)
-        }
-        Action::Remove => remove(item, state),
-        Action::Convert => convert(item, state, audit),
-        _ => Ok(Outcome::Unchanged),
+/// A cleanup failure after the on-disk connection and state were committed.
+#[derive(Debug)]
+pub(crate) struct CleanupWarning {
+    pub(crate) path: PathBuf,
+    pub(crate) error: Error,
+}
+
+impl std::fmt::Display for CleanupWarning {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "cleanup could not remove {}: {}",
+            display_path(&self.path),
+            self.error
+        )
     }
 }
 
-fn create(
+#[derive(Debug)]
+pub(crate) struct Applied {
+    pub(crate) outcome: Outcome,
+    pub(crate) cleanup_warnings: Vec<CleanupWarning>,
+}
+
+impl Applied {
+    fn new(outcome: Outcome, cleanup_warning: Option<CleanupWarning>) -> Self {
+        Self {
+            outcome,
+            cleanup_warnings: cleanup_warning.into_iter().collect(),
+        }
+    }
+
+    pub(crate) fn print_cleanup_warnings(&self) {
+        for warning in &self.cleanup_warnings {
+            eprintln!("warning: {warning}");
+        }
+    }
+}
+
+/// One check snapshot per skill. Each host gets a same-volume staging copy
+/// made from these bytes, even if the live canonical skill changes again.
+#[derive(Debug)]
+pub(crate) struct CopySnapshot {
+    _temp: TempDir,
+    path: PathBuf,
+    hash: String,
+}
+
+impl CopySnapshot {
+    fn new(source: &Path) -> Result<Self> {
+        let temp = tempfile::Builder::new()
+            .prefix(".my-skills-check-")
+            .tempdir()
+            .map_err(|err| Error::io(std::env::temp_dir(), err))?;
+        // Validation and audit identify the skill from this directory name.
+        let path = temp.path().join(source.file_name().unwrap_or_default());
+        copy_tree(source, &path)?;
+        let hash = hash_directory(&path)?;
+        Ok(Self {
+            _temp: temp,
+            path,
+            hash,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum PreparedConnection {
+    Link {
+        _temp: TempDir,
+        entry: PathBuf,
+        kind: LinkKind,
+    },
+    Copy {
+        snapshot: Rc<CopySnapshot>,
+        connection: Connection,
+    },
+}
+
+impl PreparedConnection {
+    pub(crate) fn check_snapshot(&self) -> Option<&Path> {
+        match self {
+            Self::Copy { snapshot, .. } => Some(&snapshot.path),
+            Self::Link { .. } => None,
+        }
+    }
+}
+
+/// Prepare copies and discover any link fallbacks before the batch is applied.
+/// Link checks still read canonical: later edits are visible live and caught
+/// by the registry's pre-commit check.
+pub(crate) fn prepare(
+    item: &PlanItem,
+    snapshots: &mut BTreeMap<String, Rc<CopySnapshot>>,
+) -> Result<Option<PreparedConnection>> {
+    prepare_with(item, snapshots, link::create_link)
+}
+
+fn prepare_with(
+    item: &PlanItem,
+    snapshots: &mut BTreeMap<String, Rc<CopySnapshot>>,
+    create_link: impl FnOnce(&Path, &Path) -> Result<Created>,
+) -> Result<Option<PreparedConnection>> {
+    let connection = match (item.action, item.mode) {
+        (Action::Create, InstallMode::Link) => {
+            let temp = stage_near(&item.destination)?;
+            let entry = temp.path().join(&item.skill);
+            match create_link(&entry, &absolute(&item.source)?)? {
+                Created::Link(kind) => {
+                    return Ok(Some(PreparedConnection::Link {
+                        _temp: temp,
+                        entry,
+                        kind,
+                    }));
+                }
+                Created::NeedsCopy { reason } => Connection::CopyFallback { reason },
+            }
+        }
+        (Action::Create | Action::Update | Action::Convert, InstallMode::Copy) => Connection::Copy,
+        _ => return Ok(None),
+    };
+    let snapshot = match snapshots.entry(item.skill.clone()) {
+        Entry::Occupied(existing) => existing.get().clone(),
+        Entry::Vacant(new) => new
+            .insert(Rc::new(CopySnapshot::new(&item.source)?))
+            .clone(),
+    };
+    Ok(Some(PreparedConnection::Copy {
+        snapshot,
+        connection,
+    }))
+}
+
+/// Apply one plan item and persist its state before reporting success.
+/// CLI batches use prepare and apply_prepared to check the snapshot first.
+pub fn apply(item: &PlanItem, state: &mut State, audit: Option<&AuditMeta>) -> Result<Outcome> {
+    let prepared = prepare(item, &mut BTreeMap::new())?;
+    let applied = apply_prepared(item, state, audit, prepared.as_ref())?;
+    applied.print_cleanup_warnings();
+    Ok(applied.outcome)
+}
+
+pub(crate) fn apply_prepared(
     item: &PlanItem,
     state: &mut State,
     audit: Option<&AuditMeta>,
-    create_link: impl FnOnce(&Path, &Path) -> Result<Created>,
-) -> Result<Outcome> {
+    prepared: Option<&PreparedConnection>,
+) -> Result<Applied> {
     let dest = &item.destination;
-    let connection = match item.mode {
-        InstallMode::Copy => Connection::Copy,
-        InstallMode::Link => match create_link(dest, &absolute(&item.source)?)? {
-            Created::Link(kind) => {
-                let connection = Connection::Link(kind);
-                if let Err(err) = commit_install(item, state, &connection, audit) {
-                    link::remove_link(dest)?;
-                    return Err(err);
+    match (item.action, prepared) {
+        (Action::Create, Some(PreparedConnection::Link { entry, kind, .. })) => {
+            let connection = Connection::Link(*kind);
+            let record = record_for(item, &connection, hash_directory(&item.source)?, audit);
+            replace_entry(entry, dest, EntryKind::Missing, || {
+                commit_record(state, record).map_err(|err| Error::StateSave(Box::new(err)))
+            })?;
+            Ok(Applied::new(Outcome::Created(connection), None))
+        }
+        (
+            Action::Create | Action::Update | Action::Convert,
+            Some(PreparedConnection::Copy {
+                snapshot,
+                connection,
+            }),
+        ) => {
+            let record = record_for(item, connection, snapshot.hash.clone(), audit);
+            let stage = stage_near(dest)?;
+            let entry = stage.path().join(&item.skill);
+            copy_tree(&snapshot.path, &entry)?;
+            let (expected, outcome) = match item.action {
+                Action::Create => (EntryKind::Missing, Outcome::Created(connection.clone())),
+                Action::Update => (EntryKind::Dir, Outcome::Updated),
+                Action::Convert => {
+                    let kind = link::entry_kind(dest)?;
+                    if !matches!(kind, EntryKind::Link(_)) {
+                        return Err(Error::Refused(format!(
+                            "{} is no longer a linked directory; not converting",
+                            dest.display()
+                        )));
+                    }
+                    (kind, Outcome::Converted(connection.clone()))
                 }
-                return Ok(Outcome::Created(connection));
-            }
-            Created::NeedsCopy { reason } => Connection::CopyFallback { reason },
-        },
-    };
-    copy_install_with(&item.source, dest, || {
-        commit_install(item, state, &connection, audit)
-    })?;
-    Ok(Outcome::Created(connection))
+                _ => unreachable!("only copy writes have a snapshot"),
+            };
+            let warning = replace_entry(&entry, dest, expected, || {
+                let result = commit_record(state, record);
+                if item.action == Action::Convert {
+                    result
+                } else {
+                    result.map_err(|err| Error::StateSave(Box::new(err)))
+                }
+            })?;
+            Ok(Applied::new(outcome, warning))
+        }
+        (Action::Remove, _) => remove(item, state),
+        (Action::Convert, None) if item.mode == InstallMode::Link => {
+            convert_copy_to_link(item, state, audit)
+        }
+        (action, _) if action.writes() => Err(Error::Refused("connection was not prepared".into())),
+        _ => Ok(Applied::new(Outcome::Unchanged, None)),
+    }
 }
 
-fn remove(item: &PlanItem, state: &mut State) -> Result<Outcome> {
+fn remove(item: &PlanItem, state: &mut State) -> Result<Applied> {
     let dest = &item.destination;
     let backup = match link::entry_kind(dest)? {
         EntryKind::Missing => None,
-        EntryKind::Link(_) | EntryKind::Dir => {
-            // Rename the entry itself so even a broken link can be restored.
-            let backup = sibling(dest, "backup");
-            fs::rename(dest, &backup).map_err(|e| Error::io(dest, e))?;
-            Some(backup)
-        }
+        EntryKind::Link(_) | EntryKind::Dir => Some(move_to_backup(dest)?),
         EntryKind::File => {
             return Err(Error::Refused(format!(
                 "{} is a file, not a managed connection",
@@ -108,114 +266,35 @@ fn remove(item: &PlanItem, state: &mut State) -> Result<Outcome> {
     };
     let key = (item.skill.clone(), item.host.clone());
     if let Err(err) = commit_record_change(state, key, None) {
-        if let Some(backup) = backup {
-            fs::rename(&backup, dest).map_err(|e| Error::io(&backup, e))?;
-        }
+        restore_backup(backup.as_deref(), dest)?;
         return Err(Error::StateSave(Box::new(err)));
     }
-    if let Some(backup) = backup {
-        remove_connection(&backup)?;
-    }
-    Ok(Outcome::Removed)
-}
-
-fn commit_install(
-    item: &PlanItem,
-    state: &mut State,
-    connection: &Connection,
-    audit: Option<&AuditMeta>,
-) -> Result<()> {
-    let (mode, kind, reason) = match connection {
-        Connection::Link(kind) => (InstallMode::Link, Some(*kind), None),
-        Connection::Copy => (InstallMode::Copy, None, None),
-        Connection::CopyFallback { reason } => (InstallMode::Copy, None, Some(reason.clone())),
-    };
-    let record = record_for(item, mode, kind, reason, audit)?;
-    commit_record(state, record).map_err(|err| Error::StateSave(Box::new(err)))
-}
-
-fn convert(item: &PlanItem, state: &mut State, audit: Option<&AuditMeta>) -> Result<Outcome> {
-    match item.mode {
-        InstallMode::Link => convert_copy_to_link(item, state, audit),
-        InstallMode::Copy => convert_link_to_copy(item, state, audit),
-    }
+    Ok(Applied::new(Outcome::Removed, cleanup_backup(backup)))
 }
 
 fn convert_copy_to_link(
     item: &PlanItem,
     state: &mut State,
     audit: Option<&AuditMeta>,
-) -> Result<Outcome> {
+) -> Result<Applied> {
     let dest = &item.destination;
-    if link::entry_kind(dest)? != EntryKind::Dir {
-        return Err(Error::Refused(format!(
-            "{} is not a copied directory; not converting",
-            dest.display()
-        )));
-    }
+    let staged = stage_near(dest)?;
+    let entry = staged.path().join(&item.skill);
     let canonical = absolute(&item.source)?;
-    let backup = sibling(dest, "backup");
-    fs::rename(dest, &backup).map_err(|e| Error::io(dest, e))?;
-    let created = match link::create_link(dest, &canonical) {
-        Ok(created) => created,
-        Err(err) => {
-            restore(&backup, dest)?;
-            return Err(err);
-        }
-    };
-    match created {
+    match link::create_link(&entry, &canonical)? {
         Created::Link(kind) => {
-            // Spec §6.6 order: link, then state saved, then backup removed.
-            // If the record cannot be saved, undo the link and keep the copy
-            // so disk and state.json stay consistent (I6).
-            let committed = record_for(item, InstallMode::Link, Some(kind), None, audit)
-                .and_then(|record| commit_record(state, record));
-            if let Err(err) = committed {
-                restore(&backup, dest)?;
-                return Err(err);
-            }
-            remove_real_dir(&backup)?;
-            Ok(Outcome::Converted(Connection::Link(kind)))
+            let connection = Connection::Link(kind);
+            let record = record_for(item, &connection, hash_directory(&item.source)?, audit);
+            let warning = replace_entry(&entry, dest, EntryKind::Dir, || {
+                commit_record(state, record)
+            })?;
+            Ok(Applied::new(Outcome::Converted(connection), warning))
         }
-        Created::NeedsCopy { reason } => {
-            restore(&backup, dest)?;
-            Err(Error::Link(format!(
-                "cannot link {}: {reason}; the copy was kept",
-                dest.display()
-            )))
-        }
+        Created::NeedsCopy { reason } => Err(Error::Link(format!(
+            "cannot link {}: {reason}; the copy was kept",
+            dest.display()
+        ))),
     }
-}
-
-fn convert_link_to_copy(
-    item: &PlanItem,
-    state: &mut State,
-    audit: Option<&AuditMeta>,
-) -> Result<Outcome> {
-    let dest = &item.destination;
-    let staged = sibling(dest, "staging");
-    copy_tree(&item.source, &staged)?;
-    if let Err(err) = link::remove_link(dest) {
-        remove_real_dir(&staged)?;
-        return Err(err);
-    }
-    if let Err(err) = fs::rename(&staged, dest) {
-        // Put the link back so the host keeps working.
-        let _ = link::create_link(dest, &absolute(&item.source)?);
-        let _ = remove_real_dir(&staged);
-        return Err(Error::io(dest, err));
-    }
-    // Save before reporting success; on failure put the link back so disk
-    // and state.json agree (I6). The staged copy was the canonical content,
-    // so removing it loses nothing.
-    let committed = record_for(item, InstallMode::Copy, None, None, audit)
-        .and_then(|record| commit_record(state, record));
-    if let Err(err) = committed {
-        remove_real_dir(dest)?;
-        link::create_link(dest, &absolute(&item.source)?)?;
-        return Err(err);
-    }
-    Ok(Outcome::Converted(Connection::Copy))
 }
 
 fn commit_record(state: &mut State, record: InstallRecord) -> Result<()> {
@@ -272,79 +351,97 @@ pub(crate) fn remove_real_dir(path: &Path) -> Result<()> {
     }
 }
 
-fn restore(backup: &Path, dest: &Path) -> Result<()> {
-    if link::entry_kind(dest)? != EntryKind::Missing {
-        link::remove_link(dest)?;
+fn move_to_backup(dest: &Path) -> Result<PathBuf> {
+    let backup = sibling(dest, "backup");
+    fs::rename(dest, &backup).map_err(|err| Error::io(dest, err))?;
+    Ok(backup)
+}
+
+fn restore_backup(backup: Option<&Path>, dest: &Path) -> Result<()> {
+    if let Some(backup) = backup {
+        fs::rename(backup, dest).map_err(|err| Error::io(backup, err))?;
     }
-    fs::rename(backup, dest).map_err(|e| Error::io(dest, e))
+    Ok(())
 }
 
-/// Copy `source` to `dest` through a staging directory; an existing copy is
-/// moved aside first and restored if the swap fails (I6).
+fn cleanup_backup(backup: Option<PathBuf>) -> Option<CleanupWarning> {
+    let path = backup?;
+    remove_connection(&path)
+        .err()
+        .map(|error| CleanupWarning { path, error })
+}
+
+fn stage_near(dest: &Path) -> Result<TempDir> {
+    let parent = dest
+        .ancestors()
+        .skip(1)
+        .find(|p| p.is_dir())
+        .unwrap_or(Path::new("."));
+    tempfile::Builder::new()
+        .prefix(".my-skills-staging-")
+        .tempdir_in(parent)
+        .map_err(|err| Error::io(parent, err))
+}
+
+/// Copy through a staging directory and retain the old copy until the swap.
 pub fn copy_install(source: &Path, dest: &Path) -> Result<()> {
-    copy_install_with(source, dest, || Ok(()))
+    let stage = stage_near(dest)?;
+    let entry = stage.path().join("copy");
+    copy_tree(source, &entry)?;
+    let expected = if link::entry_kind(dest)? == EntryKind::Missing {
+        EntryKind::Missing
+    } else {
+        EntryKind::Dir
+    };
+    if let Some(warning) = replace_entry(&entry, dest, expected, || Ok(()))? {
+        eprintln!("warning: {warning}");
+    }
+    Ok(())
 }
 
-/// Keep the previous copy until the replacement has been committed.
-fn copy_install_with(
-    source: &Path,
+/// Swap entries using same-volume renames. Keep the previous connection
+/// recoverable until the state save succeeds.
+fn replace_entry(
+    staged: &Path,
     dest: &Path,
+    expected: EntryKind,
     commit: impl FnOnce() -> Result<()>,
-) -> Result<()> {
-    if !source.is_dir() {
-        return Err(Error::Link(format!(
-            "source skill directory not found: {}",
-            source.display()
+) -> Result<Option<CleanupWarning>> {
+    let kind = link::entry_kind(dest)?;
+    if kind != expected {
+        return Err(Error::Refused(format!(
+            "{} is {kind:?}; expected {expected:?}",
+            dest.display()
         )));
     }
     if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
+        fs::create_dir_all(parent).map_err(|err| Error::io(parent, err))?;
     }
-    let staged = sibling(dest, "staging");
-    if let Err(err) = copy_tree(source, &staged) {
-        let _ = remove_real_dir(&staged);
-        return Err(err);
-    }
-    let backup = match link::entry_kind(dest)? {
-        EntryKind::Missing => None,
-        EntryKind::Dir => {
-            let backup = sibling(dest, "backup");
-            fs::rename(dest, &backup).map_err(|e| Error::io(dest, e))?;
-            Some(backup)
-        }
-        other => {
-            remove_real_dir(&staged)?;
-            return Err(Error::Refused(format!(
-                "{} is {other:?}; copy install replaces only directories",
-                dest.display()
-            )));
-        }
-    };
-    if let Err(err) = fs::rename(&staged, dest) {
-        if let Some(backup) = &backup {
-            fs::rename(backup, dest).map_err(|e| Error::io(dest, e))?;
-        }
-        let _ = remove_real_dir(&staged);
+    let backup = (kind != EntryKind::Missing)
+        .then(|| move_to_backup(dest))
+        .transpose()?;
+    if let Err(err) = fs::rename(staged, dest) {
+        restore_backup(backup.as_deref(), dest)?;
         return Err(Error::io(dest, err));
     }
     if let Err(err) = commit() {
-        fs::rename(dest, &staged).map_err(|e| Error::io(dest, e))?;
-        if let Some(backup) = backup {
-            fs::rename(&backup, dest).map_err(|e| Error::io(&backup, e))?;
-        }
-        remove_real_dir(&staged)?;
+        fs::rename(dest, staged).map_err(|err| Error::io(dest, err))?;
+        restore_backup(backup.as_deref(), dest)?;
         return Err(err);
     }
-    if let Some(backup) = backup {
-        remove_real_dir(&backup)?;
-    }
-    Ok(())
+    Ok(cleanup_backup(backup))
 }
 
 /// Copy regular files and directories, skipping ignored entries. A link
 /// inside the canonical skill is refused instead of followed; v0.4.1 import
 /// already rejects such skills.
 fn copy_tree(source: &Path, dest: &Path) -> Result<()> {
+    if !source.is_dir() {
+        return Err(Error::Link(format!(
+            "source skill directory not found: {}",
+            source.display()
+        )));
+    }
     fs::create_dir_all(dest).map_err(|e| Error::io(dest, e))?;
     for entry in WalkDir::new(source).follow_links(false).min_depth(1) {
         let entry = entry.map_err(|e| {
@@ -392,29 +489,24 @@ fn absolute(path: &Path) -> Result<PathBuf> {
 
 fn record_for(
     item: &PlanItem,
-    mode: InstallMode,
-    link_kind: Option<LinkKind>,
-    fallback_reason: Option<String>,
+    connection: &Connection,
+    hash: String,
     audit: Option<&AuditMeta>,
-) -> Result<InstallRecord> {
-    let source_hash = match &item.source_hash {
-        Some(hash) => hash.clone(),
-        None => hash_directory(&item.source)?,
-    };
-    let installed_hash = match mode {
-        // A link's installed content IS the canonical content.
-        InstallMode::Link => source_hash.clone(),
-        InstallMode::Copy => hash_directory(&item.destination)?,
+) -> InstallRecord {
+    let (mode, link_kind, fallback_reason) = match connection {
+        Connection::Link(kind) => (InstallMode::Link, Some(*kind), None),
+        Connection::Copy => (InstallMode::Copy, None, None),
+        Connection::CopyFallback { reason } => (InstallMode::Copy, None, Some(reason.clone())),
     };
     let audit = audit.cloned().unwrap_or_default();
-    Ok(InstallRecord {
+    InstallRecord {
         skill: item.skill.clone(),
         host: item.host.clone(),
         mode,
         source: item.source.to_string_lossy().into_owned(),
         destination: item.destination.to_string_lossy().into_owned(),
-        source_hash,
-        installed_hash,
+        source_hash: hash.clone(),
+        installed_hash: hash,
         installed_at: utc_now(),
         source_type: "canonical".into(),
         source_url: String::new(),
@@ -425,7 +517,7 @@ fn record_for(
         audit_threshold: audit.audit_threshold,
         link_kind,
         fallback_reason,
-    })
+    }
 }
 
 /// `YYYY-MM-DDTHH:MM:SSZ` in UTC, as v0.4.1 writes `installed_at`.
@@ -488,7 +580,8 @@ mod tests {
                 reason: reason.into(),
             })
         };
-        let err = create(&item, &mut state, None, force_fallback).unwrap_err();
+        let prepared = prepare_with(&item, &mut BTreeMap::new(), force_fallback).unwrap();
+        let err = apply_prepared(&item, &mut state, None, prepared.as_ref()).unwrap_err();
         assert!(matches!(err, Error::StateSave(_)), "{err}");
         assert_eq!(
             link::entry_kind(&item.destination).unwrap(),
@@ -515,7 +608,9 @@ mod tests {
         assert!(persisted.get("alpha", "codex").is_some());
 
         assert_eq!(
-            create(&item, &mut state, None, force_fallback).unwrap(),
+            apply_prepared(&item, &mut state, None, prepared.as_ref())
+                .unwrap()
+                .outcome,
             Outcome::Created(Connection::CopyFallback {
                 reason: reason.into()
             }),
@@ -526,6 +621,64 @@ mod tests {
         let record = persisted.get("alpha", "claude").unwrap();
         assert_eq!(record.mode, InstallMode::Copy);
         assert_eq!(record.fallback_reason.as_deref(), Some(reason));
+    }
+
+    #[test]
+    fn checked_snapshot_is_the_only_copy_source_across_hosts() {
+        use crate::check::{audit, validate};
+        use crate::drive::plan::{self, Status};
+        use crate::registry::manifest::{CliOverrides, load_manifest};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let manifest = format!(
+            "schema_version = 1\n[skills.alpha]\n\
+             [targets.claude]\npath = {}\n[targets.codex]\npath = {}\n",
+            serde_json::to_string(&root.join("claude")).unwrap(),
+            serde_json::to_string(&root.join("codex")).unwrap(),
+        );
+        fs::write(root.join("my-skills.toml"), manifest).unwrap();
+        let manifest = load_manifest(root, &CliOverrides::default()).unwrap();
+        let skill = &manifest.skills["alpha"];
+        let source = manifest.skill_dir("alpha");
+        let state_path = root.join("state.json");
+        let mut state = State::load(Some(&state_path)).unwrap();
+        fs::create_dir_all(&source).unwrap();
+        let original = "---\nname: alpha\ndescription: Test snapshot.\n---\n\nOriginal.";
+        let skill_md = source.join("SKILL.md");
+        fs::write(&skill_md, original).unwrap();
+
+        let item =
+            plan::plan_install_one(&manifest, skill, "claude", &state, InstallMode::Copy).unwrap();
+        let mut snapshots = BTreeMap::new();
+        let prepared = prepare(&item, &mut snapshots).unwrap().unwrap();
+        let staged = prepared.check_snapshot().unwrap();
+        assert!(validate::compose_validation(staged).ok());
+        let policy = audit::policy_from_settings(&manifest.audit).unwrap();
+        assert!(!audit::run_audit(staged, &policy).unwrap().blocked());
+        let hash = hash_directory(staged).unwrap();
+
+        fs::write(&skill_md, "Invalid edit after the check.").unwrap();
+        let second =
+            plan::plan_install_one(&manifest, skill, "codex", &state, InstallMode::Copy).unwrap();
+        let second_prepared = prepare(&second, &mut snapshots).unwrap().unwrap();
+        assert_eq!(second_prepared.check_snapshot(), Some(staged));
+        for (item, prepared) in [(item, prepared), (second, second_prepared)] {
+            let applied = apply_prepared(&item, &mut state, None, Some(&prepared)).unwrap();
+            assert!(applied.cleanup_warnings.is_empty());
+            assert_eq!(
+                fs::read_to_string(item.destination.join("SKILL.md")).unwrap(),
+                original
+            );
+            let record = state.get("alpha", &item.host).unwrap();
+            assert_eq!(record.source_hash, hash);
+            assert_eq!(record.installed_hash, hash);
+            assert_eq!(
+                plan::status_of(&manifest, skill, &item.host, &state).unwrap(),
+                Status::Stale
+            );
+        }
+        assert_eq!(State::load(Some(&state_path)).unwrap(), state);
     }
 
     #[test]
