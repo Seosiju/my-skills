@@ -69,7 +69,7 @@ scope = "user"
 path = "~/.agents/skills"
 
 [targets.hermes]
-enabled = true
+enabled = false
 scope = "user"
 path = "~/.hermes/skills"
 

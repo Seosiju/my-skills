@@ -7,6 +7,9 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ## [Unreleased]
 
+- New registries disable Hermes by default. You can still install to Hermes
+  explicitly with `--host hermes`.
+
 ## [1.0.2] - 2026-11-24
 
 ### Fixed

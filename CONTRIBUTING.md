@@ -6,7 +6,9 @@ Use the [release installers](README.md#install-the-cli) to install the Rust
 ## Development Setup
 
 Use Git and stable Rust with the `rustfmt` and `clippy` components. On
-Windows, use the MSVC toolchain and build tools.
+Windows, use the MSVC toolchain and build tools. See
+[docs/architecture.md](docs/architecture.md) for how the CLI modules and
+on-disk files fit together.
 
 Clone the repository and run the test suite:
 
@@ -23,7 +25,7 @@ registry, point `MY_SKILLS_ROOT` to a disposable registry with test host paths.
 cargo run -- doctor --no-update-check
 cargo run -- skills --json
 cargo run -- bootstrap --dry-run
-cargo run -- install my-skills --host hermes --dry-run
+cargo run -- install my-skills --host codex --dry-run
 ```
 
 ## Contribution Guidelines

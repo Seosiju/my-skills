@@ -85,13 +85,47 @@ fn init_registry_install_dry_run_has_seed_actions() {
     let fixture = Fixture::new();
     init(&fixture).arg("--no-git").assert().success();
     let data = json(fixture.command().args(["install", "--dry-run", "--json"]));
-    let names = data["actions"]
+    let pairs = data["actions"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|action| action["skill"].as_str().unwrap())
+        .map(|action| {
+            (
+                action["skill"].as_str().unwrap(),
+                action["host"].as_str().unwrap(),
+            )
+        })
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(names, ["cli-inventory", "my-skills"].into_iter().collect());
+    assert_eq!(
+        pairs,
+        [
+            ("cli-inventory", "claude"),
+            ("cli-inventory", "codex"),
+            ("my-skills", "claude"),
+            ("my-skills", "codex"),
+        ]
+        .into_iter()
+        .collect()
+    );
+}
+
+#[test]
+fn init_registry_allows_explicit_install_to_disabled_hermes() {
+    let fixture = Fixture::new();
+    init(&fixture).arg("--no-git").assert().success();
+    assert_eq!(
+        fixture.config()["targets"]["hermes"]["enabled"].as_bool(),
+        Some(false)
+    );
+    fixture
+        .command()
+        .args(["install", "my-skills", "--host", "hermes", "--mode", "copy"])
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read(fixture.root.join("home/.hermes/skills/my-skills/SKILL.md")).unwrap(),
+        fs::read(fixture.canonical("my-skills").join("SKILL.md")).unwrap()
+    );
 }
 
 #[test]
@@ -263,7 +297,7 @@ fn init_registry_missing_git_is_graceful() {
 }
 
 #[test]
-fn init_registry_agy_opt_in_target() {
+fn init_registry_hermes_and_agy_are_opt_in_targets() {
     for with_defaults in [true, false] {
         let fixture = Fixture::new();
         let mut command = init(&fixture);
@@ -283,7 +317,8 @@ fn init_registry_agy_opt_in_target() {
         assert_eq!(agy["enabled"].as_bool(), Some(false));
         assert_eq!(agy["scope"].as_str(), Some("user"));
         assert_eq!(agy["path"].as_str(), Some("~/.gemini/config/skills"));
-        for host in ["claude", "codex", "hermes"] {
+        assert_eq!(targets["hermes"]["enabled"].as_bool(), Some(false));
+        for host in ["claude", "codex"] {
             assert_eq!(targets[host]["enabled"].as_bool(), Some(true));
         }
         assert_eq!(manifest.contains_key("skills"), with_defaults);
