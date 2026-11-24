@@ -6,7 +6,9 @@ Use the [release installers](README.md#install-the-cli) to install the Rust
 ## Development Setup
 
 Use Git and stable Rust with the `rustfmt` and `clippy` components. On
-Windows, use the MSVC toolchain and build tools.
+Windows, use the MSVC toolchain and build tools. See
+[docs/architecture.md](docs/architecture.md) for how the CLI modules and
+on-disk files fit together.
 
 Clone the repository and run the test suite:
 
