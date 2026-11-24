@@ -7,6 +7,14 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-11-24
+
+### Fixed
+
+- Skills can bundle common font and image assets whose file signatures match
+  their extensions without triggering NUL-byte errors during import, validation,
+  audit, or pre-commit checks.
+
 ## [1.0.1] - 2026-11-24
 
 ### Fixed

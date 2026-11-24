@@ -24,7 +24,7 @@ pub(super) struct FileContext {
     pub file: String,
     pub text: Option<String>,
     pub decode_error: bool,
-    pub has_nul: bool,
+    pub has_unexpected_nul: bool,
 }
 
 fn relative_display(relative: &Path) -> String {
@@ -42,11 +42,11 @@ impl FileContext {
             file: relative_display(relative),
             text: None,
             decode_error: false,
-            has_nul: false,
+            has_unexpected_nul: false,
         };
         match fs::read(root.join(relative)) {
             Ok(raw) => {
-                context.has_nul = raw.contains(&0);
+                context.has_unexpected_nul = raw.contains(&0) && !is_binary_asset(relative, &raw);
                 if has_text_suffix(relative) {
                     match String::from_utf8(raw) {
                         Ok(text) => context.text = Some(text),
@@ -137,6 +137,24 @@ fn has_text_suffix(file: &Path) -> bool {
             "" | "cfg" | "ini" | "json" | "md" | "py" | "sh" | "toml" | "txt" | "yaml" | "yml"
         )
     })
+}
+
+fn is_binary_asset(file: &Path, raw: &[u8]) -> bool {
+    let Some(suffix) = file.extension().and_then(|suffix| suffix.to_str()) else {
+        return false;
+    };
+    match suffix.to_ascii_lowercase().as_str() {
+        "woff" => raw.starts_with(b"wOFF"),
+        "woff2" => raw.starts_with(b"wOF2"),
+        "ttf" => raw.starts_with(b"\x00\x01\x00\x00") || raw.starts_with(b"true"),
+        "otf" => raw.starts_with(b"OTTO"),
+        "png" => raw.starts_with(b"\x89PNG\r\n\x1a\n"),
+        "jpg" | "jpeg" => raw.starts_with(b"\xff\xd8\xff"),
+        "gif" => raw.starts_with(b"GIF87a") || raw.starts_with(b"GIF89a"),
+        "webp" => raw.starts_with(b"RIFF") && raw.get(8..12) == Some(b"WEBP"),
+        "ico" => raw.starts_with(b"\x00\x00\x01\x00"),
+        _ => false,
+    }
 }
 
 fn dataflow(root: &Path, files: &[PathBuf]) -> Result<Option<AuditFinding>, AuditFinding> {
@@ -249,6 +267,42 @@ fn path_repr(path: &Path) -> String {
 mod tests {
     use super::*;
     use crate::check::audit::Severity;
+
+    #[test]
+    fn binary_assets_require_matching_suffixes_and_signatures() {
+        let assets: &[(&str, &[u8])] = &[
+            ("font.woff", b"wOFF\0"),
+            ("font.WOFF2", b"wOF2\0"),
+            ("font.ttf", b"\x00\x01\x00\x00"),
+            ("font.ttf", b"true\0"),
+            ("font.otf", b"OTTO\0"),
+            ("image.png", b"\x89PNG\r\n\x1a\n\0"),
+            ("image.jpg", b"\xff\xd8\xff\0"),
+            ("image.jpeg", b"\xff\xd8\xff\0"),
+            ("image.gif", b"GIF87a\0"),
+            ("image.gif", b"GIF89a\0"),
+            ("image.webp", b"RIFF\x04\0\0\0WEBP"),
+            ("image.ico", b"\x00\x00\x01\x00"),
+        ];
+        for &(file, raw) in assets {
+            assert!(is_binary_asset(Path::new(file), raw), "{file}: {raw:?}");
+        }
+
+        let mismatches: &[(&str, &[u8])] = &[
+            ("font.woff2", b"wOFF\0"),
+            ("image.png", b"GIF89a\0"),
+            ("image.webp", b"RIFF\x04\0\0\0WAVE"),
+            ("image.webp", b"RIFF\x04\0\0\0WEB"),
+            ("image.webp", b"JUNK\x04\0\0\0WEBP"),
+            ("font", b"wOF2\0"),
+            ("font.md", b"wOF2\0"),
+            ("font.bin", b"wOF2\0"),
+            ("font.exe", b"wOF2\0"),
+        ];
+        for &(file, raw) in mismatches {
+            assert!(!is_binary_asset(Path::new(file), raw), "{file}: {raw:?}");
+        }
+    }
 
     #[test]
     fn reports_scanner_read_errors_in_python_format() {
