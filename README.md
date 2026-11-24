@@ -120,6 +120,8 @@ junctions, so connect it with copies there
 
 - [Reference](docs/reference.md): every command, links vs. copies, how my-skills
   finds your registry, safety checks, and where to keep secrets.
+- [Architecture](docs/architecture.md): how the code is organized; a diagram-based
+  system map in Korean is in [docs/system-map.ko.md](docs/system-map.ko.md).
 - [Contributing](CONTRIBUTING.md): building from source and running the tests.
 - [Changelog](CHANGELOG.md)
 
