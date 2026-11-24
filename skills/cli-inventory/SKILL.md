@@ -62,8 +62,8 @@ per shipped binary, so a multi-binary formula like `coreutils` counts once.
 ## Where the inventory lives
 
 The inventory is stored at the **shared data root**, not inside this skill
-directory. It is the same machine-local location every host shares, so Claude,
-Codex, and Hermes all read the one inventory:
+directory. It is the same machine-local location every host shares, so Claude
+Code, Codex, and Antigravity CLI all read the one inventory:
 
 1. If the `my-skills` CLI is available, run `my-skills data-path cli-inventory`
    (add `--create` to make it on first use). Use the path it prints.

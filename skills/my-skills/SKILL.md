@@ -1,6 +1,6 @@
 ---
 name: my-skills
-description: Manage your my-skills registry from an agent conversation. Use when setting up or creating a registry, listing available skills, sharing a host-local skill into the registry, enabling or disabling a skill, or installing/syncing skills into Claude Code, Codex, Hermes, or Antigravity CLI (agy).
+description: Manage your my-skills registry from an agent conversation. Use when setting up or creating a registry, listing available skills, sharing a host-local skill into the registry, enabling or disabling a skill, or installing/syncing skills into Claude Code, Codex, or Antigravity CLI (agy).
 ---
 
 # My Skills Registry
@@ -12,7 +12,7 @@ or disable the skill.
 **Mental model.** Your registry is a folder (default `~/my-agent-skills`) holding
 `my-skills.toml` (the manifest) and `skills/<name>/SKILL.md` (the canonical
 originals). Host directories (`~/.claude/skills`, `~/.agents/skills`,
-`~/.hermes/skills`, `~/.gemini/config/skills`) hold the host connections.
+`~/.gemini/config/skills`) hold the host connections.
 New registries use links by default, and edits to canonical skills are visible
 through those links. In copy mode, the CLI detects local changes before
 replacing a copy. You can also set `install_mode = "link" | "copy"` per host
@@ -104,7 +104,7 @@ my-skills skills --json
 First produce a read-only plan:
 
 ```bash
-my-skills share --from <claude|codex|hermes|agy> --plan --json
+my-skills share --from <claude|codex|agy> --plan --json
 ```
 
 Show the user the candidate skills, validation/audit risks, canonical status,

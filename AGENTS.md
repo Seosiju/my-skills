@@ -33,6 +33,6 @@ existing active registry. On a fresh machine with no active root, first-run
 discovery can still cache the current directory, so check `my-skills doctor`
 before doing real registry work.
 
-Supported hosts are Claude Code, Codex, Hermes, and Antigravity CLI (`agy`).
-Hermes and Antigravity CLI are disabled by default in new registries. Do not
-document unsupported hosts as supported.
+Supported hosts are Claude Code, Codex, and Antigravity CLI (`agy`).
+Antigravity CLI is disabled by default in new registries. Hermes support was
+removed. Do not document unsupported hosts as supported.
