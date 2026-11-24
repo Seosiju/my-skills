@@ -526,6 +526,47 @@ pub fn selected_skills<'m>(
         .collect())
 }
 
+/// Resolve `SKILL...` plus `--group <GROUP>...` into registered skill names:
+/// the sorted, de-duplicated union of the explicit names (each must be
+/// registered) and every skill whose manifest `group` matches. A group that
+/// matches no registered skill is an error, so a typo never selects nothing.
+/// Both inputs empty returns an empty list; the caller applies its default.
+pub fn select_names(
+    manifest: &Manifest,
+    skills: &[String],
+    groups: &[String],
+) -> Result<Vec<String>> {
+    let mut names: Vec<String> = skills.to_vec();
+    for group in groups {
+        let members: Vec<&String> = manifest
+            .skills
+            .values()
+            .filter(|skill| skill.group.as_deref() == Some(group.as_str()))
+            .map(|skill| &skill.name)
+            .collect();
+        if members.is_empty() {
+            return Err(Error::Manifest(format!(
+                "unknown group: {group} (no registered skill has group = \"{group}\")"
+            )));
+        }
+        names.extend(members.into_iter().cloned());
+    }
+    names.sort_unstable();
+    names.dedup();
+    let missing: Vec<&str> = names
+        .iter()
+        .map(String::as_str)
+        .filter(|name| !manifest.skills.contains_key(*name))
+        .collect();
+    if !missing.is_empty() {
+        return Err(Error::Manifest(format!(
+            "unknown skill(s): {}",
+            missing.join(", ")
+        )));
+    }
+    Ok(names)
+}
+
 #[cfg(test)]
 mod expand_path_separator_tests {
     use super::*;
