@@ -24,3 +24,14 @@ pub fn config_error(err: impl std::fmt::Display) -> ExitCode {
     eprintln!("error: {err}");
     ExitCode::from(2)
 }
+
+/// Print a dry-run preview line when a real run would record the resolved
+/// current-directory registry as the active registry cache.
+pub fn print_would_cache_root(resolution: &crate::registry::root::RootResolution) {
+    if resolution.would_cache() {
+        println!(
+            "  would remember {} as the active registry",
+            crate::platform::paths::display_path(&resolution.root)
+        );
+    }
+}

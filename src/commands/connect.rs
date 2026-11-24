@@ -34,8 +34,8 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         install_mode: args.mode.map(Into::into),
         ..CliOverrides::default()
     };
-    let manifest = match root::load_manifest_from_cwd(&cli) {
-        Ok(m) => m,
+    let (manifest, resolution) = match root::load_manifest_resolved(&cli, !args.dry_run) {
+        Ok(loaded) => loaded,
         Err(e) => return config_error(e),
     };
     let (skills, hosts) = match root::select_requested(
@@ -83,6 +83,7 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         println!("{}", format_gate(&gate, "AUDIT WOULD BLOCK"));
         println!("Dry run — planned actions (nothing written):");
         print_plan(&items);
+        super::print_would_cache_root(&resolution);
         return ExitCode::SUCCESS;
     }
 
@@ -129,16 +130,25 @@ fn is_builtin_seed_default_install(
 // ---------------------------------------------------------------- sync
 
 pub fn sync(args: &SyncArgs) -> ExitCode {
-    let manifest = match root::load_manifest_from_cwd(&CliOverrides::default()) {
-        Ok(m) => m,
-        Err(e) => return config_error(e),
-    };
-    sync_manifest(&manifest, args)
+    let (manifest, resolution) =
+        match root::load_manifest_resolved(&CliOverrides::default(), !args.dry_run) {
+            Ok(loaded) => loaded,
+            Err(e) => return config_error(e),
+        };
+    sync_manifest_with_resolution(&manifest, args, Some(&resolution))
 }
 
 /// Sync against an already loaded manifest (also used by bootstrap and the
 /// git hooks).
 pub fn sync_manifest(manifest: &Manifest, args: &SyncArgs) -> ExitCode {
+    sync_manifest_with_resolution(manifest, args, None)
+}
+
+fn sync_manifest_with_resolution(
+    manifest: &Manifest,
+    args: &SyncArgs,
+    resolution: Option<&root::RootResolution>,
+) -> ExitCode {
     let hosts = match resolve_hosts(manifest, args.host.as_deref()) {
         Ok(h) => h,
         Err(e) => return config_error(e),
@@ -220,6 +230,9 @@ pub fn sync_manifest(manifest: &Manifest, args: &SyncArgs) -> ExitCode {
     if args.dry_run {
         println!("Dry run — planned actions (nothing written):");
         print_plan(&items);
+        if let Some(resolution) = resolution {
+            super::print_would_cache_root(resolution);
+        }
         return ExitCode::SUCCESS;
     }
     if !items.iter().any(|i| i.action.writes()) {
@@ -259,10 +272,11 @@ fn print_plan_results_noop(items: &[PlanItem]) {
 // ---------------------------------------------------------------- uninstall
 
 pub fn uninstall(args: &UninstallArgs) -> ExitCode {
-    let manifest = match root::load_manifest_from_cwd(&CliOverrides::default()) {
-        Ok(m) => m,
-        Err(e) => return config_error(e),
-    };
+    let (manifest, resolution) =
+        match root::load_manifest_resolved(&CliOverrides::default(), !args.dry_run) {
+            Ok(loaded) => loaded,
+            Err(e) => return config_error(e),
+        };
     let Some(skill) = args.skill.as_deref() else {
         return config_error("uninstall requires a skill name");
     };
@@ -284,6 +298,7 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
     if args.dry_run {
         println!("Dry run — planned actions (nothing written):");
         print_plan(&items);
+        super::print_would_cache_root(&resolution);
         return ExitCode::SUCCESS;
     }
     if !confirm_multi_host_write(&hosts, args.yes) {
@@ -322,10 +337,11 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
 // ---------------------------------------------------------------- convert
 
 pub fn convert(args: &ConvertArgs) -> ExitCode {
-    let manifest = match root::load_manifest_from_cwd(&CliOverrides::default()) {
-        Ok(m) => m,
-        Err(e) => return config_error(e),
-    };
+    let (manifest, resolution) =
+        match root::load_manifest_resolved(&CliOverrides::default(), !args.dry_run) {
+            Ok(loaded) => loaded,
+            Err(e) => return config_error(e),
+        };
     // Convert acts on existing connections, so every registered skill is in
     // scope unless one is named.
     let (skills, hosts) = match root::select_requested(
@@ -353,6 +369,7 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
         println!("Dry run — planned actions (nothing written):");
         print_plan(&items);
         print_skipped_convert_hosts(&skipped_hosts);
+        super::print_would_cache_root(&resolution);
         return ExitCode::SUCCESS;
     }
     if !confirm_multi_host_write(&active_hosts, args.yes) {
