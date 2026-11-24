@@ -86,7 +86,7 @@ pub struct Skill {
     pub hosts: Vec<String>,
     pub source_type: String,
     pub source_revision: String,
-    /// Display-only grouping read by registries; the CLI ignores it.
+    /// Optional group used for catalog filtering and skill selection.
     pub group: Option<String>,
 }
 
@@ -401,7 +401,7 @@ pub fn expand_path(value: &str) -> PathBuf {
     absolute_path(Path::new(&expand_vars(value)))
 }
 
-fn expand_os_path(path: &Path) -> PathBuf {
+pub(crate) fn expand_os_path(path: &Path) -> PathBuf {
     path.to_str()
         .map_or_else(|| absolute_path(path), expand_path)
 }

@@ -25,7 +25,8 @@ use crate::drive::plan::{self, Action, PlanItem, SyncScope};
 use crate::drive::state::State;
 use crate::platform::paths::display_path;
 use crate::registry::manifest::{
-    CliOverrides, InstallMode, Manifest, Skill, expand_path, load_manifest,
+    CliOverrides, InstallMode, Manifest, Skill, expand_path, load_manifest, select_names,
+    selected_skills,
 };
 use crate::registry::root::{self, confirm_multi_host_write, resolve_hosts};
 
@@ -35,10 +36,6 @@ pub fn install(args: &InstallArgs) -> ExitCode {
     if args.json && !args.dry_run {
         return config_error("install --json requires --dry-run");
     }
-    let requested = match super::one_skill(&args.skills, &args.groups) {
-        Ok(requested) => requested,
-        Err(e) => return config_error(e),
-    };
     let cli = CliOverrides {
         install_mode: args.mode.map(Into::into),
         ..CliOverrides::default()
@@ -47,11 +44,16 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         Ok(loaded) => loaded,
         Err(e) => return config_error(e),
     };
-    let (skills, hosts) =
-        match root::select_requested(&manifest, requested, args.all, args.host.as_deref()) {
-            Ok(selection) => selection,
-            Err(e) => return config_error(e),
-        };
+    let skills = match select_names(&manifest, &args.skills, &args.groups)
+        .and_then(|names| selected_skills(&manifest, &names, args.all))
+    {
+        Ok(skills) => skills,
+        Err(e) => return config_error(e),
+    };
+    let hosts = match resolve_hosts(&manifest, args.host.as_deref()) {
+        Ok(hosts) => hosts,
+        Err(e) => return config_error(e),
+    };
     if let Err(error) = remember_write_root(Some(&resolution), !args.dry_run) {
         return config_error(error);
     }
@@ -186,25 +188,22 @@ fn sync_manifest_with_resolution(
         Ok(h) => h,
         Err(e) => return config_error(e),
     };
-    // Prune needs disabled skills in scope too, so sync always looks at every
-    // registered skill. `--all` keeps its v0.4.1 meaning: connect disabled
-    // skills as well.
-    let requested = match super::one_skill(&args.skills, &args.groups) {
+    // By default, sync looks at every registered skill so prune sees disabled
+    // skills too. `--all` connects disabled skills within the selected scope.
+    let requested = match select_names(manifest, &args.skills, &args.groups) {
         Ok(requested) => requested,
         Err(e) => return config_error(e),
     };
-    let scoped: Vec<Skill> = match requested {
-        Some(name) => match manifest.skills.get(name) {
-            Some(skill) => vec![skill.clone()],
-            None => return config_error(format!("unknown skill(s): {name}")),
-        },
-        None => manifest.skills.values().cloned().collect(),
+    let scoped = match selected_skills(manifest, &requested, true) {
+        Ok(skills) => skills,
+        Err(e) => return config_error(e),
     };
     if let Err(error) = remember_write_root(resolution, !args.dry_run && !args.check) {
         return config_error(error);
     }
     let scoped: Vec<Skill> = scoped
         .into_iter()
+        .cloned()
         .map(|mut s| {
             if args.all {
                 s.enabled = true;
@@ -221,7 +220,7 @@ fn sync_manifest_with_resolution(
     let scope = SyncScope {
         skills: &skills,
         hosts: &hosts,
-        include_orphans: requested.is_none(),
+        include_orphans: requested.is_empty(),
         prune: !args.no_prune,
     };
     let items = match plan::plan_sync(manifest, &state, &scope, None) {
@@ -343,16 +342,20 @@ fn print_plan_results_noop(items: &[PlanItem]) {
 // ---------------------------------------------------------------- uninstall
 
 pub fn uninstall(args: &UninstallArgs) -> ExitCode {
-    let skill = match super::one_skill(&args.skills, &args.groups) {
-        Ok(Some(skill)) => skill,
-        Ok(None) => return config_error("uninstall requires a skill name"),
-        Err(e) => return config_error(e),
-    };
+    if args.skills.is_empty() && args.groups.is_empty() {
+        return config_error("uninstall requires a skill name");
+    }
     let (manifest, resolution) =
         match load_connect_manifest(&CliOverrides::default(), !args.dry_run) {
             Ok(loaded) => loaded,
             Err(e) => return config_error(e),
         };
+    let names = match select_names(&manifest, &args.skills, &args.groups) {
+        Ok(names) => names,
+        // A v1.1 single-name uninstall can remove a managed orphan record.
+        Err(_) if args.skills.len() == 1 && args.groups.is_empty() => args.skills.clone(),
+        Err(e) => return config_error(e),
+    };
     let hosts = match resolve_hosts(&manifest, args.host.as_deref()) {
         Ok(h) => h,
         Err(e) => return config_error(e),
@@ -365,10 +368,12 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
         Err(e) => return config_error(e),
     };
     let mut items = Vec::new();
-    for host in &hosts {
-        match plan::plan_uninstall_one(&manifest, skill, host, &state) {
-            Ok(item) => items.push(item),
-            Err(e) => return config_error(e),
+    for name in &names {
+        for host in &hosts {
+            match plan::plan_uninstall_one(&manifest, name, host, &state) {
+                Ok(item) => items.push(item),
+                Err(e) => return config_error(e),
+            }
         }
     }
     if args.dry_run {

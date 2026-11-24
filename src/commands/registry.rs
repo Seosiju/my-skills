@@ -80,10 +80,15 @@ pub fn skills(args: &SkillsArgs) -> ExitCode {
             host,
             enabled,
             &hosts,
+            &args.groups,
             args.with_governance,
         )?;
         Ok(if args.json {
-            json_with_registry(rows, &resolution)
+            if args.brief {
+                json_with_registry(rows.brief(), &resolution)
+            } else {
+                json_with_registry(rows, &resolution)
+            }
         } else {
             rows.table(&hosts)
         })
@@ -180,59 +185,70 @@ pub fn share(args: &ShareArgs) -> ExitCode {
 }
 
 pub fn enable(args: &SkillNameArgs) -> ExitCode {
-    match super::one_skill(&args.skills, &args.groups) {
-        Ok(Some(skill)) => set_enabled(skill, true, args.dry_run),
-        Ok(None) => super::config_error("enable requires a skill name"),
-        Err(e) => super::config_error(e),
-    }
+    set_enabled(args, true)
 }
 
 pub fn disable(args: &SkillNameArgs) -> ExitCode {
-    match super::one_skill(&args.skills, &args.groups) {
-        Ok(Some(skill)) => set_enabled(skill, false, args.dry_run),
-        Ok(None) => super::config_error("disable requires a skill name"),
-        Err(e) => super::config_error(e),
-    }
+    set_enabled(args, false)
 }
 
-fn set_enabled(name: &str, enabled: bool, dry_run: bool) -> ExitCode {
-    if dry_run {
-        let (manifest, resolution) = match load_resolved(false) {
-            Ok(loaded) => loaded,
-            Err(err) => return super::config_error(err),
-        };
-        let Some(skill) = manifest.skills.get(name) else {
-            return super::config_error(format!("unknown skill: {name}"));
-        };
-        println!(
-            "Dry run — would mark {name} {} (currently {}); nothing written",
-            enabled_label(enabled),
-            enabled_label(skill.enabled)
-        );
-        super::print_would_cache_root(&resolution);
-        return ExitCode::SUCCESS;
+fn set_enabled(args: &SkillNameArgs, enabled: bool) -> ExitCode {
+    if args.skills.is_empty() && args.groups.is_empty() {
+        let command = if enabled { "enable" } else { "disable" };
+        return super::config_error(format!("{command} requires a skill name"));
     }
     let result = (|| {
-        let resolution = root::resolve_root(None, false)?;
-        if let Some(refusal) = resolution.write_refusal() {
-            return Err(Error::Manifest(refusal));
-        }
-        let manifest = manifest::load_manifest(&resolution.root, &CliOverrides::default())?;
-        if !manifest.skills.contains_key(name) {
-            return Err(Error::Manifest(format!("unknown skill: {name}")));
+        let (manifest, resolution) = if args.dry_run {
+            load_resolved(false)?
+        } else {
+            let resolution = root::resolve_root(None, false)?;
+            if let Some(refusal) = resolution.write_refusal() {
+                return Err(Error::Manifest(refusal));
+            }
+            let manifest = manifest::load_manifest(&resolution.root, &CliOverrides::default())?;
+            (manifest, resolution)
+        };
+        let names = match manifest::select_names(&manifest, &args.skills, &args.groups) {
+            Ok(names) => names,
+            Err(_) if args.skills.len() == 1 && args.groups.is_empty() => {
+                return Err(Error::Manifest(format!(
+                    "unknown skill: {}",
+                    args.skills[0]
+                )));
+            }
+            Err(e) => return Err(e),
+        };
+        let label = enabled_label(enabled);
+        if args.dry_run {
+            for name in &names {
+                let current = manifest.skills[name].enabled;
+                if current == enabled {
+                    println!("Dry run — {name} already {label}; nothing written");
+                } else {
+                    println!(
+                        "Dry run — would mark {name} {label} (currently {}); nothing written",
+                        enabled_label(current)
+                    );
+                }
+            }
+            super::print_would_cache_root(&resolution);
+            return Ok(());
         }
         let path = manifest.root.join(MANIFEST_FILE);
         share::ensure_outside_hosts(&path, share::target_paths(&manifest))?;
-        let edit = edit::prepare_enabled(&path, name, enabled)?;
+        let edit = edit::prepare_enabled(&path, &names, enabled)?;
         if resolution.would_cache() {
             root::resolve_root(None, true)?;
         }
-        edit.commit()
+        edit.commit()?;
+        for name in &names {
+            println!("{label}: {name}");
+        }
+        Ok(())
     })();
     if let Err(err) = result {
         return super::config_error(err);
     }
-    println!("{}: {name}", enabled_label(enabled));
     ExitCode::SUCCESS
 }
 

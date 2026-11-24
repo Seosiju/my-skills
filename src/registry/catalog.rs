@@ -11,7 +11,7 @@ use crate::check::audit::{self, AuditPolicy, Severity};
 use crate::check::frontmatter::{Mapping, Node, parse_document};
 use crate::drive::plan::status_of;
 use crate::drive::state::State;
-use crate::registry::manifest::{Manifest, Skill};
+use crate::registry::manifest::{Manifest, Skill, select_names};
 
 #[derive(Serialize)]
 pub(crate) struct Catalog {
@@ -20,16 +20,24 @@ pub(crate) struct Catalog {
 
 #[derive(Serialize)]
 struct Row {
-    name: String,
-    enabled: bool,
-    hosts: Vec<String>,
+    #[serde(flatten)]
+    summary: Summary,
     description: String,
     path: String,
-    status: BTreeMap<String, &'static str>,
+    canonical_path: String,
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     governance: Option<Governance>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+}
+
+#[derive(Serialize)]
+struct Summary {
+    name: String,
+    enabled: bool,
+    hosts: Vec<String>,
+    group: Option<String>,
+    status: BTreeMap<String, &'static str>,
 }
 
 #[derive(Serialize)]
@@ -60,15 +68,18 @@ pub(crate) fn rows(
     host: Option<&str>,
     enabled: Option<bool>,
     status_hosts: &[String],
-    with_status: bool,
+    groups: &[String],
+    with_governance: bool,
 ) -> Result<Catalog> {
-    let policy = with_status
+    let selected = select_names(manifest, &[], groups)?;
+    let policy = with_governance
         .then(|| audit::policy_from_settings(&manifest.audit))
         .transpose()?;
     let mut skills = Vec::new();
     for skill in manifest.skills.values() {
         if enabled.is_some_and(|enabled| enabled != skill.enabled)
             || host.is_some_and(|host| !supports(&skill.hosts, host))
+            || (!selected.is_empty() && selected.binary_search(&skill.name).is_err())
         {
             continue;
         }
@@ -85,7 +96,8 @@ pub(crate) fn rows(
             .as_ref()
             .map(|policy| governance(manifest, skill, state, policy))
             .transpose()?;
-        let (description, error) = match metadata(&manifest.skill_dir(&skill.name)) {
+        let directory = manifest.skill_dir(&skill.name);
+        let (description, error) = match metadata(&directory) {
             Ok(meta) => (
                 field(&meta, "description").map_or_else(String::new, Node::python_string),
                 None,
@@ -96,12 +108,16 @@ pub(crate) fn rows(
             }
         };
         skills.push(Row {
-            name: skill.name.clone(),
-            enabled: skill.enabled,
-            hosts: skill.hosts.clone(),
+            summary: Summary {
+                name: skill.name.clone(),
+                enabled: skill.enabled,
+                hosts: skill.hosts.clone(),
+                group: skill.group.clone(),
+                status,
+            },
             description,
             path: display_path(&Path::new(&manifest.skills_root).join(&skill.name)),
-            status,
+            canonical_path: display_path(&directory),
             governance,
             error,
         });
@@ -152,6 +168,32 @@ fn governance(
 }
 
 impl Catalog {
+    pub(crate) fn brief(&self) -> impl Serialize + '_ {
+        #[derive(Serialize)]
+        struct BriefRow<'a> {
+            #[serde(flatten)]
+            summary: &'a Summary,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            governance: Option<&'a Governance>,
+        }
+
+        #[derive(Serialize)]
+        struct BriefCatalog<'a> {
+            skills: Vec<BriefRow<'a>>,
+        }
+
+        BriefCatalog {
+            skills: self
+                .skills
+                .iter()
+                .map(|row| BriefRow {
+                    summary: &row.summary,
+                    governance: row.governance.as_ref(),
+                })
+                .collect(),
+        }
+    }
+
     pub(crate) fn table(&self, status_hosts: &[String]) -> String {
         let include_governance = self.skills.iter().any(|row| row.governance.is_some());
         let mut headers = vec!["SKILL".into(), "ENABLED".into()];
@@ -160,15 +202,16 @@ impl Catalog {
             headers.extend(["AUDIT".into(), "TRUST".into()]);
         }
         let rows = self.skills.iter().map(|row| {
+            let summary = &row.summary;
             let name = if row.error.is_some() {
-                format!("{} (invalid)", row.name)
+                format!("{} (invalid)", summary.name)
             } else {
-                row.name.clone()
+                summary.name.clone()
             };
-            let mut cells = vec![name, if row.enabled { "yes" } else { "no" }.into()];
+            let mut cells = vec![name, if summary.enabled { "yes" } else { "no" }.into()];
             cells.extend(status_hosts.iter().map(|host| {
-                if supports(&row.hosts, host) {
-                    row.status.get(host).unwrap_or(&"-").to_lowercase()
+                if supports(&summary.hosts, host) {
+                    summary.status.get(host).unwrap_or(&"-").to_lowercase()
                 } else {
                     "-".into()
                 }
