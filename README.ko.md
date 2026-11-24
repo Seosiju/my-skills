@@ -84,22 +84,10 @@ frontmatter(`name`, `description`)를 가진 `SKILL.md`를 포함합니다 —
 registry의 `skills/`에는 정규 스킬이 있습니다. 호스트 디렉터리에는 에이전트가
 발견할 수 있는 정규 스킬의 링크나 복사본이 있습니다.
 
-```mermaid
-flowchart LR
-    edit["✏️ 당신"] --> src["registry skills/&lt;name&gt;<br/><b>소스 (canonical)</b>"]
-    ext["외부 스킬"] -.->|import / share| src
-    src -->|"install (링크 또는 복사)"| hosts
-    src -->|"sync (연결 상태 조정)"| hosts
-
-    subgraph hosts["호스트 디렉터리"]
-        c["Claude Code"]
-        x["Codex"]
-        h["Hermes"]
-        a["Antigravity CLI (agy)"]
-    end
-
-    hosts -. "복사본을 직접 수정하면" .-> drift["⚠️ DRIFTED<br/>sync가 덮어쓰지 않음"]
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/how-it-works-dark.png">
+  <img alt="my-skills 동작 구조: 정규 Git 레지스트리에서 스킬을 편집(또는 외부 스킬을 import·share)하면 Rust my-skills CLI가 Claude Code, Codex, Antigravity CLI(agy), Hermes 호스트 디렉터리에 링크 또는 복사로 설치·동기화하고, 직접 수정된 복사본은 덮어쓰지 않고 DRIFTED로 표시하며, 비공개 GitHub 원격 저장소에 push하면 다른 기기에서 git pull 시 post-merge 훅이 my-skills sync를 실행합니다." src="docs/images/how-it-works.png">
+</picture>
 
 ## CLI 설치
 

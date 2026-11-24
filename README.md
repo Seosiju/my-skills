@@ -85,22 +85,10 @@ longer wanted by default. It protects locally edited copies from overwrites.
 The registry's `skills/` directory holds the canonical skills. Host directories
 hold links to those skills or copies that the agent can discover.
 
-```mermaid
-flowchart LR
-    edit["✏️ You"] --> src["registry skills/&lt;name&gt;<br/><b>source (canonical)</b>"]
-    ext["external skill"] -.->|import / share| src
-    src -->|"install (link or copy)"| hosts
-    src -->|"sync (reconcile)"| hosts
-
-    subgraph hosts["Host directories"]
-        c["Claude Code"]
-        x["Codex"]
-        h["Hermes"]
-        a["Antigravity CLI (agy)"]
-    end
-
-    hosts -. "if a copy is edited directly" .-> drift["⚠️ DRIFTED<br/>sync won't overwrite"]
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/how-it-works-dark.png">
+  <img alt="How my-skills works: you edit skills in your canonical Git registry (or import and share external skills), the Rust my-skills CLI installs or syncs them by link or copy into Claude Code, Codex, Antigravity CLI (agy), and Hermes host directories, locally edited copies are flagged as DRIFTED without being overwritten, and pushing to a private GitHub remote lets another machine run my-skills sync via its post-merge hook on git pull." src="docs/images/how-it-works.png">
+</picture>
 
 ## Install the CLI
 
