@@ -15,7 +15,18 @@ use crate::registry::manifest::InstallMode;
 #[command(
     name = "my-skills",
     version,
-    about = "Personal skill drive: one canonical registry, linked into every agent host."
+    about = "Personal skill drive: one canonical registry, linked into every agent host.",
+    after_help = "\
+Registry: $MY_SKILLS_ROOT, else ./my-skills.toml (or a parent), else the active
+registry saved by `set-root`. Commands that write refuse to run from a registry
+that is not the active one; run `set-root` there or set MY_SKILLS_ROOT.
+Read-only commands and --dry-run never change the saved active registry.
+
+Hosts: without --host, a command acts on every enabled [targets.*] host.
+
+Exit codes: 0 ok; 1 blocked or failed check; 2 usage or configuration error.
+--dry-run exits 1 only on validation failure; read `blocked` in --json output,
+or use `sync --check`, which exits 1 when anything is out of date."
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -87,14 +98,18 @@ pub enum Command {
 
 #[derive(Debug, Args)]
 pub struct ValidateArgs {
+    /// Skill to validate (default: every skill directory under skills/)
     pub skill: Option<String>,
 }
 
 #[derive(Debug, Args)]
 pub struct AuditArgs {
+    /// Skill to audit (default: every enabled skill)
     pub skill: Option<String>,
+    /// Include disabled skills
     #[arg(long)]
     pub all: bool,
+    /// Machine-readable findings
     #[arg(long)]
     pub json: bool,
 }
@@ -111,38 +126,50 @@ pub struct DoctorArgs {
 
 #[derive(Debug, Args)]
 pub struct UpdateArgs {
+    /// Release channel to update from
     #[arg(long, value_enum, default_value = "stable")]
     pub channel: Channel,
+    /// Only report whether a newer version exists
     #[arg(long)]
     pub check: bool,
+    /// Show what would be downloaded and replaced; write nothing
     #[arg(long)]
     pub dry_run: bool,
 }
 
 #[derive(Debug, Args)]
 pub struct BootstrapArgs {
+    /// Show the plan; write nothing
     #[arg(long)]
     pub dry_run: bool,
     /// Accepted for v0.4.1 compatibility; v1 has no tool install step
     #[arg(long)]
     pub skip_tool_install: bool,
+    /// Skip connecting skills
     #[arg(long)]
     pub skip_skill_install: bool,
+    /// Connect only to this host (default: every enabled host)
     #[arg(long)]
     pub host: Option<String>,
+    /// Also connect disabled skills
     #[arg(long)]
     pub all: bool,
+    /// Override the install mode for new connections
     #[arg(long, value_enum)]
     pub mode: Option<ModeArg>,
 }
 
 #[derive(Debug, Args)]
 pub struct InitRegistryArgs {
+    /// Where to create the registry (default: ~/my-agent-skills; asked in a terminal)
     pub path: Option<String>,
+    /// Include the seed skills (the default)
     #[arg(long, conflicts_with = "no_defaults")]
     pub with_defaults: bool,
+    /// Create an empty registry without seed skills
     #[arg(long)]
     pub no_defaults: bool,
+    /// Skip `git init` and the initial commit
     #[arg(long)]
     pub no_git: bool,
     /// Show what would change; write nothing
@@ -152,6 +179,7 @@ pub struct InitRegistryArgs {
 
 #[derive(Debug, Args)]
 pub struct SetRootArgs {
+    /// Registry to make active (default: the current directory's registry)
     pub path: Option<String>,
     /// Show what would change; write nothing
     #[arg(long)]
@@ -160,38 +188,55 @@ pub struct SetRootArgs {
 
 #[derive(Debug, Args)]
 pub struct InstallArgs {
+    /// Skill to connect (default: every enabled skill)
     pub skill: Option<String>,
+    /// Connect only to this host (default: every enabled host)
     #[arg(long)]
     pub host: Option<String>,
+    /// Also connect disabled skills
     #[arg(long)]
     pub all: bool,
+    /// Override the install mode for new connections (link or copy)
     #[arg(long, value_enum)]
     pub mode: Option<ModeArg>,
+    /// Show the plan, validation, and audit result; write nothing.
+    /// Exits 1 only on validation failure
     #[arg(long)]
     pub dry_run: bool,
+    /// Machine-readable plan with `blocked` and `applicable`; requires --dry-run
     #[arg(long)]
     pub json: bool,
+    /// Connect even if the security audit would block
     #[arg(long)]
     pub skip_audit: bool,
+    /// Confirm a write to more than one host
     #[arg(long)]
     pub yes: bool,
 }
 
 #[derive(Debug, Args)]
 pub struct ShareArgs {
+    /// Host-local skill to copy into the registry (required unless --plan)
     pub skill: Option<String>,
+    /// Host whose local skills to read
     #[arg(long = "from")]
     pub from_host: String,
+    /// List which host-local skills could be shared; write nothing
     #[arg(long)]
     pub plan: bool,
+    /// Machine-readable plan output
     #[arg(long)]
     pub json: bool,
+    /// Register the shared skill as enabled
     #[arg(long, conflicts_with = "disable")]
     pub enable: bool,
+    /// Register the shared skill as disabled
     #[arg(long)]
     pub disable: bool,
+    /// Overwrite a different canonical skill with the same name
     #[arg(long)]
     pub force: bool,
+    /// Share even if the security audit would block (prints a warning)
     #[arg(long)]
     pub skip_audit: bool,
     /// Same as --plan: show what would be shared; write nothing
@@ -201,6 +246,7 @@ pub struct ShareArgs {
 
 #[derive(Debug, Args)]
 pub struct SkillNameArgs {
+    /// Registered skill name
     pub skill: String,
     /// Show what would change; write nothing
     #[arg(long)]
@@ -216,36 +262,47 @@ pub struct StatusArgs {
 
 #[derive(Debug, Args)]
 pub struct SkillsArgs {
+    /// Machine-readable output (per-host connection status is always included)
     #[arg(long)]
     pub json: bool,
+    /// Only skills that target this host, with its status column
     #[arg(long)]
     pub host: Option<String>,
+    /// Only enabled skills
     #[arg(long, conflicts_with = "disabled")]
     pub enabled: bool,
+    /// Only disabled skills
     #[arg(long)]
     pub disabled: bool,
+    /// Add governance details: audit result and provenance (source, revision)
     #[arg(long)]
     pub with_status: bool,
 }
 
 #[derive(Debug, Default, Args)]
 pub struct SyncArgs {
+    /// Sync only this skill (default: every registered skill; prunes orphans)
     pub skill: Option<String>,
+    /// Sync only this host (default: every enabled host)
     #[arg(long)]
     pub host: Option<String>,
+    /// Also connect disabled skills
     #[arg(long)]
     pub all: bool,
-    /// Report drift only; change nothing
+    /// Report drift only; change nothing. Exits 1 when anything is out of date
     #[arg(long)]
     pub check: bool,
+    /// Confirm a write to more than one host
     #[arg(long)]
     pub yes: bool,
+    /// Connect even if the security audit would block
     #[arg(long)]
     pub skip_audit: bool,
-    /// Keep connections the manifest no longer wants (v1)
+    /// Keep connections the manifest no longer wants (sync prunes them by default)
     #[arg(long)]
     pub no_prune: bool,
-    /// Print the plan without writing (v1)
+    /// Show the plan, validation, and audit result; write nothing.
+    /// Exits 1 only on validation failure
     #[arg(long)]
     pub dry_run: bool,
     /// Print only changes and problems; for git hooks (v1)
@@ -255,22 +312,30 @@ pub struct SyncArgs {
 
 #[derive(Debug, Args)]
 pub struct UninstallArgs {
+    /// Skill whose connections to remove (required); the registry copy stays
     pub skill: Option<String>,
+    /// Remove only from this host (default: every enabled host)
     #[arg(long)]
     pub host: Option<String>,
+    /// Confirm a write to more than one host
     #[arg(long)]
     pub yes: bool,
+    /// Show what would be removed; write nothing
     #[arg(long)]
     pub dry_run: bool,
 }
 
 #[derive(Debug, Args)]
 pub struct ImportArgs {
+    /// Skill directory (containing SKILL.md) to copy into skills/
     pub source: String,
+    /// Overwrite a different canonical skill with the same name
     #[arg(long)]
     pub force: bool,
+    /// Register the imported skill as enabled
     #[arg(long)]
     pub enable: bool,
+    /// Import even if the security audit would block
     #[arg(long)]
     pub skip_audit: bool,
     /// Show what would change; write nothing
@@ -280,22 +345,30 @@ pub struct ImportArgs {
 
 #[derive(Debug, Args)]
 pub struct DataPathArgs {
+    /// Skill whose machine-local data directory to print
     pub skill: String,
+    /// Create the directory if it does not exist
     #[arg(long)]
     pub create: bool,
 }
 
 #[derive(Debug, Args)]
 pub struct ConvertArgs {
+    /// Skill to convert (default: every registered skill's connections)
     pub skill: Option<String>,
+    /// Target mode
     #[arg(long, value_enum)]
     pub to: ModeArg,
+    /// Convert only on this host (default: every enabled host)
     #[arg(long)]
     pub host: Option<String>,
+    /// Accepted for compatibility; convert already covers every registered skill
     #[arg(long)]
     pub all: bool,
+    /// Show what would change; write nothing
     #[arg(long)]
     pub dry_run: bool,
+    /// Confirm a write to more than one host
     #[arg(long)]
     pub yes: bool,
 }
