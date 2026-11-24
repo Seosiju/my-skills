@@ -329,7 +329,11 @@ fn bootstrap_dry_run_previews_sync_and_hooks() {
         .assert()
         .success()
         .stdout(
-            contains("would run: my-skills sync --yes --dry-run").and(contains("hooks install")),
+            contains("would run: my-skills sync --yes --dry-run")
+                .and(contains(
+                    "would suggest: run `my-skills hooks install` to check commits",
+                ))
+                .and(contains("then: my-skills hooks install").not()),
         );
 }
 
