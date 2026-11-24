@@ -294,11 +294,7 @@ pub(crate) fn import(
     dry_run: bool,
     on_audit_skip: impl FnOnce(),
 ) -> Operation<ImportOutcome> {
-    let snapshot = if dry_run {
-        Snapshot::new_dry_run(manifest, source)?
-    } else {
-        Snapshot::new(manifest, source)?
-    };
+    let snapshot = Snapshot::new(manifest, source)?;
     let validation = compose_validation(&snapshot.source);
     if !validation.ok() {
         return Err(Failure::Validation(validation.errors));
@@ -335,25 +331,18 @@ pub(crate) fn import(
         .skills
         .get(&name)
         .is_some_and(|skill| skill.enabled);
-    let enabled = if dry_run {
-        edit::preview_import(
-            &manifest.root.join(MANIFEST_FILE),
-            &name,
-            enable,
-            current,
-            &enabled_hosts(manifest),
-        )?
-    } else {
-        let (edit, enabled) = edit::prepare_import(
-            &manifest.root.join(MANIFEST_FILE),
-            &name,
-            enable,
-            current,
-            &enabled_hosts(manifest),
-        )?;
+    let (edit, enabled) = edit::prepare_import(
+        &manifest.root.join(MANIFEST_FILE),
+        &name,
+        enable,
+        current,
+        &enabled_hosts(manifest),
+    )?;
+    // A dry run stops before anything persistent is written. The temporary
+    // staging copy and edit lock are released when they drop.
+    if !dry_run {
         snapshot.publish(manifest, &canonical, &old, &hash, &edit, || Ok(()))?;
-        enabled
-    };
+    }
     Ok(ImportOutcome {
         name,
         canonical,
@@ -637,7 +626,7 @@ struct Snapshot {
 }
 
 impl Snapshot {
-    fn check_only(manifest: &Manifest, source: &Path) -> Operation<(Dir, PathBuf)> {
+    fn new(manifest: &Manifest, source: &Path) -> Operation<Self> {
         let dir = open_source(source)?;
         let resolved_source = physical_path(source)?.0;
         let data = physical_path(&paths::data_root())?.0;
@@ -659,30 +648,10 @@ impl Snapshot {
                 "source contains the registry staging directory".into(),
             ));
         }
-        Ok((dir, stage_parent))
-    }
-
-    fn new(manifest: &Manifest, source: &Path) -> Operation<Self> {
-        Self::stage(manifest, source, false)
-    }
-
-    fn new_dry_run(manifest: &Manifest, source: &Path) -> Operation<Self> {
-        Self::stage(manifest, source, true)
-    }
-
-    fn stage(manifest: &Manifest, source: &Path, outside_registry: bool) -> Operation<Self> {
-        let (dir, stage_parent) = Self::check_only(manifest, source)?;
-        let temp = if outside_registry {
-            Builder::new()
-                .prefix(".my-skills-")
-                .tempdir()
-                .map_err(|err| Error::io(std::env::temp_dir(), err))?
-        } else {
-            Builder::new()
-                .prefix(".my-skills-")
-                .tempdir_in(&stage_parent)
-                .map_err(|err| Error::io(&stage_parent, err))?
-        };
+        let temp = Builder::new()
+            .prefix(".my-skills-")
+            .tempdir_in(&stage_parent)
+            .map_err(|err| Error::io(&stage_parent, err))?;
         let copied = temp
             .path()
             .join("snapshot")

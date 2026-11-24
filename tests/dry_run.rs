@@ -388,7 +388,7 @@ fn real_command_from_cwd_writes_root_cache_and_never_repoints_existing_cache() {
 }
 
 #[test]
-fn import_dry_run_writes_no_lock_or_cache_even_when_edit_lock_exists() {
+fn import_dry_run_writes_no_root_cache_and_respects_edit_lock() {
     let env = Env::new();
     let incoming = env.tmp.path().join("incoming/beta");
     fs::create_dir_all(&incoming).unwrap();
@@ -397,17 +397,35 @@ fn import_dry_run_writes_no_lock_or_cache_even_when_edit_lock_exists() {
         "---\nname: beta\ndescription: Incoming skill.\n---\n\nBody.\n",
     )
     .unwrap();
+    let before_manifest = env.manifest();
+    let before_skills = listing(&env.root().join("skills"));
     let lock = env.root().join("my-skills.toml.edit-lock");
     fs::write(&lock, "other writer\n").unwrap();
 
     env.cmd_in_registry_without_env()
         .args(["import", &incoming.display().to_string(), "--dry-run"])
         .assert()
-        .success()
-        .stdout(contains("would import to"));
+        .code(2)
+        .stderr(contains("my-skills.toml.edit-lock"));
     assert_eq!(fs::read_to_string(&lock).unwrap(), "other writer\n");
     assert!(!env.root_cache().exists());
     assert!(!env.tmp.path().join("config").exists());
+    assert_eq!(listing(&env.root().join("skills")), before_skills);
+
+    fs::remove_file(&lock).unwrap();
+    let before_registry = listing(&env.root());
+
+    env.cmd_in_registry_without_env()
+        .args(["import", &incoming.display().to_string(), "--dry-run"])
+        .assert()
+        .success()
+        .stdout(contains("would import to"))
+        .stdout(contains("as the active registry"));
+    assert!(!env.root_cache().exists());
+    assert!(!env.tmp.path().join("config").exists());
+    assert_eq!(env.manifest(), before_manifest);
+    assert_eq!(listing(&env.root()), before_registry);
+    assert_eq!(listing(&env.root().join("skills")), before_skills);
 }
 
 #[test]
