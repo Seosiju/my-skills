@@ -19,6 +19,7 @@ use crate::drive::link::{self, EntryKind};
 use crate::drive::plan;
 use crate::drive::state::State;
 use crate::platform::data::skill_data_path;
+use crate::platform::paths;
 use crate::registry::manifest::{CliOverrides, InstallMode, Manifest};
 use crate::registry::root;
 
@@ -239,12 +240,12 @@ pub fn set_root(args: &SetRootArgs) -> ExitCode {
         Ok(root) if args.dry_run => {
             println!(
                 "Dry run — would set active registry root to {}",
-                root.display()
+                paths::display_path(&root)
             );
             ExitCode::SUCCESS
         }
         Ok(root) => {
-            println!("Active registry root set to {}", root.display());
+            println!("Active registry root set to {}", paths::display_path(&root));
             ExitCode::SUCCESS
         }
         Err(e) => config_error(e),

@@ -214,7 +214,7 @@ fn scans_native_paths_in_component_order_and_skips_runtime_artifacts() {
         result_json(&result)["path"],
         json!(skill.path().to_string_lossy())
     );
-    let mut expected = vec![sender.to_str().unwrap(), "nested-a.sh"];
+    let mut expected = vec!["nested/sender.sh", "nested-a.sh"];
     if cfg!(windows) {
         expected.push("Z.sh");
     } else {
@@ -232,6 +232,69 @@ fn scans_native_paths_in_component_order_and_skips_runtime_artifacts() {
         .map(|finding| finding.file.as_str())
         .collect();
     assert_eq!(files, expected);
+}
+
+#[test]
+fn nested_audit_findings_and_dataflow_use_forward_slashes() {
+    let skill = tempdir().unwrap();
+    fs::create_dir_all(skill.path().join("scripts/sub")).unwrap();
+    fs::create_dir_all(skill.path().join("docs")).unwrap();
+    fs::write(skill.path().join("scripts/read.sh"), "op read\n").unwrap();
+    fs::write(
+        skill.path().join("scripts/sub/send.sh"),
+        "curl https://example.invalid/\n",
+    )
+    .unwrap();
+    fs::write(
+        skill.path().join("docs/guide.md"),
+        "![x](https://example.invalid/p.png)\n",
+    )
+    .unwrap();
+
+    let result = run_audit(skill.path(), &AuditPolicy::default()).unwrap();
+    let by_rule = |rule_id: &str| {
+        result
+            .findings
+            .iter()
+            .find(|finding| finding.rule_id == rule_id)
+            .unwrap_or_else(|| panic!("missing finding {rule_id}: {:?}", result.findings))
+    };
+
+    assert_eq!(by_rule("credential-reader").file, "scripts/read.sh");
+    assert_eq!(by_rule("network-sender").file, "scripts/sub/send.sh");
+    assert_eq!(by_rule("markdown-remote-image").file, "docs/guide.md");
+    assert_eq!(
+        by_rule("credential-network-flow").message,
+        "skill bundle combines credential readers (scripts/read.sh) with network senders (scripts/sub/send.sh)"
+    );
+    for finding in &result.findings {
+        assert!(
+            !finding.file.contains('\\'),
+            "audit finding file contains backslash: {:?}",
+            finding
+        );
+    }
+
+    let json_report = result_json(&result);
+    for finding in json_report["findings"].as_array().unwrap() {
+        let file = finding["file"].as_str().unwrap();
+        assert!(
+            !file.contains('\\'),
+            "JSON finding file contains backslash: {file}"
+        );
+    }
+    let gate = audit_skills(
+        &[skill.path().to_path_buf()],
+        &AuditPolicy::default(),
+        false,
+    )
+    .unwrap();
+    let formatted = format_gate(&gate, "AUDIT BLOCKED");
+    assert!(formatted.contains("scripts/read.sh"), "{formatted}");
+    assert!(formatted.contains("scripts/sub/send.sh"), "{formatted}");
+    assert!(formatted.contains("docs/guide.md"), "{formatted}");
+    assert!(!formatted.contains(r"scripts\"), "{formatted}");
+    assert!(!formatted.contains(r"docs\"), "{formatted}");
 }
 
 #[cfg(unix)]

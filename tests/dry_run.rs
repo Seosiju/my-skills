@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 
 use assert_cmd::Command;
+use my_skills::platform::paths;
 use predicates::str::contains;
 
 struct Env {
@@ -109,12 +110,22 @@ fn enable_and_disable_dry_run_leave_the_manifest_alone() {
 #[test]
 fn set_root_dry_run_does_not_write_the_cache() {
     let env = Env::new();
-    env.cmd()
+    let expected_display = paths::display_path(&env.root().canonicalize().unwrap());
+    let result = env
+        .cmd()
         .env_remove("MY_SKILLS_ROOT")
         .args(["set-root", &env.root().display().to_string(), "--dry-run"])
         .assert()
-        .success()
-        .stdout(contains("would set active registry root"));
+        .success();
+    let stdout = String::from_utf8_lossy(&result.get_output().stdout);
+    assert_eq!(
+        stdout.trim(),
+        format!("Dry run — would set active registry root to {expected_display}")
+    );
+    assert!(
+        !stdout.contains(r"\\?\"),
+        "set-root --dry-run output should not contain verbatim prefix: {stdout}"
+    );
     assert!(!env.tmp.path().join("config/my-skills/root").exists());
 }
 

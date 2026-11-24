@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
+use my_skills::platform::paths;
 use predicates::prelude::*;
 use predicates::str::contains;
 
@@ -311,12 +312,22 @@ fn data_path_uses_xdg_data_home_and_rejects_bad_names() {
 #[test]
 fn set_root_records_the_registry() {
     let env = Env::new();
-    env.cmd()
+    let expected_display = paths::display_path(&env.root().canonicalize().unwrap());
+    let result = env
+        .cmd()
         .env_remove("MY_SKILLS_ROOT")
         .args(["set-root", &env.root().display().to_string()])
         .assert()
-        .success()
-        .stdout(contains("Active registry root set to"));
+        .success();
+    let stdout = String::from_utf8_lossy(&result.get_output().stdout);
+    assert_eq!(
+        stdout.trim(),
+        format!("Active registry root set to {expected_display}")
+    );
+    assert!(
+        !stdout.contains(r"\\?\"),
+        "set-root output should not contain verbatim prefix: {stdout}"
+    );
     let cached = fs::read_to_string(env.tmp.path().join("config/my-skills/root")).unwrap();
     assert!(cached.trim().ends_with("registry"), "{cached}");
 }
