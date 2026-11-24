@@ -295,6 +295,8 @@ fn invalid_names_unknown_hosts_and_bad_descriptions_are_usage_errors() {
     assert_conflict(&fixture, &["fine", "--host", "mars"], "unknown host: mars");
     let json = new_json(&fixture, &["fine", "--host", "mars"], 2);
     assert_eq!(json["error"]["code"], "unknown_host");
+    let json = new_json(&fixture, &["fine", "--description", "   "], 2);
+    assert_eq!(json["error"]["code"], "usage");
     let json = new_json(&fixture, &["Bad"], 2);
     assert_eq!(json["error"]["code"], "invalid_name");
     let json = new_json(&fixture, &["fine", "--group", "Bad Group"], 2);
