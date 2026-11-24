@@ -295,6 +295,8 @@ fn invalid_names_unknown_hosts_and_bad_descriptions_are_usage_errors() {
     assert_conflict(&fixture, &["fine", "--host", "mars"], "unknown host: mars");
     let json = new_json(&fixture, &["fine", "--host", "mars"], 2);
     assert_eq!(json["error"]["code"], "unknown_host");
+    let json = new_json(&fixture, &["fine", "--description", "   "], 2);
+    assert_eq!(json["error"]["code"], "usage");
     let json = new_json(&fixture, &["Bad"], 2);
     assert_eq!(json["error"]["code"], "invalid_name");
     let json = new_json(&fixture, &["fine", "--group", "Bad Group"], 2);
@@ -393,4 +395,95 @@ fn a_failed_manifest_edit_removes_only_the_new_directory_and_the_lock() {
     assert_eq!(tree(&fixture.registry), before);
     assert_eq!(fs::read(&real).unwrap(), manifest);
     assert!(fixture.canonical("alpha").join("SKILL.md").is_file());
+}
+
+const PREFIX: &str = "invalid --description: ";
+
+#[test]
+fn a_canonical_dir_inside_a_host_directory_is_refused_before_writing() {
+    let fixture = fixture();
+    // The skills root lives inside the claude host directory.
+    let inside = fixture.host("claude").join("src");
+    fs::create_dir_all(&inside).unwrap();
+    let text = fs::read_to_string(fixture.manifest()).unwrap().replace(
+        "skills_root = \"skills\"",
+        &format!("skills_root = {}", serde_json::to_string(&inside).unwrap()),
+    );
+    fs::write(fixture.manifest(), text).unwrap();
+    let manifest = fs::read(fixture.manifest()).unwrap();
+    for extra in [&[][..], &["--dry-run"][..]] {
+        fixture
+            .command()
+            .args(["new", "draft"])
+            .args(extra)
+            .assert()
+            .code(2)
+            .stderr(contains("overlaps a host directory"));
+    }
+    assert!(!inside.join("draft").exists());
+    assert_eq!(fs::read(fixture.manifest()).unwrap(), manifest);
+}
+
+#[test]
+fn first_discovery_caches_the_registry_but_an_explicit_root_never_does() {
+    let fixture = fixture();
+    let cache = fixture.root.join("config/my-skills/root");
+    fixture.command().args(["new", "one"]).assert().success();
+    assert!(
+        !cache.exists(),
+        "MY_SKILLS_ROOT is explicit: nothing cached"
+    );
+    fixture
+        .command()
+        .env_remove("MY_SKILLS_ROOT")
+        .args(["new", "two"])
+        .assert()
+        .success();
+    let cached = fs::read_to_string(&cache).unwrap();
+    assert_eq!(Path::new(cached.trim()), fixture.registry);
+}
+
+#[test]
+fn description_errors_share_one_prefix_and_respect_the_host_limit() {
+    let fixture = fixture();
+    let manifest = fs::read(fixture.manifest()).unwrap();
+    let before = tree(&fixture.registry);
+    for (args, needle) in [
+        (vec!["--description", "  "], "must not be empty"),
+        (vec!["--description", &"x".repeat(1025)], "exceeds 1024"),
+        (
+            vec!["--description", &"x".repeat(769)],
+            "exceeds 768 characters for claude (769)",
+        ),
+        (
+            vec!["--host", "codex", "--description", &"x".repeat(769)],
+            "exceeds 768 characters for codex (769)",
+        ),
+    ] {
+        let output = fixture
+            .command()
+            .args(["new", "draft"])
+            .args(&args)
+            .args(["--json"])
+            .assert()
+            .code(2);
+        let json: Value = serde_json::from_slice(&output.get_output().stdout).unwrap();
+        let message = json["error"]["message"].as_str().unwrap();
+        assert!(message.starts_with(PREFIX), "{message}");
+        assert!(message.contains(needle), "{message}");
+    }
+    assert_eq!(fs::read(fixture.manifest()).unwrap(), manifest);
+    assert_eq!(tree(&fixture.registry), before);
+
+    // Exactly at the limit, the draft is written and validates.
+    fixture
+        .command()
+        .args(["new", "draft", "--description", &"x".repeat(768)])
+        .assert()
+        .success();
+    fixture
+        .command()
+        .args(["validate", "draft"])
+        .assert()
+        .success();
 }

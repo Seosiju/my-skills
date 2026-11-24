@@ -492,3 +492,125 @@ fn the_root_commit_runs_a_full_sync() {
     assert_eq!(stderr(&output), "");
     assert!(!other.copy_host.exists());
 }
+
+fn recorded(fixture: &Fixture, skill: &str) -> bool {
+    let state = my_skills::drive::state::State::load(Some(
+        &fixture.base.join("xdg-state/my-skills/state.json"),
+    ))
+    .unwrap();
+    state.records().any(|record| record.skill == skill)
+}
+
+#[test]
+fn a_dirty_skill_the_commit_unregisters_is_not_pruned() {
+    let setup = Setup::synced();
+    // The commit removes alpha from the manifest; alpha has an uncommitted edit.
+    setup.write_manifest("[skills.beta]\nenabled = true\n");
+    setup
+        .fixture
+        .write("skills/alpha/SKILL.md", &revision("alpha", 2));
+    setup.fixture.git(&["add", "my-skills.toml"]);
+    setup.fixture.git(&["commit", "-qm", "unregister alpha"]);
+    setup.run_post_commit().stderr(contains("left alpha alone"));
+    assert!(setup.copy_host.join("alpha/SKILL.md").is_file());
+    assert!(setup.link_host.join("alpha").exists());
+    assert!(recorded(&setup.fixture, "alpha"));
+
+    // Once the edit is committed or dropped, the next full sync prunes it.
+    setup.fixture.git(&["checkout", "--", "skills/alpha"]);
+    setup.run_post_commit().stderr("");
+    assert!(!setup.copy_host.join("alpha").exists());
+    assert!(!recorded(&setup.fixture, "alpha"));
+    assert_eq!(setup.copy_revision("beta"), 1);
+}
+
+#[test]
+fn an_unregistered_draft_with_no_connection_is_not_reported() {
+    let setup = Setup::synced();
+    setup
+        .fixture
+        .write("skills/sketch/SKILL.md", &revision("sketch", 1));
+    setup.write_manifest(
+        "[skills.alpha]\nenabled = true\n\n[skills.beta]\nenabled = true\n\n# touched\n",
+    );
+    setup.fixture.git(&["add", "my-skills.toml"]);
+    setup.fixture.git(&["commit", "-qm", "manifest"]);
+    setup.run_post_commit().stderr("");
+}
+
+#[test]
+fn edits_made_while_the_hook_waits_for_the_state_lock_are_not_copied() {
+    use std::io::{BufRead, BufReader};
+    use std::process::Stdio;
+
+    let setup = Setup::synced();
+    setup
+        .fixture
+        .write("skills/alpha/SKILL.md", &revision("alpha", 2));
+    setup.fixture.git(&["add", "skills"]);
+    setup.fixture.git(&["commit", "-qm", "alpha 2"]);
+    let lock = hold_state_lock(&setup.fixture);
+    let mut hook = setup.fixture.command();
+    let mut child = hook
+        .env("MY_SKILLS_STATE_LOCK_TIMEOUT_MS", "30000")
+        .args(["hooks", "run", "post-commit"])
+        .stderr(Stdio::piped())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stderr = BufReader::new(child.stderr.take().unwrap());
+    let mut seen = String::new();
+    loop {
+        let mut line = String::new();
+        assert!(stderr.read_line(&mut line).unwrap() > 0, "{seen}");
+        seen.push_str(&line);
+        if line.contains("Waiting for another my-skills command") {
+            break;
+        }
+    }
+    // The hook is now blocked on the lock, before it has looked at git.
+    setup
+        .fixture
+        .write("skills/alpha/scratch.md", "uncommitted work\n");
+    drop(lock);
+    let mut rest = String::new();
+    std::io::Read::read_to_string(&mut stderr, &mut rest).unwrap();
+    assert!(child.wait().unwrap().success());
+    assert!(rest.contains("left alpha alone"), "{rest}");
+    assert_eq!(setup.copy_revision("alpha"), 1);
+    assert!(!setup.copy_host.join("alpha/scratch.md").exists());
+}
+
+#[test]
+fn a_conflict_resolved_merge_commit_refreshes_the_copy_host() {
+    let setup = Setup::synced();
+    setup.fixture.git(&["branch", "other"]);
+    setup
+        .fixture
+        .write("skills/alpha/SKILL.md", &revision("alpha", 2));
+    setup.fixture.git(&["add", "skills"]);
+    setup.fixture.git(&["commit", "-qm", "alpha 2"]);
+    setup.fixture.git(&["checkout", "-q", "other"]);
+    setup
+        .fixture
+        .write("skills/alpha/SKILL.md", &revision("alpha", 3));
+    setup.fixture.git(&["add", "skills"]);
+    setup.fixture.git(&["commit", "-qm", "alpha 3"]);
+    setup.fixture.git(&["checkout", "-q", "main"]);
+    assert_eq!(setup.copy_revision("alpha"), 1);
+    setup.install_hooks();
+
+    let merge = setup
+        .fixture
+        .git_command(&["merge", "other"])
+        .output()
+        .unwrap();
+    assert!(!merge.status.success(), "the merge should conflict");
+    setup
+        .fixture
+        .write("skills/alpha/SKILL.md", &revision("alpha", 4));
+    setup.fixture.git(&["add", "skills"]);
+    let output = setup.commit_output(&["commit", "--no-edit", "-q"]);
+    assert_eq!(setup.copy_revision("alpha"), 4, "{}", stderr(&output));
+    setup.assert_link_host_fresh();
+}

@@ -287,21 +287,23 @@ fn mixed_modes_report_validation_and_audit_once_per_skill() {
         .assert()
         .code(1);
     let json: Value = serde_json::from_slice(&preview.get_output().stdout).unwrap();
-    assert_eq!(
-        json["validation"]
-            .as_array()
+    // Host rows that repeat the skill-level error are dropped, so the failure
+    // appears once however many hosts or modes are involved.
+    let failing = |rows: &Value| {
+        rows.as_array()
             .unwrap()
             .iter()
-            .filter(|row| row["host"].is_null())
-            .count(),
-        1
-    );
+            .filter(|row| row["ok"] != true)
+            .map(|row| row["host"].clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(failing(&json["validation"]), [Value::Null]);
     assert_eq!(
         json["block_reasons"]
             .as_array()
             .unwrap()
             .iter()
-            .filter(|row| row["host"].is_null())
+            .filter(|row| row["kind"] == "validation")
             .count(),
         1
     );

@@ -119,8 +119,10 @@ pub(crate) struct PostCommitSync {
     pub full: bool,
     /// Registered skills whose files changed (empty for a full sync).
     pub skills: Vec<String>,
-    /// Registered skills with uncommitted files, left untouched.
-    pub dirty: Vec<String>,
+    /// Skills left alone, with a warning each: registered or still recorded.
+    pub warn: Vec<String>,
+    /// Every dirty skill, which the sync must neither connect nor prune.
+    pub exclude: Vec<String>,
 }
 
 /// The skills directory relative to the registry, or `None` when the manifest
@@ -148,7 +150,42 @@ fn skill_of(path: &Path, skills_dir: &Path) -> Option<String> {
     Some(skill.to_string_lossy().into_owned())
 }
 
-pub(crate) fn post_commit(git: &Git<'_>, manifest: &Manifest) -> anyhow::Result<PostCommit> {
+/// Skills (registered or not) whose files have uncommitted changes, including
+/// untracked ones. Status paths are relative to the repository, so strip the
+/// registry's own prefix.
+pub(crate) fn dirty_skills(git: &Git<'_>, manifest: &Manifest) -> anyhow::Result<BTreeSet<String>> {
+    let Some(skills_dir) = skills_dir(git, manifest) else {
+        return Ok(BTreeSet::new());
+    };
+    let prefix = PathBuf::from(git.registry_prefix()?);
+    let mut status = vec![
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--no-renames",
+        "--untracked-files=all",
+    ];
+    let pathspec = skills_dir.to_string_lossy().into_owned();
+    if !pathspec.is_empty() {
+        status.extend(["--", pathspec.as_str()]);
+    }
+    Ok(nul_fields(&git.run(&status)?)
+        .filter_map(|record| record.get(3..))
+        .filter_map(|bytes| git_path(bytes).ok().map(PathBuf::from))
+        .filter_map(|path| {
+            let path = path.strip_prefix(&prefix).ok()?.to_owned();
+            skill_of(&path, &skills_dir)
+        })
+        .collect())
+}
+
+/// `recorded` holds the skills that state still has connections for, so a
+/// skill the commit unregistered is still protected while it has edits.
+pub(crate) fn post_commit(
+    git: &Git<'_>,
+    manifest: &Manifest,
+    recorded: &BTreeSet<String>,
+) -> anyhow::Result<PostCommit> {
     if git.in_linked_worktree()? || git.operation_in_progress()? {
         return Ok(PostCommit::Skip(None));
     }
@@ -162,17 +199,20 @@ pub(crate) fn post_commit(git: &Git<'_>, manifest: &Manifest) -> anyhow::Result<
     ])?;
     if !manifest_status.is_empty() {
         return Ok(PostCommit::Skip(Some(format!(
-            "warning: post-commit skipped: {MANIFEST_FILE} has uncommitted changes; \
-             commit it, then run `my-skills sync`"
+            "warning: post-commit skipped: {MANIFEST_FILE} has uncommitted changes;              commit it, then run `my-skills sync`"
         ))));
     }
     let Some(skills_dir) = skills_dir(git, manifest) else {
         return Ok(PostCommit::Skip(None));
     };
 
+    // `-m --first-parent` also diffs a merge commit against its first parent;
+    // git removes MERGE_HEAD before this hook, so a resolved merge reaches it.
     let changed = git.run(&[
         "diff-tree",
         "--root",
+        "-m",
+        "--first-parent",
         "--no-commit-id",
         "--name-only",
         "-r",
@@ -193,37 +233,26 @@ pub(crate) fn post_commit(git: &Git<'_>, manifest: &Manifest) -> anyhow::Result<
         return Ok(PostCommit::Skip(None));
     }
 
-    // Uncommitted work in a skill must not reach hosts. Status paths are
-    // relative to the repository, so strip the registry's own prefix.
-    let prefix = PathBuf::from(git.registry_prefix()?);
-    let mut status = vec!["status", "--porcelain=v1", "-z", "--no-renames"];
-    status.push("--untracked-files=all");
-    let skills_pathspec = skills_dir.to_string_lossy().into_owned();
-    if !skills_pathspec.is_empty() {
-        status.extend(["--", skills_pathspec.as_str()]);
-    }
-    let dirty_names: BTreeSet<String> = nul_fields(&git.run(&status)?)
-        .filter_map(|record| record.get(3..))
-        .filter_map(|bytes| git_path(bytes).ok().map(PathBuf::from))
-        .filter_map(|path| {
-            let path = path.strip_prefix(&prefix).ok()?.to_owned();
-            skill_of(&path, &skills_dir)
-        })
-        .filter(|name| manifest.skills.contains_key(name))
-        .collect();
-
-    let (skills, dirty) = if full {
-        (Vec::new(), dirty_names.into_iter().collect())
+    // Uncommitted work in a skill must not reach hosts: it is never connected,
+    // updated, or pruned, registered or not.
+    let dirty = dirty_skills(git, manifest)?;
+    let (skills, warn, exclude) = if full {
+        let warn = dirty
+            .iter()
+            .filter(|name| manifest.skills.contains_key(*name) || recorded.contains(*name))
+            .cloned()
+            .collect();
+        (Vec::new(), warn, dirty.into_iter().collect())
     } else {
-        let (dirty, clean): (Vec<_>, Vec<_>) = touched
-            .into_iter()
-            .partition(|name| dirty_names.contains(name));
-        (clean, dirty)
+        let (held, clean): (Vec<_>, Vec<_>) =
+            touched.into_iter().partition(|name| dirty.contains(name));
+        (clean, held.clone(), held)
     };
     Ok(PostCommit::Sync(PostCommitSync {
         full,
         skills,
-        dirty,
+        warn,
+        exclude,
     }))
 }
 
