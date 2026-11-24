@@ -1,7 +1,7 @@
 # Skill Drive v1: 진행 현황과 작업 인계
 
-> 기준 시점: 2026-11-23 (KST). `dev` = `1104b30` 이후 (감사 반영 `b79dbf5`, §7 B `ee2ad94`, §7 A `b1113e8`·`2368f93`)
-> 상태: Rust v1 기능 구현, 감사 지적 수정, §7 A·B 완료. 실제 사용자 환경은 아직 바뀌지 않음
+> 기준 시점: 2026-11-24 (KST). `dev` = `72aaf89` 이후 (wave4 `a348cff`, H 기록 `89f51db`, 맥 runbook `72aaf89`)
+> 상태: Rust v1 기능 구현, §7 A~E, H, K 완료. Windows PC는 H에서 Rust 판으로 전환했다. 맥의 실제 환경은 아직 바뀌지 않았다(G 대기)
 > 설계 문서: `docs/2026-11-23-skill-drive-rust-v1-spec.md` (이하 "스펙")
 > 작업 지시서와 보고서: `docs/tasks/2026-11-23-rust-v1/`
 
@@ -20,11 +20,11 @@
 |---|---|
 | 목표 | **개인 스킬 드라이브**: 원본은 한 곳에 두고, 모든 기기와 에이전트는 바로가기(link)로 연결한다 (스펙 제품 정의) |
 | Rust v1 구현 | 19개 명령 모두 연결됨 |
-| 테스트 | Rust 209개 통과(Windows 기준, `b28a3d9`). Python 테스트 모음은 §7 D에서 지웠다 |
+| 테스트 | Rust 221개 통과(Windows, wave4 병합 `a348cff`). 맥은 224개 통과(`72aaf89`, rustup stable 1.100. 개수 차이는 OS별 `cfg` 테스트). Python 테스트 모음은 §7 D에서 지웠다 |
 | CI (`dev`) | Rust 검사와 테스트를 Ubuntu, macOS, Windows에서 실행. 최신 결과는 §9 명령으로 확인 |
 | 릴리스 | **Python v0.4.2** (태그 `v0.4.2`, GitHub Release "Latest"). Rust v1 릴리스는 아직 없고, Rust 릴리스 workflow도 실행되지 않았다 |
 | `main` | v0.4.2 (`ca41abd`, `release/v0.4.2` 병합). Rust 코드는 아직 없다. `main`은 `dev`에 다시 병합했다(`382a19a`) |
-| **실제 사용자 환경** | **맥**: 바뀌지 않았다(Python `my-skills 0.4.1`, 모든 연결 copy, git hook 없음). **Windows PC(2026-11-23, H)**: Rust `1.0.0-alpha.0`을 `cargo install`로 설치(PATH 1번 `.cargo\bin`), 기기별 `my-skills.local.toml`로 기본 link와 agy copy를 지정, link 28개와 copy 15개 모두 FRESH, 레지스트리 hook 4개 설치. 레지스트리 manifest 자체는 여전히 `install_mode = "copy"`이고 바꾸지 않았다(G에서) |
+| **실제 사용자 환경** | **맥**: 바뀌지 않았다(Python `my-skills 0.4.1`, 모든 연결 copy, git hook 없음). 2026-11-24 읽기 전용 점검 결과는 §6.6. **Windows PC(2026-11-23, H)**: Rust `1.0.0-alpha.0`을 `cargo install`로 설치(PATH 1번 `.cargo\bin`), 기기별 `my-skills.local.toml`로 기본 link와 agy copy를 지정, 모든 연결 FRESH(claude·codex는 link, agy는 copy), 레지스트리 hook 4종 설치. 레지스트리 manifest 자체는 여전히 `install_mode = "copy"`이고 바꾸지 않았다(G에서) |
 | 감사 세션의 사전 점검 | 빌드한 v1 binary를 실제 레지스트리에 읽기 전용으로 실행: 모든 연결이 FRESH였고, `convert --to link --host all --dry-run`은 막힌 항목 없이 활성 host의 copy 연결 전체를 CONVERT로 계획했다. 비활성 host(hermes) 기록은 대상에서 빠졌다 |
 | Windows | CI에서 junction 테스트 4개 통과. **실기기 확인 완료(H, 2026-11-23)**: Claude Code와 Codex는 junction 스킬을 발견하고, agy 1.5.14는 발견하지 못해 copy로 연결한다. 결과 표는 스펙 §12 |
 
@@ -66,6 +66,8 @@ flowchart LR
 | 이후 | **H 3단계(이 Windows PC)**: release binary(`071ca28`)로 runbook 3.1~3.6 진행. junction 연결, 해제, Git Bash의 pre-commit, post-checkout, post-merge, `HOME=/c/...` 경로, 공백 경로 모두 정상. 새 세션 확인에서 **Claude Code와 Codex는 junction 스킬을 찾았지만 agy 1.5.14는 못 찾음**(같은 폴더의 일반 폴더는 찾음, 모델 호출 없는 `/skills` 조회로 확인). Git Bash에서 `agy -p '/skills'`는 MSYS가 경로로 바꿔 버리므로 PowerShell에서 실행해야 함 | 스펙 §12 기록은 H 5단계에서 |
 | 이후 | **wave4: host별 `install_mode`**. agy(Gemini 4 Neon high)가 개발: `[targets.<host>] install_mode`(우선순위 CLI > host > defaults, 기록된 연결은 유지), `convert --host all`에서 방식을 명시한 host 건너뛰기, Windows에서 agy link일 때 doctor 경고, doctor의 `\\?\` 표시 제거. Codex(medium) 체크리스트 검토와 agy 블라인드 검토 → 수정 한 번(빈 assertion 2곳 등) → 둘 다 병합 판정. 중간 커밋이 Windows에서 실패하던 것은 통합 담당이 커밋을 다시 묶어 7개 커밋 모두 fmt, clippy, 테스트 통과(최종 221개)를 확인했고, 트리는 검토한 것과 같음(`33bc860`) | `29bf51c`..`4df4a61`, `a348cff` |
 
+| 2026-11-24 | **맥 점검**(통합 담당 Claude, 맥): `dev` pull 뒤 테스트, 맥 runbook 명령과 코드 대조, 실제 환경 읽기 전용 점검(§6.6). Windows PC의 Claude가 검토하고 결정(사용자가 전달): 개발 도구는 rustup stable을 `rustup run stable`로 쓰고, `doctor.rs`의 lint는 이번에 고치지 않음. 맥 runbook 2·4.1·4.2·5.4단계와 이 문서를 고침. §7 K 정리 | 이 문서를 고친 커밋 |
+
 Codex 운영:
 - 1단계: `gpt-6.2-sol` `xhigh` 5개. 5시간 한도의 약 51%포인트를 썼다(99% → 48%).
 - 2단계: `gpt-6.2-sol` `high` 3개. 약 47%포인트를 썼다(48% → 1%).
@@ -75,21 +77,21 @@ Codex 운영:
 
 ## 3. 작업 단위별 결과
 
-모든 `dev-stream-*` 브랜치는 `dev`에 병합됐다(병합되지 않은 커밋 0개).
+모든 `dev-stream-*` 브랜치는 `dev`에 병합됐고(병합되지 않은 커밋 0개), 2026-11-24에 worktree와 로컬 브랜치를 지웠다(§7 K). 원격에는 이 브랜치들이 없다.
 각 단위의 상세 내용은 `docs/tasks/2026-11-23-rust-v1/reports/stream-<x>.md`에 있다.
-아래 표와 보고서의 파일 이름은 §7 A의 재배치 이전 이름이다. 지금 위치는 §6.3의 대응표를 따른다.
+아래 표와 보고서의 파일 이름은 §7 A의 재배치 이전 이름이다. 지금 위치는 §6.3의 대응표를 따른다. "남은 문제" 열은 2026-11-24 기준으로 고쳤다.
 
 | 단위 | 담당 | 산출물 | v0.4.1과 의도적으로 다른 점 | 남은 문제 |
 |---|---|---|---|---|
 | A hash | Codex | `hash.rs`, golden 11건 | symlink를 따라가지 않음. 경로 I/O 오류를 반환함 | 없음 |
 | B manifest/state/data | Codex | `manifest.rs`, `state.rs`, `data.rs` | `install_mode` 기본값을 link로, 값은 link/copy만 허용 | 남은 `.tmp` 파일이 다음 저장을 막음(이전 상태는 보존됨) |
-| C link | Claude | `link.rs` (Unix symlink, Windows junction → symlink → copy 대체) | 새로 만든 기능 | 실기기 미확인 |
+| C link | Claude | `link.rs` (Unix symlink, Windows junction → symlink → copy 대체) | 새로 만든 기능 | Windows 실기기 확인(H, 스펙 §12): Claude Code와 Codex는 junction을 발견, agy 1.5.14는 발견하지 못해 host별 `install_mode`(wave4)로 copy. 맥 symlink는 G에서 확인 |
 | D validate | Codex | `frontmatter.rs`, `validate.rs`, 비교 340건 | PyYAML 1.1의 yes/no·8진수·날짜·중복 키를 PyYAML과 같게 처리 | YAML 문법의 드문 경계에서 오류 문구가 다를 수 있음 |
 | E audit | Codex | `audit/` (규칙 15개 전부), golden 30건 | Python 전용 정규식 일부를 같은 결과가 나오게 다시 씀 | Unicode 데이터 버전 차이(16.0과 15.1) |
 | F CI/릴리스 | Codex | CI 3개 OS, `release-rust.yml`, `install.sh`, `install.ps1` | 새로 만든 기능 | **한 번도 실행되지 않음**. 태그와 `Cargo.toml` 버전을 비교하는 검사가 없음(§7 F) |
-| G hooks/doctor | Codex | `hooks.rs`, `commands/{hooks,doctor}.rs` | doctor에 link 가능 여부, git 상태, hook, 연결 집계, 전체 검증 추가 | `hooks uninstall --dry-run` 없음(§7 B) |
-| H registry | Codex | init-registry, skills, share, import, enable, disable, seed 포함 | 새 레지스트리는 `install_mode = "link"`로 생성 | `--dry-run` 없음(§7 B). 남은 `.edit-lock`. 새 레지스트리 README 템플릿이 `uv tool install`을 안내함(§7 E) |
-| I update | Codex | Release 기반 자체 업데이트, Python 0.4.x guard | Rust의 main 채널은 prerelease를 포함한 최신 Release를 뜻함 | Windows에서 `.old` 파일이 남을 수 있음. **Python guard는 stable 채널만 막고, 0.4.x `doctor`는 이전 안내를 출력하지 않음**(§7 C) |
+| G hooks/doctor | Codex | `hooks.rs`, `commands/{hooks,doctor}.rs` | doctor에 link 가능 여부, git 상태, hook, 연결 집계, 전체 검증 추가 | ~~`hooks uninstall --dry-run` 없음~~ 해결(§7 B) |
+| H registry | Codex | init-registry, skills, share, import, enable, disable, seed 포함 | 새 레지스트리는 `install_mode = "link"`로 생성 | 남은 `.edit-lock`. ~~`--dry-run` 없음~~ 해결(§7 B). ~~README 템플릿의 `uv tool install` 안내~~ 해결(§7 E) |
+| I update | Codex | Release 기반 자체 업데이트, Python 0.4.x guard | Rust의 main 채널은 prerelease를 포함한 최신 Release를 뜻함 | Windows에서 `.old` 파일이 남을 수 있음. ~~Python guard는 stable 채널만 막고, 0.4.x `doctor`는 이전 안내를 출력하지 않음~~ 해결(§7 C, v0.4.2) |
 | 통합 | Claude | `plan.rs`, `install.rs`, `runtime.rs`, `cli.rs`, `commands/{connect,inspect}.rs`, 통합·black-box 테스트 | sync는 등록된 스킬 전체를 대상으로 함(해제를 위해). `--all`은 v0.4.1 의미 유지 | §6 참고 |
 | 감사 | agy | 독립 재검증과 결함 보고 | — | 지적 사항은 §6에서 반영 여부와 함께 정리 |
 
@@ -108,13 +110,15 @@ Codex 운영:
 | 실제 레지스트리 호환 | 감사 세션이 읽기 전용으로 실행(`MY_SKILLS_ROOT`, 임시 `XDG_CONFIG_HOME`) | 전부 FRESH, validate·audit 전부 OK, convert dry-run 막힌 항목 0 |
 | Windows 빌드와 junction | GitHub Actions `windows-latest` | 통과 |
 | 감사 지적 수정 | 수정마다 회귀 테스트 추가(`cli_connect.rs`에 5개, `gate_policy.rs`, `public_hygiene.rs`) | 통과 |
+| Windows 실기기 (H) | Windows runbook 1~5단계 | Claude Code와 Codex는 junction 스킬을 발견, agy는 copy로 연결. Git Bash에서 pre-commit, post-checkout, post-merge 정상. 공백 경로 정상. 실제 레지스트리 연결을 전환함(스펙 §12) |
+| 맥 빌드와 테스트 (2026-11-24) | `72aaf89`, rustup stable 1.100 | fmt, clippy 통과, 테스트 224개 통과 |
 
 ### 확인하지 않은 것
 
-- 세 에이전트가 **실제 Windows에서** junction 스킬을 발견하는지 (스펙 §12)
 - 릴리스 workflow, 설치 스크립트, `update`의 실제 다운로드
-- Git Bash에서의 hook 실행 (Windows)
-- 실제 레지스트리의 전환(쓰기)
+- 맥의 실제 레지스트리 전환(G)
+- 지금 버전의 agy가 맥에서 symlink 스킬을 발견하는지(맥 runbook 3.3). 2026-11-24 읽기 전용 점검에서 agy 1.5.15는 다른 도구가 만든 symlink 스킬을 목록에 보여 줬다. 시험용 스킬로 확인한 것은 아니다
+- 맥에서 push한 변경이 Windows의 post-merge로 반영되는지(맥 runbook 6단계)
 
 ### CI가 잡아 고친 문제
 
@@ -194,7 +198,7 @@ Codex 운영:
 - **테스트와 시드 경로**: `tests/fixtures/shared`와 `tests/golden/audit`에 테스트 데이터가 있다. `tests/audit_parity.rs`는 남아 있는 golden 데이터를 읽는다. Python 패키지의 `builtin_rules.yaml`과 직접 비교하던 테스트는 §7 D에서 제거했다.
   `tests/golden/*/generate.py`는 v0.4.1으로 golden 데이터를 생성했던 이력이다. 현재 테스트는 저장된 데이터를 사용한다. `src/registry/seeds.rs`는 같은 저장소 루트의 `skills/`에서 시드를 포함한다.
 - **import의 dry-run**: 검증과 audit를 위해 레지스트리 안에 임시 staging 폴더와 편집 잠금을 잠깐 만들었다가 지운다. 영구적인 쓰기는 하지 않는다.
-- 스펙의 열린 질문 Q1(Windows 경로 실측), Q3(Windows state 경로), Q5(코드 서명), Q7(0.4.x 안내)은 아직 결정하지 않았다.
+- 스펙의 열린 질문: Q1(Windows 경로와 junction 발견)은 H에서 확인했다(스펙 §12, §13). Q3(Windows state 경로)은 0.4.1 기록이 있는 PC에서 기존 경로를 그대로 써도 문제없음을 확인했고, 기록이 없는 PC에서 옮길지는 아직 정하지 않았다. Q5(코드 서명), Q7(0.4.x의 이전 안내 문구)은 아직 결정하지 않았다.
 - 이 작업과 무관한 다른 도구의 worktree가 `git worktree list`에 `prunable`로 남아 있다.
 
 ### 6.4 두 번째 검토(Windows 실행 문서)에서 나온 것
@@ -223,6 +227,20 @@ Codex 운영:
 | Python 테스트 102개 실패, 1개 끝나지 않음 | [확정] 겹치지 않는 로그 분류: TOML 이스케이프 61, symlink 권한 12, POSIX 경로 가정 9, 그 밖 20 (CPython 3.15.2. CI는 Ubuntu, 3.11) | 기록만. §7 D에서 Python을 지울 예정 |
 | audit 보고서 경로가 Windows에서 `\` | [확정] Python 실측. [추론] Rust `analyzers.rs:33`도 가능. 해시 입력은 두 판 모두 소스상 이미 `/` | §7 L (6) |
 
+### 6.6 맥 점검(2026-11-24)에서 나온 것
+
+`72aaf89`를 받아 맥에서 테스트하고, 맥 runbook의 명령과 기대 출력을 코드와 대조하고, 실제 환경을 읽기만 해서 점검했다. 실제 레지스트리, host 폴더, 전역 안내는 바꾸지 않았다. 결정은 Windows PC의 Claude가 검토해 내렸다.
+
+| 발견 | 확인 결과 | 처리 |
+|---|---|---|
+| Homebrew cargo로 `cargo fmt`, `cargo clippy`가 실행되지 않음 | [관찰] cargo가 `$CARGO_HOME/bin`의 rustup proxy를 실행하고, rustup stable에 구성요소가 없어 실패. 그 폴더는 PATH에 없었고 PATH의 cargo는 Homebrew 것뿐이었으므로, §8의 이전 안내(PATH 순서)로는 해결되지 않음 | rustup stable에 구성요소를 추가하고 `rustup run stable cargo`로 실행. 맥 runbook 1.2 표, 2단계, §8을 고침 |
+| Homebrew clippy 1.96에서 `doctor.rs`의 lint 1건(`nonminimal_bool`) | [관찰] rustup stable 1.100(CI와 같음)에서는 fmt, clippy, 테스트 224개 모두 통과 | 코드는 고치지 않음. §7 L (12) |
+| runbook 4.2의 기본 설치 위치(`~/.cargo/bin`)가 PATH에 없고, Python 판이 먼저 잡힘 | [관찰] 그 폴더를 PATH 앞에 넣으면 다른 프로젝트의 cargo, rustc까지 rustup 쪽으로 바뀜 | my-skills 전용 설치 폴더를 쓰고 그 `bin`만 PATH 앞에 둠. 맥 runbook 4.1, 4.2를 고침 |
+| runbook 5.4의 전역 안내 검색 범위가 너무 넓음 | [관찰] 결과 대부분이 host 스킬 사본, 프로젝트 메모리, 세션 기록이었음. host 사본을 고치는 것은 금지 사항 | 각 에이전트의 최상위 안내 파일과 그 파일이 불러오는 파일로 좁힘. 맥 runbook 5.4를 고침 |
+| 이 문서의 머리말, §1, §3, §4, §6.3이 H 이전 상태였음 | [확정] | 현재 상태로 고침. 기기의 실제 연결 수는 일반화함(스펙 §12 포함) |
+| 그 밖의 runbook 점검 | [관찰] 블록 33개 모두 macOS 기본 bash 3.2에서 문법 오류 없음. 1.2의 doctor 출력 필터는 Python 0.4.1에서 동작. doctor·status의 JSON 필드, `[BLOCKED]`, `copy fallback`, `skipped host` 문구가 코드와 같음. agy 1.5.15의 `/skills` 조회가 runbook이 기대하는 형식이고, XDG 경로를 임시 폴더로 돌려도 동작함 | 기록만 |
+| 실제 환경의 전환 준비 상태 | [관찰] 레지스트리가 깨끗한 기본 브랜치이고 원격과 같음. hook과 전역 `core.hooksPath`가 없음. host 폴더의 다른 도구 symlink 중 레지스트리 스킬과 이름이 겹치는 것은 없음 | G 시작 조건을 만족 |
+
 ---
 
 ## 7. 남은 작업
@@ -241,8 +259,8 @@ Codex 운영:
 | H | ~~Windows 실기기~~ **완료(2026-11-23)**. 직접 빌드한 binary로 runbook 1~5단계를 진행했다. F 이후에는 릴리스 binary로 한 번 더 교체한다(설치 스크립트 확인 포함) | binary 하나 (F 또는 그 PC에서 빌드) | — |
 | I | v1.0.0: `dev`를 `main`에 병합, README를 binary 설치 방식으로, 태그 | C, G, H | **필요** |
 | J | 자동 pull (macOS launchd, Windows 작업 스케줄러) | I | 스펙 작성 후 승인 |
-| K | worktree 정리 (`dev-stream-*` 8개와 그 브랜치. 디스크 약 12GB) | — | 확인 후 진행 |
-| L | 작은 코드 정리: (1) ~~`ETXTBSY` 재시도~~ **완료**(`80cd32e`): `support_i.rs`의 `assert_with_busy_retry`를 `update_cli.rs`, `hooks_git.rs`, `registry_init.rs`가 함께 씀. Windows에서는 재현할 수 없어 Linux CI에서 확인해야 한다. 남은 경로: `src/update.rs`가 새 binary를 직접 실행해 버전을 확인하는 부분은 테스트 쪽 재시도로 막을 수 없다, (2) ~~convert의 state 이중 저장~~ **완료**(`cf64428`): `Outcome::Converted`이면 `apply_plan`이 다시 저장하지 않음. §6.6 순서는 그대로이고, 회귀 테스트를 추가함, (3) 읽기 전용 명령과 `--dry-run`이 활성 레지스트리 기록을 쓰지 않게 할지 결정, (4) H 결과에 따라 Windows에서 `HOME`보다 `USERPROFILE`을 우선할지 결정. 바꾸면 `HOME`만 지정하는 테스트 환경은 실제 홈에 쓰게 된다. `12524a6` 이후 CLI 테스트 환경은 `HOME`과 `USERPROFILE`을 함께 지정하므로, 바꿀 때는 새로 생기는 테스트 환경도 같은 규칙을 지키는지 확인한다, (5) ~~Windows 테스트 격리~~ **Rust 부분 완료**(`12524a6`, `22b85cd`): CLI 테스트 환경이 `HOME`, `USERPROFILE`, `LOCALAPPDATA`, `APPDATA`, `XDG_*`를 모두 임시 폴더로 돌린다. `data-path` 테스트에 Windows 위치 검사를 넣었다. Windows CI는 Rust 테스트 전후로 사용자 위치 목록을 비교한다. CI `45102239347`(`cf3489b`)에서 네 작업이 모두 통과했고, Windows 비교 단계도 실행되어 통과했다. 확인한 범위는 "다섯 곳(`%USERPROFILE%` 기준 host 폴더 4곳과 `%LOCALAPPDATA%\my-skills`)의 경로와 파일 종류 목록에 차이가 없음"이다. 확인 범위의 한계(이번 변경을 되돌릴 결함은 아님): (a) 파일 내용 변경과, 비교 사이에 생겼다가 지워진 것은 잡지 못한다. (b) host 기준이 `USERPROFILE`인데 Rust는 `HOME`을 먼저 읽으므로, runner의 `HOME`이 `USERPROFILE`과 다르면 `HOME` 쪽에 쓴 것을 놓친다. (c) XDG 기반 root, state 경로(`~/.config/my-skills`, `~/.local/state/my-skills`)는 비교 대상이 아니다. 보강이 필요한 조건: (b)는 `HOME`이 정의되어 있고 `USERPROFILE`과 다를 때, (c)는 언제나. 보강하려면 `HOME` 기준 경로와 root, state 기본 경로를 비교 목록에 추가한다. 참고: 임시 폴더를 tool repo 안에 두면 `doctor_report.rs`가 실패한다(레지스트리를 찾다가 tool repo를 잡음). Python 0.4.x는 고치지 않고 D에서 지운다(D1 결정), (6) Windows에서 audit 보고서의 파일 경로 표기를 `/`로 통일할지 결정한다. Python은 `\`로 나오고, Rust는 코드상 그럴 가능성이 있다. 해시 입력은 두 판 모두 이미 `/`, (7) doctor 문구: 레지스트리를 읽지 못하는 상태에서 agy link 기록이 있으면, 경고가 정상 manifest가 필요한 `convert`를 안내한다. "먼저 레지스트리를 찾거나 고치라"는 말을 덧붙인다(`src/commands/doctor.rs` convert-only 분기, `tests/doctor_report.rs`의 manifest 없는 경우 기대값), (8) 참고: wave4에서 라이브러리 함수 `plan_sync`의 인자가 `Option<InstallMode>`로 바뀌었다(저장소 안의 호출은 모두 고침), (9) hook 설치 메시지의 경로가 `/`와 `\`를 섞어 출력한다(표시만의 문제), (10) `set-root`(실행과 `--dry-run`)의 출력에 `\\?\` 접두어가 남는다(doctor와 같은 표시 수정이 필요), (11) `bootstrap --dry-run`은 "then: my-skills hooks install"이라고 보여 주지만 실제 bootstrap은 hook을 설치하지 않고 안내만 한다. 미리보기 문구를 실제 동작에 맞출지, bootstrap이 hook까지 설치하게 할지 결정한다 | (4)는 H | 필요 없음 (동작 변경인 (3), (4)는 결정 후) |
+| K | ~~worktree 정리 (`dev-stream-*` 8개와 그 브랜치. 디스크 약 12GB)~~ **완료(2026-11-24)**. worktree마다 커밋하지 않은 변경이 없고 브랜치가 `dev`에 병합됐음을 확인한 뒤 `git worktree remove`(강제 없음)와 `git branch -d`로 지웠다. 원격 브랜치는 없었다. 루트 이동 뒤 남은 빈 `crates/` 폴더도 지웠다(추적되지 않는 파일만 있었음) | — | — |
+| L | 작은 코드 정리: (1) ~~`ETXTBSY` 재시도~~ **완료**(`80cd32e`): `support_i.rs`의 `assert_with_busy_retry`를 `update_cli.rs`, `hooks_git.rs`, `registry_init.rs`가 함께 씀. Windows에서는 재현할 수 없어 Linux CI에서 확인해야 한다. 남은 경로: `src/update.rs`가 새 binary를 직접 실행해 버전을 확인하는 부분은 테스트 쪽 재시도로 막을 수 없다, (2) ~~convert의 state 이중 저장~~ **완료**(`cf64428`): `Outcome::Converted`이면 `apply_plan`이 다시 저장하지 않음. §6.6 순서는 그대로이고, 회귀 테스트를 추가함, (3) 읽기 전용 명령과 `--dry-run`이 활성 레지스트리 기록을 쓰지 않게 할지 결정, (4) H 결과에 따라 Windows에서 `HOME`보다 `USERPROFILE`을 우선할지 결정. 바꾸면 `HOME`만 지정하는 테스트 환경은 실제 홈에 쓰게 된다. `12524a6` 이후 CLI 테스트 환경은 `HOME`과 `USERPROFILE`을 함께 지정하므로, 바꿀 때는 새로 생기는 테스트 환경도 같은 규칙을 지키는지 확인한다, (5) ~~Windows 테스트 격리~~ **Rust 부분 완료**(`12524a6`, `22b85cd`): CLI 테스트 환경이 `HOME`, `USERPROFILE`, `LOCALAPPDATA`, `APPDATA`, `XDG_*`를 모두 임시 폴더로 돌린다. `data-path` 테스트에 Windows 위치 검사를 넣었다. Windows CI는 Rust 테스트 전후로 사용자 위치 목록을 비교한다. CI `45102239347`(`cf3489b`)에서 네 작업이 모두 통과했고, Windows 비교 단계도 실행되어 통과했다. 확인한 범위는 "다섯 곳(`%USERPROFILE%` 기준 host 폴더 4곳과 `%LOCALAPPDATA%\my-skills`)의 경로와 파일 종류 목록에 차이가 없음"이다. 확인 범위의 한계(이번 변경을 되돌릴 결함은 아님): (a) 파일 내용 변경과, 비교 사이에 생겼다가 지워진 것은 잡지 못한다. (b) host 기준이 `USERPROFILE`인데 Rust는 `HOME`을 먼저 읽으므로, runner의 `HOME`이 `USERPROFILE`과 다르면 `HOME` 쪽에 쓴 것을 놓친다. (c) XDG 기반 root, state 경로(`~/.config/my-skills`, `~/.local/state/my-skills`)는 비교 대상이 아니다. 보강이 필요한 조건: (b)는 `HOME`이 정의되어 있고 `USERPROFILE`과 다를 때, (c)는 언제나. 보강하려면 `HOME` 기준 경로와 root, state 기본 경로를 비교 목록에 추가한다. 참고: 임시 폴더를 tool repo 안에 두면 `doctor_report.rs`가 실패한다(레지스트리를 찾다가 tool repo를 잡음). Python 0.4.x는 고치지 않고 D에서 지운다(D1 결정), (6) Windows에서 audit 보고서의 파일 경로 표기를 `/`로 통일할지 결정한다. Python은 `\`로 나오고, Rust는 코드상 그럴 가능성이 있다. 해시 입력은 두 판 모두 이미 `/`, (7) doctor 문구: 레지스트리를 읽지 못하는 상태에서 agy link 기록이 있으면, 경고가 정상 manifest가 필요한 `convert`를 안내한다. "먼저 레지스트리를 찾거나 고치라"는 말을 덧붙인다(`src/commands/doctor.rs` convert-only 분기, `tests/doctor_report.rs`의 manifest 없는 경우 기대값), (8) 참고: wave4에서 라이브러리 함수 `plan_sync`의 인자가 `Option<InstallMode>`로 바뀌었다(저장소 안의 호출은 모두 고침), (9) hook 설치 메시지의 경로가 `/`와 `\`를 섞어 출력한다(표시만의 문제), (10) `set-root`(실행과 `--dry-run`)의 출력에 `\\?\` 접두어가 남는다(doctor와 같은 표시 수정이 필요), (11) `bootstrap --dry-run`은 "then: my-skills hooks install"이라고 보여 주지만 실제 bootstrap은 hook을 설치하지 않고 안내만 한다. 미리보기 문구를 실제 동작에 맞출지, bootstrap이 hook까지 설치하게 할지 결정한다, (12) 선택: `src/commands/doctor.rs`의 agy 경고 조건식이 Rust 1.96의 clippy에서 `nonminimal_bool`로 걸린다. CI의 1.100에서는 통과하고 동작에는 영향이 없다. 2026-11-24 결정으로 그때는 고치지 않았다(§6.6) | (4)는 H | 필요 없음 (동작 변경인 (3), (4)는 결정 후) |
 
 ### 권장 순서
 
@@ -250,7 +268,7 @@ Codex 운영:
 flowchart LR
   AB["A · B (완료)"] --> C["C (완료)"] --> DE["D · E (완료)"] --> F["F"]
   F --> G["G 맥"]
-  F --> H["H Windows"]
+  F --> H["H Windows (완료)"]
   G --> I["I v1.0.0"]
   H --> I
   I --> J["J"]
@@ -275,8 +293,12 @@ my-skills --version                  # PATH에서 선택된 설치 버전 확인
 
 ### 빌드와 검사
 
-tool repo 루트에서 실행한다. macOS에서 Homebrew Rust를 쓰고 rustup
-proxy가 먼저 잡히면, 현재 셸의 PATH에서 Homebrew bin을 앞에 둔다.
+tool repo 루트에서 실행한다. CI는 최신 stable을 쓴다.
+
+맥에 Homebrew Rust와 rustup이 함께 있으면 아래 `cargo`를 `rustup run stable cargo`로 바꿔 실행한다(rustup이 PATH에 없으면 `~/.cargo/bin/rustup`). PATH는 바꾸지 않는다.
+- cargo는 하위 명령(`cargo-fmt`, `cargo-clippy`)을 PATH보다 먼저 `$CARGO_HOME/bin`에서 찾는다. 그곳의 rustup proxy가 실행되므로 Homebrew bin을 PATH 앞에 두어도 해결되지 않는다. rustup toolchain에 구성요소가 없으면 `rustup component add --toolchain stable rustfmt clippy`.
+- Homebrew Rust가 CI보다 오래되면 clippy가 CI에 없는 lint를 낸다(§6.6).
+- 실행 절차는 맥 runbook 2단계(`rcargo`)를 따른다.
 
 ```bash
 cargo fmt --all --check

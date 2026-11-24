@@ -502,7 +502,7 @@ skills/                    빌드 시 바이너리에 포함하는 시드 원본
 | 검증한 커밋 | 3단계: `071ca28`(release binary). 4단계: `a7c35c6`(wave4 포함, `cargo install --locked --path .`) |
 | 개발 환경 | 새로 설치한 것 없음. Git 2.56.1, Rust 1.100.0(MSVC), Visual Studio Build Tools 2026 |
 | cargo test | `071ca28`에서 209개 통과, 0개 실패(Windows link 테스트 4개 실행). wave4 뒤 221개 통과 |
-| 기존 Python 0.4.x, 기존 state.json (Q3 판단용) | 있음(0.4.1, `%USERPROFILE%\.local\bin`), 있음(copy 기록 3개) |
+| 기존 Python 0.4.x, 기존 state.json (Q3 판단용) | 있음(0.4.1, `%USERPROFILE%\.local\bin`), 있음(copy 기록) |
 | 세 에이전트 명령 설치 여부 | claude, codex, agy 모두 있음 |
 | Link capability | junction |
 | Claude Code 발견 | 예. 새 세션(`claude -p`)에서 junction 스킬의 설명을 읽고 답함. 실행 중인 세션도 바로 인식 (`%USERPROFILE%\.claude\skills`) |
@@ -513,9 +513,9 @@ skills/                    빌드 시 바이너리에 포함하는 시드 원본
 | post-checkout, post-merge가 link를 만듦 (Git Bash) | 예. 둘 다 sync를 실행해 새 스킬을 junction으로 연결 |
 | 처음 Git Bash에서 잡힌 my-skills | Python 판(0.4.1). `cargo install` 뒤 새 Git Bash와 새 PowerShell에서는 Rust 판(`%USERPROFILE%\.cargo\bin`이 사용자 PATH 1번이라 PATH는 바꾸지 않음) |
 | 공백이 든 경로에서 동작 | 정상(`%TEMP%\skill drive probe`) |
-| 줄바꿈 | `core.autocrlf=true`, `.gitattributes` 없음, 작업 폴더의 CRLF 파일 60개. 문제 없음 |
+| 줄바꿈 | `core.autocrlf=true`, `.gitattributes` 없음, 작업 폴더에 CRLF 파일 있음. 문제 없음 |
 | hook이 my-skills를 찾음 | PATH(설치 후 Rust 판) |
-| 실제 연결 (4단계) | 진행함. `my-skills.local.toml`에 `[defaults] install_mode = "link"`, `[targets.agy] install_mode = "copy"`. convert 2개(agy는 건너뜀), 새 연결 40개. 결과: 스킬 15개, link 28개, copy 15개, 모두 FRESH(claude는 manifest상 지원하지 않는 2개 제외), `sync --check` 0, hook 4개 설치. 새 세션에서 세 에이전트 모두 실제 스킬을 발견 |
+| 실제 연결 (4단계) | 진행함. `my-skills.local.toml`에 `[defaults] install_mode = "link"`, `[targets.agy] install_mode = "copy"`. 기존 copy 연결을 convert(agy는 건너뜀)한 뒤 bootstrap으로 남은 연결을 만듦. 결과: claude·codex는 link, agy는 copy이고 모두 FRESH(manifest에서 claude를 지원하지 않는 스킬은 제외), `sync --check` 0, hook 4개 설치. 새 세션에서 세 에이전트 모두 실제 스킬을 발견 |
 | 기타 | Git Bash에서 `agy -p '/skills'`는 MSYS가 경로로 바꿔 모델을 호출하므로 PowerShell에서 실행. `set-root`와 hook 설치 메시지에 `\\?\` 접두어나 `/`와 `\`가 섞인 경로가 남음(표시만의 문제). `bootstrap --dry-run`은 "then: my-skills hooks install"이라고 보여 주지만 실제 bootstrap은 hook을 설치하지 않고 안내만 함 |
 
 ## 13. 열린 질문

@@ -69,6 +69,7 @@ tool repo 안에도 seed용 `my-skills.toml`이 있다. **tool repo 안에서 `d
 cd "$HOME" || exit 1
 sw_vers; git --version; python3 --version
 which -a cargo rustc; cargo --version; rustc --version
+RU="$(command -v rustup || echo "$HOME/.cargo/bin/rustup")"; [ -x "$RU" ] && "$RU" toolchain list && "$RU" component list --installed --toolchain stable | grep -E '^(rustfmt|clippy)'   # rustup은 PATH에 없을 수 있다
 which -a my-skills; my-skills --version                       # 기존 Python 0.4.x
 command -v claude codex agy; claude --version; codex --version; agy --version   # agy 버전은 꼭 기록
 echo "$PATH" | tr ':' '\n' | nl                               # cargo bin, Homebrew bin, Python my-skills 폴더의 순서
@@ -95,7 +96,8 @@ for d in ~/.claude/skills ~/.agents/skills ~/.gemini/config/skills; do echo "[$d
 | 레지스트리 hook 폴더에 이미 hook이 있거나 전역 `core.hooksPath`가 설정됨 | 4.1~4.2의 pull 때 실행되지 않게 막고, 4.4 전에 hook 폴더 위치를 확정한다. 기록 |
 | host 폴더에 레지스트리 스킬과 같은 이름의 폴더가 있는데 기록이 없음 | 4.3에서 `BLOCK_CONFLICT`가 된다. 미리 알린다 |
 | host 폴더에 다른 도구가 만든 symlink가 있음 | 레지스트리에 없는 이름이면 건드리지 않는다. 기록만 |
-| `cargo`가 Homebrew와 rustup 양쪽에 있음 | 인계 문서 §8대로 쓸 쪽을 정하고 기록한다 |
+| `cargo`가 Homebrew와 rustup 양쪽에 있음 | 2단계와 4.2는 rustup stable을 `rustup run stable cargo ...`로 쓴다(PATH는 바꾸지 않는다). stable에 `rustfmt`나 `clippy`가 없으면 사용자 확인 후 `rustup component add --toolchain stable rustfmt clippy`. 이유는 2단계. 쓴 toolchain과 버전을 기록 |
+| rustup이 없고 cargo가 하나뿐 | 그 cargo의 버전이 CI(최신 stable)와 같은지 확인한다. 같으면 2단계 블록에서 rustup 확인과 `RUSTUP_BIN` 줄 대신 `echo 'rcargo() { cargo "$@"; }' >> "$GDIR/g.env"`를 쓴다. 버전이 낮으면 **[멈춤]** |
 
 ### 1.3 tool repo 갱신 (checkout 업데이트, 읽기 전용 아님)
 
@@ -111,11 +113,27 @@ git fetch origin && git -c core.hooksPath=/dev/null switch dev && git -c core.ho
 
 ## 2. 빌드와 테스트
 
+CI와 같은 최신 stable로 검사한다. Homebrew Rust와 rustup이 함께 있는 맥에서는 `cargo fmt`, `cargo clippy`를 그대로 쓰지 않는다.
+- cargo는 하위 명령(`cargo-fmt`, `cargo-clippy`)을 PATH보다 먼저 `$CARGO_HOME/bin`에서 찾는다. 그곳에는 rustup proxy가 있으므로, Homebrew cargo를 PATH 앞에 두어도 rustup proxy가 실행되고, rustup toolchain에 구성요소가 없으면 실패한다.
+- Homebrew Rust가 CI보다 오래된 버전이면 clippy가 CI에 없는 lint를 낸다(2026-11-24: Homebrew 1.96에서 1건, CI와 같은 1.100에서는 통과).
+
+그래서 `rustup run stable cargo ...`로 toolchain을 명시하고(`rcargo`), PATH는 바꾸지 않는다.
+
 ```bash
 . "<GENV>" || exit 1; guard_dirs || exit 1; cd "$TOOL" || exit 1
-cargo fmt --all --check && cargo clippy --all-targets -- -D warnings && cargo test --all-targets || { echo "STOP: checks"; exit 1; }
-cargo build --release || exit 1
-TD="$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys;print(json.load(sys.stdin)["target_directory"])')" || exit 1
+RUSTUP_BIN="$(command -v rustup || echo "$HOME/.cargo/bin/rustup")"   # PATH에 없어도 기본 위치를 본다
+[ -x "$RUSTUP_BIN" ] || { echo "STOP: rustup not found (see the 1.2 table)"; exit 1; }
+for c in rustfmt clippy; do
+  "$RUSTUP_BIN" component list --installed --toolchain stable | grep -q "^$c" \
+    || { echo "STOP: rustup stable has no $c (rustup component add --toolchain stable rustfmt clippy, after approval)"; exit 1; }
+done
+printf 'RUSTUP_BIN=%q\n' "$RUSTUP_BIN" >> "$GDIR/g.env"
+echo 'rcargo() { "$RUSTUP_BIN" run stable cargo "$@"; }' >> "$GDIR/g.env"   # 4.2도 이것을 쓴다
+. "$GDIR/g.env" || exit 1
+rcargo --version; "$RUSTUP_BIN" run stable rustc --version                 # 기록한다
+rcargo fmt --all --check && rcargo clippy --all-targets -- -D warnings && rcargo test --all-targets || { echo "STOP: checks"; exit 1; }
+rcargo build --release || exit 1
+TD="$(rcargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys;print(json.load(sys.stdin)["target_directory"])')" || exit 1
 MS="$TD/release/my-skills"; "$MS" --version || exit 1                 # my-skills 1.0.0-alpha.N
 printf 'MS=%q\nBUILT=%q\n' "$MS" "$(git rev-parse --short HEAD)" >> "$GDIR/g.env"
 ```
@@ -423,8 +441,8 @@ echo "state backup: $BACKUP"; ls -la "$BACKUP"
 ```
 
 사용자에게 다음 계획을 보여 주고 승인을 받는다.
-1. `cargo install --locked --root "$INSTALL_ROOT" --path "$TOOL"`. 명시할 `INSTALL_ROOT`(기본 `${CARGO_HOME:-$HOME/.cargo}`)와 기존 `cargo install --list`, `CARGO_INSTALL_ROOT`/`CARGO_HOME`을 함께 보여 준다.
-2. PATH: 새 bash와 `sh -c`에서 `$MSBIN`이 먼저 잡히지 않으면, 셸 설정에서 `$INSTALL_ROOT/bin`을 Python 판 폴더보다 앞에 둔다(Python 판은 지우지 않는다).
+1. `rcargo install --locked --root "$INSTALL_ROOT" --path "$TOOL"`. `INSTALL_ROOT`는 **my-skills 전용 폴더**로 정한다(예: `$HOME/.local/opt/my-skills`). `${CARGO_HOME:-$HOME/.cargo}`처럼 rustup proxy나 다른 binary가 있는 폴더, Python 판이 있는 폴더에는 설치하지 않는다. 정한 `INSTALL_ROOT`와 기존 `cargo install --list`, `CARGO_INSTALL_ROOT`/`CARGO_HOME`을 함께 보여 준다.
+2. PATH: 셸 설정에 **`$INSTALL_ROOT/bin` 한 폴더만** Python 판 폴더보다 앞에 넣는다. Python 판 폴더를 PATH에 넣는 설정 줄보다 나중에 실행되는 곳에 `export PATH="<INSTALL_ROOT>/bin:$PATH"` 한 줄을 둔다. `~/.cargo/bin`을 PATH 앞에 넣지 않는다(그러면 다른 프로젝트의 cargo와 rustc까지 rustup 쪽으로 바뀐다). Python 판은 지우지 않는다. 고칠 셸 설정 파일과 추가할 줄을 보여 준다.
 3. 레지스트리의 깨끗한 기본 브랜치(`$BR`, 시작 HEAD `$START`)를 위에서 본 `$TARGET` SHA로 빨리 감기. **기존 hook은 실행하지 않는다**(`-c core.hooksPath=/dev/null`). 또한 4.4에서 hook을 설치할 위치가 레지스트리 소유 `$OWN_HK`인지 확인한다(전역 `core.hooksPath`로 다른 폴더를 가리키면 레지스트리 로컬 `core.hooksPath` 고정 여부를 함께 승인받는다).
 4. `$REG/my-skills.local.toml`(git에서 무시됨)에 넣을 내용과 `AGY_MODE`(`link` 또는 `copy`). 기존 내용은 보존하고 합친다.
 
@@ -442,13 +460,16 @@ echo "state backup: $BACKUP"; ls -la "$BACKUP"
 
 ```bash
 . "<GENV>" || exit 1; guard_dirs || exit 1
-INSTALL_ROOT="${CARGO_HOME:-$HOME/.cargo}"          # 4.1에서 승인한 설치 root로 고정
-cargo install --locked --root "$INSTALL_ROOT" --path "$TOOL" || exit 1
+INSTALL_ROOT="<4.1에서 승인한 my-skills 전용 폴더>"   # 예: $HOME/.local/opt/my-skills
+case "$INSTALL_ROOT" in /*) ;; *) echo "ABORT: INSTALL_ROOT must be absolute"; exit 1;; esac
+rcargo install --locked --root "$INSTALL_ROOT" --path "$TOOL" || exit 1
+# PATH에 넣을 폴더에는 my-skills 하나만 있어야 한다 (rustup proxy 등이 함께 노출되지 않게)
+[ "$(ls -A "$INSTALL_ROOT/bin")" = "my-skills" ] || { echo "STOP: $INSTALL_ROOT/bin has other files:"; ls -A "$INSTALL_ROOT/bin"; exit 1; }
 MSBIN="$INSTALL_ROOT/bin/my-skills"; "$MSBIN" --version || exit 1
 printf 'INSTALL_ROOT=%q\nMSBIN=%q\n' "$INSTALL_ROOT" "$MSBIN" >> "$GDIR/g.env"   # 이후 ms가 이 binary를 쓴다
 ```
 
-**새 bash를 열어** 확인한다. `bash`와 `sh -c` 모두 위의 `$MSBIN`(같은 실제 파일과 버전)을 찾아야 한다. hook은 PATH로 `my-skills`를 찾기 때문이다. 실패하면 승인받은 PATH 변경을 한 뒤 다시 실행해 통과시킨다.
+**새 bash를 열어** 확인한다. `bash`와 `sh -c` 모두 위의 `$MSBIN`(같은 실제 파일과 버전)을 찾아야 한다. hook은 PATH로 `my-skills`를 찾기 때문이다. 실패하면 승인받은 PATH 변경을 한 뒤 **새 터미널에서** 다시 실행해 통과시킨다. 이미 실행 중인 터미널과 에이전트 세션은 예전 PATH를 쓰므로, 레지스트리에서 git을 실행할 세션은 새로 연다.
 
 ```bash
 . "<GENV>" || exit 1
@@ -716,13 +737,33 @@ cd "$HOME" && rm -rf -- "$W" || { echo "STOP: cleanup $W failed"; exit 1; }
    git push "$R_REMOTE" "HEAD:refs/heads/$R_DEST" || { echo "STOP: push failed"; exit 1; }
    echo "pushed SHA: $(git rev-parse HEAD)"           # 이 SHA를 Windows PC에 알린다
    ```
-4. 이 맥의 전역 안내(Claude, Codex, agy가 읽는 사용자 전역 파일)에서 동기화 절차를 찾는다:
+4. 이 맥의 전역 안내에서 동기화 절차를 찾는다. 대상은 **각 에이전트의 최상위 안내 파일과, 그 파일이 `@경로`로 불러오는 파일만**이다.
+   host 스킬 폴더(`~/.claude/skills`, `~/.agents/skills`, `~/.gemini/config/skills`)의 사본, 프로젝트 메모리, 세션 기록은 대상이 아니다. host 사본은 설치 결과물이라 직접 고치지 않는다.
+   에이전트 설정 폴더 전체를 검색하면 결과의 대부분이 이런 파일이다.
 
    ```bash
-   grep -rlnE "my-skills" ~/.claude ~/.codex ~/.gemini --include="*.md"
+   . "<GENV>" || exit 1
+   CX="${CODEX_HOME:-$HOME/.codex}"
+   python3 - ~/.claude/CLAUDE.md "$CX/AGENTS.md" "$CX/AGENTS.override.md" ~/.gemini/GEMINI.md <<'EOF'
+   import os, re, sys
+   queue = [p for p in sys.argv[1:] if os.path.isfile(p)]
+   seen = set()
+   while queue:
+       p = os.path.realpath(queue.pop(0))
+       if p in seen:
+           continue
+       seen.add(p)
+       text = open(p, encoding="utf-8", errors="replace").read()
+       for m in re.finditer(r"(?:^|\s)@(\S+\.md)", text):    # @경로 import (줄 맨 앞 또는 공백 뒤)
+           q = os.path.expanduser(m.group(1))
+           q = q if os.path.isabs(q) else os.path.join(os.path.dirname(p), q)
+           if os.path.isfile(q):
+               queue.append(q)
+       print("MATCH" if "my-skills" in text else "-    ", p)
+   EOF
    ```
 
-   diff를 보여 주고 승인을 받아 고친다. **이 파일들은 레지스트리나 tool repo에 커밋하지 않는다.** Windows PC의 전역 안내는 Windows 쪽에서 따로 고친다.
+   `MATCH`인 파일만 diff를 보여 주고 승인을 받아 고친다. **이 파일들은 레지스트리나 tool repo에 커밋하지 않는다.** Windows PC의 전역 안내는 Windows 쪽에서 따로 고친다.
 5. 상태 재확인:
 
    ```bash
@@ -759,7 +800,7 @@ Windows에서:
 
 ## 7. 결과 기록
 
-스펙 §11 체크리스트를 채우고 그 아래에 다음 표를 넣는다. **공개 저장소다.** 사용자 이름, 실제 스킬 이름, 전체 경로, 전역 안내 내용은 쓰지 않는다. 경로는 `~/...` 형태로 적는다.
+스펙 §11 체크리스트를 채우고 그 아래에 다음 표를 넣는다. **공개 저장소다.** 사용자 이름, 실제 스킬 이름, 전체 경로, 전역 안내 내용, 기기의 실제 연결·기록 수, 전역 안내 파일의 줄 번호는 쓰지 않는다. 경로는 `~/...` 형태로 적는다.
 
 ```markdown
 **맥 실기기 (YYYY-MM-DD, macOS 버전, Rust 버전):**
@@ -768,14 +809,15 @@ Windows에서:
 |---|---|
 | 검증한 커밋 | 2단계에서 빌드한 커밋 |
 | cargo test | 통과 N개 / 실패 N개 |
-| 기존 Python 0.4.x, 기존 state.json | 있음/없음, 있음/없음 (copy 기록 N개) |
+| 기존 Python 0.4.x, 기존 state.json | 있음/없음, 있음/없음 (기록의 연결 방식) |
+| Rust toolchain (2단계) | rustup stable / Homebrew, 버전 |
 | 세 에이전트 버전 | claude / codex / agy (agy 버전 꼭 적기) |
 | Link capability | symlink |
 | Claude Code, Codex, agy 발견 (3.3) | 각각 예/아니요. agy가 아니요면 복사본 비교 결과와 copy 지정 여부 |
 | pre-commit, post-checkout, post-merge (3.5) | 각각 예/아니요 |
 | 처음 잡힌 my-skills, hook이 찾은 my-skills | Python 판/Rust 판, PATH 변경 여부 |
 | 공백이 든 경로 | 정상/문제 |
-| 전환 (4단계) | convert N개, 새 연결 N개, 건너뛴 host, BLOCK 여부, hermes 기록 보존 여부 |
+| 전환 (4단계) | convert와 새 연결 진행 여부(개수는 적지 않음), 건너뛴 host, BLOCK 여부, hermes 기록 보존 여부 |
 | link 바로 반영 (4.5), 전환 뒤 발견 (4.6) | host별 예/아니요 |
 | 공유 레지스트리 변경 (5단계) | manifest 기본값, 고친 문서(레지스트리 안 파일 이름만), 전역 안내 수정 여부 |
 | 두 기기 확인 (6단계) | 6.1 결과, 6.2 진행 또는 보류 |
