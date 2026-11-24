@@ -10,7 +10,7 @@ use std::process::ExitCode;
 use std::rc::Rc;
 
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::config_error;
 use crate::Error;
@@ -34,14 +34,16 @@ use crate::registry::root::{self, confirm_multi_host_write, resolve_hosts};
 // ---------------------------------------------------------------- install
 
 pub fn install(args: &InstallArgs) -> ExitCode {
-    if args.json && !args.dry_run {
-        return config_error("install --json requires --dry-run");
-    }
     let cli = CliOverrides {
         install_mode: args.mode.map(Into::into),
         ..CliOverrides::default()
     };
-    let (manifest, resolution, _state_lock) = match load_connect_manifest(&cli, !args.dry_run) {
+    let ConnectManifest {
+        manifest,
+        resolution,
+        _state_lock,
+        refusal,
+    } = match load_connect_manifest(&cli, !args.dry_run, args.json) {
         Ok(loaded) => loaded,
         Err(e) => return config_error(e),
     };
@@ -76,46 +78,43 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         Ok(shared) => shared,
         Err(err) => return config_error(err),
     };
-    if shared.incompatible && !args.dry_run {
-        print_plan_results_noop(&items);
-        return ExitCode::from(1);
+    let mut report = PlanReport::unchecked(&items, Some(&resolution), needs_yes);
+    if let Some(refusal) = &refusal {
+        return report.stop(BatchStop::Inactive(refusal), args.json);
     }
-    let mut prepared = PreparedPlan::new(&items);
+    if shared.incompatible && !args.dry_run {
+        if !args.json {
+            print_plan_results_noop(&items);
+        }
+        return report.stop(BatchStop::Blocked, args.json);
+    }
+
+    let prepared = PreparedPlan::new(&items).with_groups(shared.groups);
     let checks = check_targets(&manifest, &skills, &hosts, &prepared, CheckScope::AllHosts);
     let validation = validate_selected(&checks, Some(&prepared));
+    report.validation = &validation;
     if !args.dry_run {
-        print_validation(&validation, false);
+        print_validation(&validation, args.json);
     }
     if validation.iter().any(|check| !check.ok) {
-        if args.dry_run {
-            DryRun {
-                items: &[],
-                validation: &validation,
-                audit: None,
-                resolution: Some(&resolution),
-                needs_yes,
-            }
-            .print(args.json);
-            if !args.json {
-                print_confirmation_hint(&hosts, needs_yes);
-            }
+        if !args.dry_run {
+            return report.stop(BatchStop::Blocked, args.json);
+        }
+        report.items = &[];
+        report.print_preview(args.json);
+        if !args.json {
+            print_confirmation_hint(&hosts, needs_yes);
         }
         return ExitCode::from(1);
     }
+
     let gate = match audit_gate(&manifest, &checks, args.skip_audit) {
         Ok(gate) => gate,
-        Err(e) => return config_error(e),
+        Err(e) => return report.stop(BatchStop::Config(&e), args.json && !args.dry_run),
     };
-
+    report.audit = Some(&gate);
     if args.dry_run {
-        DryRun {
-            items: &items,
-            validation: &validation,
-            audit: Some(&gate),
-            resolution: Some(&resolution),
-            needs_yes,
-        }
-        .print(args.json);
+        report.print_preview(args.json);
         if !args.json {
             println!("{}", format_gate(&unique_audit(&gate), "AUDIT WOULD BLOCK"));
             println!("Dry run — planned actions (nothing written):");
@@ -127,23 +126,27 @@ pub fn install(args: &InstallArgs) -> ExitCode {
     }
 
     if !allow && !confirm_multi_host_write(&hosts, args.yes) {
-        return ExitCode::from(2);
+        return report.stop(BatchStop::NeedsYes, args.json);
     }
-    if let Some(code) = report_gate(&gate) {
-        return code;
+    if !args.json {
+        report_gate(&gate);
     }
-    let mut audit = audit_meta_by_path(&checks, &gate);
-    if let Err(code) = check_fallbacks(&manifest, &mut prepared, &mut audit, args.skip_audit) {
-        return code;
+    if gate.blocked() {
+        return report.stop(BatchStop::Blocked, args.json);
     }
-    remember_write_root(Some(&resolution), &items);
-    let (_, blocked) = apply_plan(
-        prepared.with_groups(shared.groups),
+    let audit = audit_meta_by_path(&checks, &gate);
+    apply_connections(
+        &manifest,
+        prepared,
         &mut state,
-        &audit,
-        false,
-    );
-    exit(blocked)
+        report,
+        audit,
+        ApplyOptions {
+            json: args.json,
+            quiet: false,
+            skip_audit: args.skip_audit,
+        },
+    )
 }
 
 /// v0.4.1 `is_builtin_seed_default_install`: a plain `install` of only
@@ -181,30 +184,39 @@ pub fn sync(args: &SyncArgs) -> ExitCode {
     if args.json && args.check {
         return config_error("sync --json is not supported with --check; use --dry-run --json");
     }
-    if args.json && !args.dry_run {
-        return config_error("sync --json requires --dry-run");
-    }
-    let (manifest, resolution, _state_lock) =
-        match load_connect_manifest(&CliOverrides::default(), !args.dry_run && !args.check) {
-            Ok(loaded) => loaded,
-            Err(e) => return config_error(e),
-        };
-    sync_manifest_with_resolution(&manifest, args, Some(&resolution))
+    let ConnectManifest {
+        manifest,
+        resolution,
+        _state_lock,
+        refusal,
+    } = match load_connect_manifest(
+        &CliOverrides::default(),
+        !args.dry_run && !args.check,
+        args.json,
+    ) {
+        Ok(loaded) => loaded,
+        Err(e) => return config_error(e),
+    };
+    sync_manifest_with_resolution(&manifest, args, Some(&resolution), refusal.as_deref())
 }
 
 /// Sync against an already loaded manifest.
 pub fn sync_manifest(manifest: &Manifest, args: &SyncArgs) -> ExitCode {
+    if args.json && args.check {
+        return config_error("sync --json is not supported with --check; use --dry-run --json");
+    }
     let _state_lock = match lock_state(!args.dry_run && !args.check) {
         Ok(lock) => lock,
         Err(e) => return config_error(e),
     };
-    sync_manifest_with_resolution(manifest, args, None)
+    sync_manifest_with_resolution(manifest, args, None, None)
 }
 
 fn sync_manifest_with_resolution(
     manifest: &Manifest,
     args: &SyncArgs,
     resolution: Option<&root::RootResolution>,
+    refusal: Option<&str>,
 ) -> ExitCode {
     let hosts = match resolve_hosts(manifest, args.host.as_deref()) {
         Ok(h) => h,
@@ -279,25 +291,42 @@ fn sync_manifest_with_resolution(
         Ok(shared) => shared,
         Err(err) => return config_error(err),
     };
-    if shared.incompatible && !args.dry_run {
-        print_plan_results_noop(&items);
-        return ExitCode::from(1);
-    }
     let writes = items.iter().any(|i| i.action.writes());
     let explicit = !requested.is_empty();
+    let mut report =
+        PlanReport::unchecked(&items, resolution, writes && hosts.len() > 1 && !args.yes);
+    if let Some(refusal) = refusal {
+        return report.stop(BatchStop::Inactive(refusal), args.json);
+    }
+    if shared.incompatible && !args.dry_run {
+        if !args.json {
+            print_plan_results_noop(&items);
+        }
+        return report.stop(BatchStop::Blocked, args.json);
+    }
+    let mut state = state;
     if !args.dry_run {
         if !writes && !explicit {
-            if !args.quiet {
+            if args.json {
+                let batch = apply_plan(
+                    PreparedPlan::new(&items),
+                    &mut state,
+                    &BTreeMap::new(),
+                    args.quiet,
+                    true,
+                );
+                report.print_applied(&batch, None);
+            } else if !args.quiet {
                 print_plan_results_noop(&items);
             }
             return exit(items.iter().any(|i| i.action.is_block()));
         }
         if writes && !confirm_multi_host_write(&hosts, args.yes) {
-            return ExitCode::from(2);
+            return report.stop(BatchStop::NeedsYes, args.json);
         }
     }
 
-    let mut prepared = PreparedPlan::new(&items);
+    let prepared = PreparedPlan::new(&items).with_groups(shared.groups);
     let checked: Vec<&Skill> = skills
         .iter()
         .copied()
@@ -315,68 +344,63 @@ fn sync_manifest_with_resolution(
     };
     let checks = check_targets(manifest, &checked, &hosts, &prepared, scope);
     let validation = validate_selected(&checks, Some(&prepared));
+    report.validation = &validation;
     let invalid = validation.iter().any(|check| !check.ok);
     if !args.dry_run {
-        print_validation(&validation, false);
+        print_validation(&validation, args.json);
         if invalid {
-            return ExitCode::from(1);
+            return report.stop(BatchStop::Blocked, args.json);
         }
     }
     let gate = if (writes || !checks.is_empty()) && !invalid {
         match audit_gate(manifest, &checks, args.skip_audit) {
             Ok(gate) => Some(gate),
-            Err(e) => return config_error(e),
+            Err(e) => return report.stop(BatchStop::Config(&e), args.json && !args.dry_run),
         }
     } else {
         None
     };
-
+    report.audit = gate.as_ref();
     if args.dry_run {
-        let needs_yes = writes && hosts.len() > 1 && !args.yes;
-        DryRun {
-            items: &items,
-            validation: &validation,
-            audit: gate.as_ref(),
-            resolution,
-            needs_yes,
-        }
-        .print(args.json);
+        report.print_preview(args.json);
         if !args.json {
             println!("Dry run — planned actions (nothing written):");
             print_plan(&items);
-            // Same rule as the JSON `audit` object: report only a gate that ran.
+            // Same rule as the JSON audit object: report only a gate that ran.
             if let Some(gate) = gate.as_ref().filter(|gate| gate.skipped || gate.blocked()) {
                 println!("{}", format_gate(&unique_audit(gate), "AUDIT WOULD BLOCK"));
             }
             if let Some(resolution) = resolution {
                 super::print_would_cache_root(resolution);
             }
-            print_confirmation_hint(&hosts, needs_yes);
+            print_confirmation_hint(&hosts, report.needs_yes);
         }
         return exit(invalid);
     }
 
-    if let Some(gate) = gate.as_ref()
-        && (!args.quiet || gate.blocked())
-        && let Some(code) = report_gate(gate)
-    {
-        return code;
+    if let Some(gate) = gate.as_ref() {
+        if !args.json && (!args.quiet || gate.blocked()) {
+            report_gate(gate);
+        }
+        if gate.blocked() {
+            return report.stop(BatchStop::Blocked, args.json);
+        }
     }
-    let mut state = state;
-    let mut audit = gate
+    let audit = gate
         .as_ref()
         .map_or_else(BTreeMap::new, |gate| audit_meta_by_path(&checks, gate));
-    if let Err(code) = check_fallbacks(manifest, &mut prepared, &mut audit, args.skip_audit) {
-        return code;
-    }
-    remember_write_root(resolution, &items);
-    let (_, blocked) = apply_plan(
-        prepared.with_groups(shared.groups),
+    apply_connections(
+        manifest,
+        prepared,
         &mut state,
-        &audit,
-        args.quiet,
-    );
-    exit(blocked)
+        report,
+        audit,
+        ApplyOptions {
+            json: args.json,
+            quiet: args.quiet,
+            skip_audit: args.skip_audit,
+        },
+    )
 }
 
 fn print_plan_results_noop(items: &[PlanItem]) {
@@ -391,11 +415,15 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
     if args.skills.is_empty() && args.groups.is_empty() {
         return config_error("uninstall requires a skill name");
     }
-    let (manifest, resolution, _state_lock) =
-        match load_connect_manifest(&CliOverrides::default(), !args.dry_run) {
-            Ok(loaded) => loaded,
-            Err(e) => return config_error(e),
-        };
+    let ConnectManifest {
+        manifest,
+        resolution,
+        _state_lock,
+        ..
+    } = match load_connect_manifest(&CliOverrides::default(), !args.dry_run, false) {
+        Ok(loaded) => loaded,
+        Err(e) => return config_error(e),
+    };
     let names = match select_names(&manifest, &args.skills, &args.groups) {
         Ok(names) => names,
         // A v1.1 single-name uninstall can remove a managed orphan record.
@@ -471,11 +499,15 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
 // ---------------------------------------------------------------- convert
 
 pub fn convert(args: &ConvertArgs) -> ExitCode {
-    let (manifest, resolution, _state_lock) =
-        match load_connect_manifest(&CliOverrides::default(), !args.dry_run) {
-            Ok(loaded) => loaded,
-            Err(e) => return config_error(e),
-        };
+    let ConnectManifest {
+        manifest,
+        resolution,
+        _state_lock,
+        ..
+    } = match load_connect_manifest(&CliOverrides::default(), !args.dry_run, false) {
+        Ok(loaded) => loaded,
+        Err(e) => return config_error(e),
+    };
     // Convert acts on existing connections, so every registered skill is in
     // scope unless one is named.
     let (skills, hosts) = match root::select_requested(
@@ -556,13 +588,14 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
         return ExitCode::SUCCESS;
     }
     remember_write_root(Some(&resolution), &items);
-    let (_, blocked) = apply_plan(
+    let batch = apply_plan(
         prepared.with_groups(shared.groups),
         &mut state,
         &audit,
         false,
+        false,
     );
-    exit(blocked)
+    exit(!batch.succeeded())
 }
 
 fn print_skipped_convert_hosts(skipped: &[(String, InstallMode)]) {
@@ -632,7 +665,7 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
             yes: true,
             ..SyncArgs::default()
         };
-        let code = sync_manifest_with_resolution(&manifest, &sync_args, Some(&resolution));
+        let code = sync_manifest_with_resolution(&manifest, &sync_args, Some(&resolution), None);
         if code != ExitCode::SUCCESS {
             return code;
         }
@@ -646,19 +679,49 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
 
 // ---------------------------------------------------------------- shared
 
+struct ConnectManifest {
+    manifest: Manifest,
+    resolution: root::RootResolution,
+    _state_lock: Option<StateLock>,
+    refusal: Option<String>,
+}
+
 fn load_connect_manifest(
     cli: &CliOverrides,
     writes: bool,
-) -> crate::Result<(Manifest, root::RootResolution, Option<StateLock>)> {
+    report_refusal: bool,
+) -> crate::Result<ConnectManifest> {
     if !writes {
         let (manifest, resolution) = root::load_manifest_resolved(cli, false)?;
-        return Ok((manifest, resolution, None));
+        return Ok(ConnectManifest {
+            manifest,
+            resolution,
+            _state_lock: None,
+            refusal: None,
+        });
     }
-    let resolution = resolve_write_root()?;
-    let state_lock = lock_state(true)?;
-    resolution.recheck_write()?;
+    let resolution = root::resolve_root(None, false)?;
+    let mut refusal = resolution.write_refusal();
+    if !report_refusal && let Some(message) = refusal.take() {
+        return Err(Error::Manifest(message));
+    }
+    // An inactive cwd is only inspected for its refusal report.
+    let state_lock = lock_state(refusal.is_none())?;
+    if state_lock.is_some()
+        && let Err(error) = resolution.recheck_write()
+    {
+        if !report_refusal {
+            return Err(error);
+        }
+        refusal = Some(error.to_string());
+    }
     let manifest = load_manifest(&resolution.root, cli)?;
-    Ok((manifest, resolution, state_lock))
+    Ok(ConnectManifest {
+        manifest,
+        resolution,
+        _state_lock: state_lock,
+        refusal,
+    })
 }
 
 fn lock_state(writes: bool) -> crate::Result<Option<StateLock>> {
@@ -684,7 +747,7 @@ fn remember_write_root(resolution: Option<&root::RootResolution>, items: &[PlanI
     }
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct ValidationCheck<'a> {
     skill: &'a str,
     host: Option<&'a str>,
@@ -881,6 +944,12 @@ fn validate_selected<'a>(
             }
         }
     }
+    unique_validation(checks)
+}
+
+fn unique_validation<'a>(
+    checks: impl IntoIterator<Item = ValidationCheck<'a>>,
+) -> Vec<ValidationCheck<'a>> {
     let mut unique: Vec<ValidationCheck<'_>> = Vec::new();
     for check in checks {
         if let Some(existing) = unique
@@ -981,29 +1050,75 @@ fn unique_audit(gate: &AuditGateResult) -> AuditGateResult {
     }
 }
 
-fn check_fallbacks(
-    manifest: &Manifest,
-    prepared: &mut PreparedPlan<'_>,
-    audit: &mut BTreeMap<PathBuf, AuditMeta>,
+struct ApplyOptions {
+    json: bool,
+    quiet: bool,
     skip_audit: bool,
-) -> Result<(), ExitCode> {
+}
+
+fn apply_connections<'a>(
+    manifest: &Manifest,
+    mut prepared: PreparedPlan<'a>,
+    state: &mut State,
+    report: PlanReport<'a>,
+    mut audit: BTreeMap<PathBuf, AuditMeta>,
+    output: ApplyOptions,
+) -> ExitCode {
     let checks = prepared.prepare_links();
-    if checks.is_empty() {
-        return Ok(());
+    let fallback_validation = validate_selected(&checks, None);
+    print_validation(&fallback_validation, output.json);
+    let invalid = fallback_validation.iter().any(|check| !check.ok);
+    let mut fallback_gate = None;
+    if !invalid && !checks.is_empty() {
+        match audit_gate(manifest, &checks, output.skip_audit) {
+            Ok(gate) => {
+                audit.extend(audit_meta_by_path(&checks, &gate));
+                fallback_gate = Some(gate);
+            }
+            Err(error) => return report.stop(BatchStop::Config(&error), output.json),
+        }
     }
-    let validation = validate_selected(&checks, None);
-    print_validation(&validation, false);
-    if validation.iter().any(|check| !check.ok) {
-        return Err(ExitCode::from(1));
+    let blocked = fallback_gate.as_ref().is_some_and(AuditGateResult::blocked);
+    if blocked && !output.json {
+        report_gate(fallback_gate.as_ref().expect("a blocked gate ran"));
     }
-    let gate = audit_gate(manifest, &checks, skip_audit).map_err(config_error)?;
-    if gate.blocked()
-        && let Some(code) = report_gate(&gate)
-    {
-        return Err(code);
+
+    let validation;
+    let combined_gate;
+    let report = if output.json && !checks.is_empty() {
+        validation =
+            unique_validation(report.validation.iter().cloned().chain(fallback_validation));
+        combined_gate = match (report.audit, fallback_gate) {
+            (Some(gate), Some(fallback)) => Some(AuditGateResult {
+                skipped: gate.skipped,
+                results: gate
+                    .results
+                    .iter()
+                    .cloned()
+                    .chain(fallback.results)
+                    .collect(),
+            }),
+            (Some(gate), None) => Some(gate.clone()),
+            (None, fallback) => fallback,
+        };
+        PlanReport {
+            validation: &validation,
+            audit: combined_gate.as_ref(),
+            ..report
+        }
+    } else {
+        report
+    };
+    if invalid || blocked {
+        return report.stop(BatchStop::Blocked, output.json);
     }
-    audit.extend(audit_meta_by_path(&checks, &gate));
-    Ok(())
+
+    remember_write_root(report.resolution, report.items);
+    let batch = apply_plan(prepared, state, &audit, output.quiet, output.json);
+    if output.json {
+        report.print_applied(&batch, None);
+    }
+    exit(!batch.succeeded())
 }
 
 /// Print a skipped or blocked gate; `Some(exit)` when the command must stop.
@@ -1040,77 +1155,214 @@ fn audit_meta_by_path(
         .collect()
 }
 
-/// Apply writes in order and print v0.4.1-style result lines.
-/// Returns (changed, blocked).
-fn apply_plan(
-    mut plan: PreparedPlan<'_>,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ApplyStatus {
+    Created,
+    Updated,
+    Removed,
+    Unchanged,
+    Blocked,
+    Failed,
+    Skipped,
+}
+
+#[derive(Clone)]
+struct ItemResult {
+    status: ApplyStatus,
+    mode: Option<InstallMode>,
+    fallback_reason: Option<String>,
+    error: Option<String>,
+}
+
+impl ItemResult {
+    fn new(status: ApplyStatus, mode: Option<InstallMode>, error: Option<String>) -> Self {
+        Self {
+            status,
+            mode,
+            error,
+            fallback_reason: None,
+        }
+    }
+
+    fn applied(item: &PlanItem, outcome: &Outcome) -> Self {
+        let status = match outcome {
+            Outcome::Created(_) => ApplyStatus::Created,
+            Outcome::Updated | Outcome::Converted(_) => ApplyStatus::Updated,
+            Outcome::Removed => ApplyStatus::Removed,
+            Outcome::Unchanged => ApplyStatus::Unchanged,
+        };
+        let mut result = Self::new(status, Some(item.mode), None);
+        if let Outcome::Created(Connection::CopyFallback { reason }) = outcome {
+            result.mode = Some(InstallMode::Copy);
+            result.fallback_reason = Some(reason.clone());
+        }
+        result
+    }
+}
+
+#[derive(Default, Serialize)]
+struct ApplySummary {
+    created: usize,
+    updated: usize,
+    removed: usize,
+    unchanged: usize,
+    blocked: usize,
+    failed: usize,
+}
+
+#[derive(Serialize)]
+struct CleanupNotice<'a> {
+    skill: &'a str,
+    host: &'a str,
+    path: String,
+    message: String,
+}
+
+struct BatchResult<'a> {
+    results: Vec<ItemResult>,
+    cleanup_warnings: Vec<CleanupNotice<'a>>,
+}
+
+impl<'a> BatchResult<'a> {
+    fn from_plan(items: &[PlanItem], stopped: bool) -> Self {
+        let results = items
+            .iter()
+            .map(|item| {
+                if item.action.is_block() {
+                    ItemResult::new(ApplyStatus::Blocked, None, Some(item.reason.clone()))
+                } else if stopped && item.action.writes() {
+                    ItemResult::new(ApplyStatus::Blocked, None, None)
+                } else if !stopped && item.action == Action::Noop {
+                    ItemResult::new(ApplyStatus::Unchanged, Some(item.mode), None)
+                } else {
+                    ItemResult::new(ApplyStatus::Skipped, None, None)
+                }
+            })
+            .collect();
+        Self {
+            results,
+            cleanup_warnings: Vec::new(),
+        }
+    }
+
+    fn succeeded(&self) -> bool {
+        self.results
+            .iter()
+            .all(|result| !matches!(result.status, ApplyStatus::Blocked | ApplyStatus::Failed))
+    }
+
+    fn summary(&self) -> ApplySummary {
+        let mut summary = ApplySummary::default();
+        for result in &self.results {
+            match result.status {
+                ApplyStatus::Created => summary.created += 1,
+                ApplyStatus::Updated => summary.updated += 1,
+                ApplyStatus::Removed => summary.removed += 1,
+                ApplyStatus::Unchanged => summary.unchanged += 1,
+                ApplyStatus::Blocked => summary.blocked += 1,
+                ApplyStatus::Failed => summary.failed += 1,
+                ApplyStatus::Skipped => {}
+            }
+        }
+        summary
+    }
+}
+
+/// Apply once per physical destination. The same results drive the text
+/// lines and the machine-readable batch report.
+fn apply_plan<'a>(
+    mut plan: PreparedPlan<'a>,
     state: &mut State,
     audit: &BTreeMap<PathBuf, AuditMeta>,
     quiet: bool,
-) -> (usize, bool) {
-    let mut changed = 0;
-    let mut blocked = false;
+    json: bool,
+) -> BatchResult<'a> {
+    let mut batch = BatchResult::from_plan(plan.items, false);
     let aliases: BTreeSet<_> = plan.groups.values().flatten().copied().collect();
     for (index, item) in plan.items.iter().enumerate() {
         if aliases.contains(&index) {
             continue;
         }
-        if item.action.writes() {
-            let peers: Vec<_> = plan
-                .groups
-                .remove(&index)
-                .into_iter()
-                .flatten()
-                .map(|idx| &plan.items[idx])
-                .collect();
-            let prepared = plan
-                .connections
-                .remove(&(item.skill.as_str(), item.host.as_str()))
-                .expect("every write has a preparation result");
-            match prepared.and_then(|connection| {
-                let path = connection
-                    .as_ref()
-                    .and_then(PreparedConnection::check_snapshot)
-                    .unwrap_or(&item.source);
-                apply::apply_prepared_group(
-                    item,
-                    &peers,
-                    state,
-                    audit.get(path),
-                    connection.as_ref(),
-                )
-            }) {
-                Ok(applied) => {
-                    changed += 1 + peers.len();
-                    for applied_item in std::iter::once(item).chain(peers.iter().copied()) {
+        if !item.action.writes() {
+            if item.action == Action::Noop {
+                batch.results[index].fallback_reason = state
+                    .get(&item.skill, &item.host)
+                    .and_then(|record| record.fallback_reason.clone());
+            }
+            if !json && (item.action.is_block() || !quiet) {
+                print_result_line(item, None);
+            }
+            continue;
+        }
+        let peers = plan.groups.remove(&index).unwrap_or_default();
+        let peer_items: Vec<_> = peers.iter().map(|&idx| &plan.items[idx]).collect();
+        let prepared = plan
+            .connections
+            .remove(&(item.skill.as_str(), item.host.as_str()))
+            .expect("every write has a preparation result");
+        let result = prepared.and_then(|connection| {
+            let path = connection
+                .as_ref()
+                .and_then(PreparedConnection::check_snapshot)
+                .unwrap_or(&item.source);
+            apply::apply_prepared_group(
+                item,
+                &peer_items,
+                state,
+                audit.get(path),
+                connection.as_ref(),
+            )
+        });
+        let row = match result {
+            Ok(applied) => {
+                if !json {
+                    for applied_item in std::iter::once(item).chain(peer_items) {
                         print_result_line(applied_item, Some(&applied.outcome));
                     }
-                    applied.print_cleanup_warnings();
                 }
-                Err(Error::CopyConflict(path)) => {
-                    blocked = true;
-                    println!(
-                        "  CONFLICT: {} -> {} ({path} changed locally after planning)",
-                        item.skill, item.host
+                applied.print_cleanup_warnings();
+                batch
+                    .cleanup_warnings
+                    .extend(
+                        applied
+                            .cleanup_warnings
+                            .iter()
+                            .map(|warning| CleanupNotice {
+                                skill: &item.skill,
+                                host: &item.host,
+                                path: display_path(&warning.path),
+                                message: warning.to_string(),
+                            }),
                     );
-                }
-                Err(Error::StateSave(e)) => {
-                    blocked = true;
-                    println!("  FAILED: {} -> {} (state: {e})", item.skill, item.host);
-                }
-                Err(e) => {
-                    blocked = true;
-                    println!("  FAILED: {} -> {} ({e})", item.skill, item.host);
-                }
+                ItemResult::applied(item, &applied.outcome)
             }
-        } else if item.action.is_block() {
-            blocked = true;
-            print_result_line(item, None);
-        } else if !quiet {
-            print_result_line(item, None);
+            Err(error) => {
+                let status = if matches!(error, Error::CopyConflict(_)) {
+                    ApplyStatus::Blocked
+                } else {
+                    ApplyStatus::Failed
+                };
+                if !json {
+                    match &error {
+                        Error::CopyConflict(path) => println!(
+                            "  CONFLICT: {} -> {} ({path} changed locally after planning)",
+                            item.skill, item.host
+                        ),
+                        Error::StateSave(e) => {
+                            println!("  FAILED: {} -> {} (state: {e})", item.skill, item.host)
+                        }
+                        _ => println!("  FAILED: {} -> {} ({error})", item.skill, item.host),
+                    }
+                }
+                ItemResult::new(status, None, Some(error.to_string()))
+            }
+        };
+        for target in std::iter::once(index).chain(peers) {
+            batch.results[target] = row.clone();
         }
     }
-    (changed, blocked)
+    batch
 }
 
 fn connection_suffix(connection: &Connection) -> String {
@@ -1187,7 +1439,7 @@ fn print_confirmation_hint(hosts: &[String], needs_yes: bool) {
     }
 }
 
-struct DryRun<'a> {
+struct PlanReport<'a> {
     items: &'a [PlanItem],
     validation: &'a [ValidationCheck<'a>],
     audit: Option<&'a AuditGateResult>,
@@ -1195,102 +1447,223 @@ struct DryRun<'a> {
     needs_yes: bool,
 }
 
-impl DryRun<'_> {
-    fn print(&self, json: bool) {
+impl<'a> PlanReport<'a> {
+    fn unchecked(
+        items: &'a [PlanItem],
+        resolution: Option<&'a root::RootResolution>,
+        needs_yes: bool,
+    ) -> Self {
+        Self {
+            items,
+            validation: &[],
+            audit: None,
+            resolution,
+            needs_yes,
+        }
+    }
+
+    fn print_preview(&self, json: bool) {
         let refusal = self
             .resolution
             .and_then(root::RootResolution::write_refusal);
-        let validation = self.validation.iter().filter(|check| !check.ok);
-        let audit_gate = self.audit.map(unique_audit);
-        let audit = audit_gate
-            .iter()
-            .flat_map(|gate| &gate.results)
-            .filter(|result| result.blocked());
-        let plan = self.items.iter().filter(|item| item.action.is_block());
-        let (validation_count, audit_count, plan_count) = (
-            validation.clone().count(),
-            audit.clone().count(),
-            plan.clone().count(),
-        );
-        let count = validation_count + audit_count + plan_count;
-        let blocked = count != 0 || refusal.is_some();
-
         if json {
-            let mut reasons = Vec::new();
-            if let Some(message) = refusal {
-                reasons.push(json!({
-                    "skill": null,
-                    "host": null,
-                    "kind": "inactive_registry",
-                    "message": message,
-                }));
-            }
-            reasons.extend(validation.map(|check| {
-                json!({
-                    "skill": check.skill,
-                    "host": check.host,
-                    "kind": "validation",
-                    "message": check.errors.join("\n"),
-                })
-            }));
-            reasons.extend(audit.map(|result| json!({
-                "skill": result.skill,
-                "host": null,
-                "kind": "audit",
-                "message": format!("audit blocked (threshold={})", result.threshold.map_or("none", |threshold| threshold.label())),
-            })));
-            reasons.extend(plan.map(|item| {
-                json!({
-                    "skill": item.skill,
-                    "host": item.host,
-                    "kind": item.action.label().to_ascii_lowercase(),
-                    "message": item.reason,
-                })
-            }));
-            if self.needs_yes {
-                reasons.push(json!({
-                    "skill": null,
-                    "host": null,
-                    "kind": "needs_yes",
-                    "message": "this command writes to multiple hosts and requires --yes",
-                }));
-            }
-            let audit_not_run = AuditGateResult {
-                results: Vec::new(),
-                skipped: false,
-            };
-            let payload = json!({
-                "actions": self.items.iter().map(|item| json!({
-                    "skill": item.skill,
-                    "host": item.host,
-                    "action": item.action.label(),
-                    "reason": item.reason,
-                    "mode": mode_label(item.mode),
-                    "source": display_path(&item.source),
-                    "destination": display_path(&item.destination),
-                })).collect::<Vec<_>>(),
-                "audit": gate_json(audit_gate.as_ref().unwrap_or(&audit_not_run)),
-                "registry": self.resolution.map(root::RootResolution::meta),
-                "dry_run": true,
-                "blocked": blocked,
-                "applicable": !blocked && !self.needs_yes,
-                "block_reasons": reasons,
-                "validation": self.validation,
-            });
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&payload).expect("JSON values always serialize")
-            );
+            print_json(&self.json_payload(refusal.as_deref()));
         } else {
             print_write_refusal(refusal.as_deref());
+            let validation = self.validation.iter().filter(|check| !check.ok).count();
+            let audit = self.audit.map(unique_audit).map_or(0, |gate| {
+                gate.results
+                    .iter()
+                    .filter(|result| result.blocked())
+                    .count()
+            });
+            let plan = self
+                .items
+                .iter()
+                .filter(|item| item.action.is_block())
+                .count();
+            let count = validation + audit + plan;
             if count != 0 {
                 println!(
-                    "BLOCKED: {count} item(s) would be refused (validation {validation_count}, audit {audit_count}, plan {plan_count})"
+                    "BLOCKED: {count} item(s) would be refused (validation {validation}, audit {audit}, plan {plan})"
                 );
             }
         }
         print_validation(self.validation, json);
     }
+
+    fn json_payload(&self, refusal: Option<&str>) -> Value {
+        let gate = self.audit.map(unique_audit).unwrap_or(AuditGateResult {
+            results: Vec::new(),
+            skipped: false,
+        });
+        let mut reasons = Vec::new();
+        if let Some(message) = refusal {
+            reasons.push(block_reason(None, None, "inactive_registry", message));
+        }
+        reasons.extend(
+            self.validation
+                .iter()
+                .filter(|check| !check.ok)
+                .map(|check| {
+                    block_reason(
+                        Some(check.skill),
+                        check.host,
+                        "validation",
+                        &check.errors.join("\n"),
+                    )
+                }),
+        );
+        reasons.extend(
+            gate.results
+                .iter()
+                .filter(|result| result.blocked())
+                .map(|result| {
+                    let threshold = result
+                        .threshold
+                        .map_or("none", |threshold| threshold.label());
+                    block_reason(
+                        Some(&result.skill),
+                        None,
+                        "audit",
+                        &format!("audit blocked (threshold={threshold})"),
+                    )
+                }),
+        );
+        reasons.extend(
+            self.items
+                .iter()
+                .filter(|item| item.action.is_block())
+                .map(|item| {
+                    block_reason(
+                        Some(&item.skill),
+                        Some(&item.host),
+                        &item.action.label().to_ascii_lowercase(),
+                        &item.reason,
+                    )
+                }),
+        );
+        let blocked = !reasons.is_empty();
+        if self.needs_yes {
+            reasons.push(block_reason(
+                None,
+                None,
+                "needs_yes",
+                "this command writes to multiple hosts and requires --yes",
+            ));
+        }
+        json!({
+            "actions": self.items.iter().map(plan_row).collect::<Vec<_>>(),
+            "audit": gate_json(&gate),
+            "registry": self.resolution.map(root::RootResolution::meta),
+            "dry_run": true,
+            "blocked": blocked,
+            "applicable": !blocked && !self.needs_yes,
+            "block_reasons": reasons,
+            "validation": self.validation,
+        })
+    }
+
+    fn stop(&self, reason: BatchStop<'_>, json: bool) -> ExitCode {
+        let code = match reason {
+            BatchStop::Blocked => ExitCode::from(1),
+            BatchStop::NeedsYes => ExitCode::from(2),
+            BatchStop::Inactive(message) => {
+                eprintln!("error: {message}");
+                ExitCode::from(2)
+            }
+            BatchStop::Config(error) => {
+                if !json {
+                    return config_error(error);
+                }
+                eprintln!("error: {error}");
+                ExitCode::from(2)
+            }
+        };
+        if json {
+            let batch = BatchResult::from_plan(self.items, true);
+            self.print_applied(&batch, Some(reason));
+        }
+        code
+    }
+
+    fn print_applied(&self, batch: &BatchResult, stop: Option<BatchStop<'_>>) {
+        let refusal = stop.and_then(|stop| match stop {
+            BatchStop::Inactive(message) => Some(message),
+            _ => None,
+        });
+        let mut payload = self.json_payload(refusal);
+        let rows = payload["actions"]
+            .as_array_mut()
+            .expect("actions are an array");
+        let mut late_conflicts = Vec::new();
+        for ((row, item), result) in rows.iter_mut().zip(self.items).zip(&batch.results) {
+            row["requested_mode"] = json!(mode_label(item.mode));
+            row["mode"] = json!(result.mode.map(mode_label));
+            row["result"] = json!(result.status);
+            row["error"] = json!(result.error);
+            row["fallback_reason"] = json!(result.fallback_reason);
+            if stop.is_none()
+                && result.status == ApplyStatus::Blocked
+                && !item.action.is_block()
+                && let Some(error) = &result.error
+            {
+                late_conflicts.push(block_reason(
+                    Some(&item.skill),
+                    Some(&item.host),
+                    "conflict",
+                    error,
+                ));
+            }
+        }
+        if let Some(BatchStop::Config(error)) = stop {
+            late_conflicts.push(block_reason(None, None, "config", &error.to_string()));
+        }
+        if !late_conflicts.is_empty() {
+            payload["blocked"] = json!(true);
+            payload["applicable"] = json!(false);
+            payload["block_reasons"]
+                .as_array_mut()
+                .expect("block reasons are an array")
+                .extend(late_conflicts);
+        }
+        payload["dry_run"] = json!(false);
+        payload["applied"] = json!(stop.is_none() && batch.succeeded());
+        payload["summary"] = json!(batch.summary());
+        payload["cleanup_warnings"] = json!(batch.cleanup_warnings);
+        print_json(&payload);
+    }
+}
+
+#[derive(Clone, Copy)]
+enum BatchStop<'a> {
+    Blocked,
+    NeedsYes,
+    Inactive(&'a str),
+    Config(&'a Error),
+}
+
+fn block_reason(skill: Option<&str>, host: Option<&str>, kind: &str, message: &str) -> Value {
+    json!({"skill": skill, "host": host, "kind": kind, "message": message})
+}
+
+fn plan_row(item: &PlanItem) -> Value {
+    json!({
+        "skill": item.skill,
+        "host": item.host,
+        "action": item.action.label(),
+        "reason": item.reason,
+        "mode": mode_label(item.mode),
+        "source": display_path(&item.source),
+        "destination": display_path(&item.destination),
+    })
+}
+
+fn print_json(payload: &Value) {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(payload).expect("JSON values always serialize")
+    );
 }
 
 fn exit(blocked: bool) -> ExitCode {
@@ -1329,20 +1702,18 @@ mod tests {
         };
         let audit = BTreeMap::new();
         let items = std::slice::from_ref(&item);
-        assert_eq!(
-            apply_plan(PreparedPlan::new(items), &mut state, &audit, false),
-            (1, false)
-        );
+        let applied = apply_plan(PreparedPlan::new(items), &mut state, &audit, false, false);
+        assert!(applied.succeeded());
+        assert_eq!(applied.summary().created, 1);
         assert_eq!(State::load(Some(&state_path)).unwrap(), state);
 
         item.action = Action::Convert;
         for mode in [InstallMode::Link, InstallMode::Copy] {
             item.mode = mode;
             let items = std::slice::from_ref(&item);
-            assert_eq!(
-                apply_plan(PreparedPlan::new(items), &mut state, &audit, false),
-                (1, false)
-            );
+            let applied = apply_plan(PreparedPlan::new(items), &mut state, &audit, false, false);
+            assert!(applied.succeeded());
+            assert_eq!(applied.summary().updated, 1);
             let persisted = State::load(Some(&state_path)).unwrap();
             assert_eq!(persisted, state);
             assert_eq!(persisted.get("alpha", "claude").unwrap().mode, mode);
