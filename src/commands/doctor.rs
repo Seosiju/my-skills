@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use crate::cli::DoctorArgs;
 use crate::drive::link::{self, Created, LinkKind};
-use crate::drive::state::{self, State};
+use crate::drive::state::{self, InstallRecord, State};
 use crate::git::hooks::{self, Git, HookStatus};
 use crate::registry::manifest::{self, InstallMode, Manifest};
 use crate::registry::root::{self, RootSource};
@@ -70,6 +70,8 @@ struct HostStatus {
     enabled: bool,
     writable: bool,
     path: String,
+    configured_mode: Option<InstallMode>,
+    connections: ConnectionCounts,
 }
 
 #[derive(Serialize)]
@@ -102,11 +104,29 @@ struct GitStatus {
 
 #[derive(Default, Serialize)]
 struct Connections {
+    #[serde(flatten)]
+    counts: ConnectionCounts,
+    statuses: BTreeMap<&'static str, usize>,
+    warnings: Vec<String>,
+}
+
+#[derive(Default, Serialize)]
+struct ConnectionCounts {
     link: usize,
     copy: usize,
     fallback: usize,
-    statuses: BTreeMap<&'static str, usize>,
-    warnings: Vec<String>,
+}
+
+impl ConnectionCounts {
+    fn count(&mut self, record: &InstallRecord) {
+        match record.mode {
+            InstallMode::Link => self.link += 1,
+            InstallMode::Copy => {
+                self.copy += 1;
+                self.fallback += usize::from(record.fallback_reason.is_some());
+            }
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -122,7 +142,7 @@ struct SkillFailure {
 }
 
 pub fn run(args: &DoctorArgs) -> ExitCode {
-    let report = Report::collect(args.no_update_check);
+    let report = Report::collect(args);
     if args.json {
         println!(
             "{}",
@@ -139,12 +159,15 @@ pub fn run(args: &DoctorArgs) -> ExitCode {
 }
 
 impl Report {
-    fn collect(no_update_check: bool) -> Self {
-        let update = update::update_status_line(no_update_check);
-        let update = if no_update_check {
+    fn collect(args: &DoctorArgs) -> Self {
+        let update = if args.quick {
+            "not_checked".to_owned()
+        } else if args.no_update_check
+            || std::env::var_os("MY_SKILLS_NO_UPDATE_CHECK").is_some_and(|value| value == "1")
+        {
             "skipped".to_owned()
         } else {
-            update
+            update::update_status_line(false)
         };
         let (registry, manifest_health, manifest) = registry();
         let skills = manifest.as_ref().map(|manifest| Skills {
@@ -155,9 +178,17 @@ impl Report {
                 .filter(|skill| skill.enabled)
                 .count(),
         });
-        let (registry_git, hook_status, hooks_error) = git_diagnostics(registry.path.as_deref());
+        let (registry_git, hook_status, hooks_error) = if args.quick {
+            (None, None, None)
+        } else {
+            git_diagnostics(registry.path.as_deref())
+        };
+        let (connections, mut host_connections) = Connections::collect(manifest.as_ref());
         let hosts = hosts::ALL
-            .map(|host| HostStatus::collect(host, manifest.as_ref()))
+            .map(|host| {
+                let counts = host_connections.remove(host.name).unwrap_or_default();
+                HostStatus::collect(host, manifest.as_ref(), counts)
+            })
             .into();
         Self {
             version: env!("CARGO_PKG_VERSION"),
@@ -174,12 +205,22 @@ impl Report {
             data_root: paths::display_path(&paths::data_root()),
             hosts,
             manifest: manifest_health,
-            link_capability: LinkCapability::probe(),
+            link_capability: if args.quick {
+                LinkCapability {
+                    kind: "not_checked",
+                    reason: None,
+                }
+            } else {
+                LinkCapability::probe()
+            },
             registry_git,
             hooks: hook_status,
             hooks_error,
-            connections: Connections::collect(manifest.as_ref()),
-            full_validation: manifest.as_ref().map(FullValidation::collect),
+            connections,
+            full_validation: manifest
+                .as_ref()
+                .filter(|_| !args.quick)
+                .map(FullValidation::collect),
         }
     }
 
@@ -221,6 +262,17 @@ impl Report {
                 python_bool(host.enabled),
                 python_bool(host.writable),
                 host.path
+            );
+            println!(
+                "    mode={} / connections: link {} / copy {} (fallback {})",
+                match host.configured_mode {
+                    Some(InstallMode::Link) => "link",
+                    Some(InstallMode::Copy) => "copy",
+                    None => "unknown",
+                },
+                host.connections.link,
+                host.connections.copy,
+                host.connections.fallback,
             );
         }
         match &self.manifest {
@@ -320,7 +372,11 @@ fn display_path_in_message(message: String, path: &Path) -> String {
 }
 
 impl HostStatus {
-    fn collect(host: &hosts::HostConfig, manifest: Option<&Manifest>) -> Self {
+    fn collect(
+        host: &hosts::HostConfig,
+        manifest: Option<&Manifest>,
+        connections: ConnectionCounts,
+    ) -> Self {
         let target = manifest.and_then(|manifest| manifest.targets.get(host.name));
         let path = target.map_or_else(
             || manifest::expand_path(host.default_user_path),
@@ -337,6 +393,8 @@ impl HostStatus {
             enabled: target.map_or(host.default_enabled, |target| target.enabled),
             writable: writable(&path),
             path: paths::display_path(&path),
+            configured_mode: manifest.map(|m| m.effective_install_mode(host.name)),
+            connections,
         }
     }
 }
@@ -629,8 +687,10 @@ pub fn agy_windows_link_warning(
 }
 
 impl Connections {
-    fn collect(manifest: Option<&Manifest>) -> Self {
+    fn collect(manifest: Option<&Manifest>) -> (Self, BTreeMap<String, ConnectionCounts>) {
         let mut report = Self::default();
+        let mut by_host = BTreeMap::<String, ConnectionCounts>::new();
+        let skills_root = manifest.map(Manifest::skills_dir);
         let state = match State::load(None) {
             Ok(state) => Some(state),
             Err(error) => {
@@ -643,12 +703,15 @@ impl Connections {
         };
         if let Some(state) = &state {
             for record in state.records() {
-                match record.mode {
-                    InstallMode::Link => report.link += 1,
-                    InstallMode::Copy => {
-                        report.copy += 1;
-                        report.fallback += usize::from(record.fallback_reason.is_some());
-                    }
+                report.counts.count(record);
+                if skills_root
+                    .as_deref()
+                    .is_some_and(|root| record.belongs_to(root))
+                {
+                    by_host
+                        .entry(record.host.clone())
+                        .or_default()
+                        .count(record);
                 }
             }
             if let Some(manifest) = manifest {
@@ -679,13 +742,13 @@ impl Connections {
         {
             report.warnings.push(warning);
         }
-        report
+        (report, by_host)
     }
 
     fn print(&self) {
         println!(
             "\nConnections: link {} / copy {} (fallback {})",
-            self.link, self.copy, self.fallback
+            self.counts.link, self.counts.copy, self.counts.fallback
         );
         for (status, count) in &self.statuses {
             println!("  {status}: {count}");
