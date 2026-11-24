@@ -54,4 +54,11 @@ Pass the registry path as the argument to `init-registry` to create it, or to
 ## New machine bootstrap and Git hooks
 
 On a new machine, run `bootstrap` from a clone of the registry to reconcile its
-host connections. Run `my-skills hooks install` separately for Git hooks.
+host connections. Run `my-skills hooks install` separately for Git hooks
+(`pre-commit`, `post-commit`, `post-merge`, `post-rewrite`, and `post-checkout`).
+
+- **Upgrading to v1.3.0:** re-run `my-skills hooks install` on every machine so
+  `post-commit` is installed (`hooks status` lists it as `missing` until then).
+- `post-commit` refreshes host connections after a commit passes `pre-commit`
+  (skipping uncommitted `my-skills.toml` or dirty skills with a warning).
+- All four `post-*` hooks are no-ops in linked Git worktrees (`git worktree add`).

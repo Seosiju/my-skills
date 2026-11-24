@@ -4,6 +4,8 @@
 //! Planning reads the filesystem but never writes it. `apply::apply`
 //! executes the plan.
 
+use std::collections::BTreeMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::drive::hash::hash_directory;
@@ -53,6 +55,8 @@ pub enum Action {
     BlockDrift,
     BlockForeign,
     Conflict,
+    /// An unselected connection shares this entry and would be invalidated.
+    SharedDestination,
     SkipUnsupported,
     NotManaged,
 }
@@ -69,6 +73,7 @@ impl Action {
             Action::BlockDrift => "BLOCK_DRIFT",
             Action::BlockForeign => "BLOCK_FOREIGN",
             Action::Conflict => "CONFLICT",
+            Action::SharedDestination => "SHARED_DESTINATION",
             Action::SkipUnsupported => "SKIP_UNSUPPORTED",
             Action::NotManaged => "NOT_MANAGED",
         }
@@ -77,7 +82,11 @@ impl Action {
     pub fn is_block(self) -> bool {
         matches!(
             self,
-            Action::BlockConflict | Action::BlockDrift | Action::BlockForeign | Action::Conflict
+            Action::BlockConflict
+                | Action::BlockDrift
+                | Action::BlockForeign
+                | Action::Conflict
+                | Action::SharedDestination
         )
     }
 
@@ -208,6 +217,16 @@ fn link_status(dest: &Path, source: &Path, kind: EntryKind) -> Status {
     }
 }
 
+fn copy_source_hash(source: &Path) -> Result<String> {
+    // Copying follows a linked skill root while refusing links inside the
+    // tree. Hash the same root for freshness checks.
+    if matches!(link::entry_kind(source)?, EntryKind::Link(_)) {
+        let resolved = fs::canonicalize(source).map_err(|err| Error::io(source, err))?;
+        return hash_directory(&resolved);
+    }
+    hash_directory(source)
+}
+
 fn copy_status(
     dest: &Path,
     source: &Path,
@@ -221,13 +240,202 @@ fn copy_status(
         EntryKind::Dir => {}
     }
     let install_modified = hash_directory(dest)? != record.installed_hash;
-    let source_changed = !source.is_dir() || hash_directory(source)? != record.source_hash;
+    let source_changed = !source.is_dir() || copy_source_hash(source)? != record.source_hash;
     Ok(match (install_modified, source_changed) {
         (true, true) => Status::Conflict,
         (true, false) => Status::Drifted,
         (false, true) => Status::Stale,
         (false, false) => Status::Fresh,
     })
+}
+
+/// Locate the host entry without following the final link. Different live
+/// connections may point to the same source and still have distinct entries.
+pub(crate) fn physical_destination(path: &Path) -> Result<PathBuf> {
+    for ancestor in path
+        .ancestors()
+        .skip(1)
+        .filter(|p| !p.as_os_str().is_empty())
+    {
+        match fs::canonicalize(ancestor) {
+            Ok(real) => {
+                let suffix = path
+                    .strip_prefix(ancestor)
+                    .expect("ancestor is a path prefix");
+                let entry = real.join(suffix);
+                #[cfg(windows)]
+                let entry = PathBuf::from(entry.to_string_lossy().to_lowercase());
+                return Ok(entry);
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(Error::io(ancestor, err)),
+        }
+    }
+    Err(Error::Manifest(format!(
+        "no existing parent for {}",
+        path.display()
+    )))
+}
+
+#[derive(Default)]
+pub(crate) struct SharedDestinations {
+    pub(crate) groups: BTreeMap<usize, Vec<usize>>,
+    pub(crate) incompatible: bool,
+}
+
+pub(crate) fn group_destinations(
+    manifest: &Manifest,
+    state: &State,
+    items: &mut [PlanItem],
+) -> Result<SharedDestinations> {
+    let mut indices: BTreeMap<PathBuf, Vec<usize>> = BTreeMap::new();
+    for (index, item) in items.iter().enumerate() {
+        if !matches!(item.action, Action::SkipUnsupported | Action::NotManaged) {
+            indices
+                .entry(physical_destination(&item.destination)?)
+                .or_default()
+                .push(index);
+        }
+    }
+    let mut result = SharedDestinations::default();
+    for group in indices.into_values().filter(|group| group.len() > 1) {
+        let first = &items[group[0]];
+        let same_items = group.iter().all(|&idx| {
+            let item = &items[idx];
+            item.skill == first.skill && item.source == first.source && item.mode == first.mode
+        });
+        let same_action = group.iter().all(|&idx| items[idx].action == first.action);
+        if same_action && first.action == Action::Remove {
+            continue;
+        }
+        // One peer is pruned while the others keep (or refresh) the shared
+        // entry: apply drops only the pruned peer's record.
+        let keeps = |item: &PlanItem| matches!(item.action, Action::Noop | Action::Update);
+        if same_items
+            && group.iter().any(|&idx| items[idx].action == Action::Remove)
+            && group.iter().any(|&idx| keeps(&items[idx]))
+            && group
+                .iter()
+                .all(|&idx| items[idx].action == Action::Remove || keeps(&items[idx]))
+        {
+            continue;
+        }
+        if same_items
+            && same_action
+            && matches!(
+                first.action,
+                Action::Create | Action::Update | Action::Convert
+            )
+        {
+            result.groups.insert(group[0], group[1..].to_vec());
+            continue;
+        }
+        // A managed peer proves ownership and the clean installed digest for
+        // an alias left unrecorded by a previous partial install.
+        let managed_copy = group
+            .iter()
+            .copied()
+            .find(|&idx| matches!(items[idx].action, Action::Update | Action::Noop));
+        let unrecorded = |item: &PlanItem| {
+            item.action == Action::BlockConflict
+                && item.reason == "destination exists and is not managed by my-skills"
+        };
+        if same_items
+            && first.mode == InstallMode::Copy
+            && let Some(primary) = managed_copy
+            && group.iter().all(|&idx| {
+                matches!(items[idx].action, Action::Update | Action::Noop)
+                    || unrecorded(&items[idx])
+            })
+        {
+            if !same_action {
+                for &idx in &group {
+                    items[idx].action = Action::Update;
+                    items[idx].reason = "reconcile shared copy destination".into();
+                }
+                result.groups.insert(
+                    primary,
+                    group
+                        .iter()
+                        .copied()
+                        .filter(|&idx| idx != primary)
+                        .collect(),
+                );
+            }
+            continue;
+        }
+        if !same_items || group.iter().any(|&idx| items[idx].action.writes()) {
+            result.incompatible = true;
+            for idx in group {
+                items[idx].action = Action::Conflict;
+                items[idx].reason =
+                    "shared destination has incompatible planned connections".into();
+            }
+        }
+    }
+    guard_unselected_peers(manifest, state, items, &mut result)?;
+    Ok(result)
+}
+
+/// A connection recorded in state but absent from this plan may share a
+/// destination with a planned write. Removing, converting, or refreshing that
+/// entry would leave the peer's record describing something that is gone, so
+/// block those writes before anything changes.
+fn guard_unselected_peers(
+    manifest: &Manifest,
+    state: &State,
+    items: &mut [PlanItem],
+    result: &mut SharedDestinations,
+) -> Result<()> {
+    let skills_dir = manifest.skills_dir();
+    let peers: Vec<(&InstallRecord, PathBuf)> = state
+        .records()
+        .filter(|record| {
+            record.belongs_to(&skills_dir)
+                && !items
+                    .iter()
+                    .any(|item| item.skill == record.skill && item.host == record.host)
+        })
+        .filter_map(|record| {
+            let physical = physical_destination(Path::new(&record.destination)).ok()?;
+            Some((record, physical))
+        })
+        .collect();
+    if peers.is_empty() {
+        return Ok(());
+    }
+    for item in items.iter_mut() {
+        if !matches!(
+            item.action,
+            Action::Remove | Action::Update | Action::Convert
+        ) {
+            continue;
+        }
+        // Nothing to invalidate when the entry is already gone.
+        if item.action == Action::Remove
+            && link::entry_kind(&item.destination)? == EntryKind::Missing
+        {
+            continue;
+        }
+        let Ok(physical) = physical_destination(&item.destination) else {
+            continue;
+        };
+        let Some((peer, _)) = peers.iter().find(|(_, other)| *other == physical) else {
+            continue;
+        };
+        let remedy = if manifest.targets.get(&peer.host).is_some_and(|t| t.enabled) {
+            "select every host that shares it (omit --host) or handle that host first"
+        } else {
+            "enable that host and include both hosts"
+        };
+        item.reason = format!(
+            "destination is shared with {} -> {}, which this command does not include; {remedy}",
+            peer.skill, peer.host
+        );
+        item.action = Action::SharedDestination;
+        result.incompatible = true;
+    }
+    Ok(())
 }
 
 /// Plan connecting one skill to one host. An existing record keeps its own
@@ -295,7 +503,7 @@ pub fn plan_install_one(
         InstallMode::Copy => {
             let status = copy_status(&dest, &source, kind, record)?;
             let hash = if source.is_dir() {
-                Some(hash_directory(&source)?)
+                Some(copy_source_hash(&source)?)
             } else {
                 None
             };

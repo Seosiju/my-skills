@@ -9,7 +9,13 @@ use predicates::str::contains;
 use support_g::{Fixture, MANIFEST, skill};
 use support_i::assert_with_busy_retry;
 
-const HOOKS: [&str; 4] = ["pre-commit", "post-merge", "post-rewrite", "post-checkout"];
+const HOOKS: [&str; 5] = [
+    "pre-commit",
+    "post-commit",
+    "post-merge",
+    "post-rewrite",
+    "post-checkout",
+];
 
 #[test]
 fn install_dry_run_status_reinstall_and_uninstall_honor_hooks_path() {

@@ -16,6 +16,10 @@ pub enum Error {
     #[error(transparent)]
     StateSave(Box<Error>),
 
+    /// A managed copy changed after planning and was preserved.
+    #[error("CONFLICT: {0} changed locally after planning")]
+    CopyConflict(String),
+
     /// A link could not be created, read, or removed safely (spec §6.1).
     #[error("{0}")]
     Link(String),

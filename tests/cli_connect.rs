@@ -131,13 +131,17 @@ fn install_dry_run_json_plans_links_by_default() {
 }
 
 #[test]
-fn install_json_requires_dry_run() {
+fn install_json_applies_by_default() {
     let env = Env::new();
-    env.cmd()
-        .args(["install", "--json"])
+    let assert = env
+        .cmd()
+        .args(["install", "alpha", "--host", "claude", "--json"])
         .assert()
-        .code(2)
-        .stderr(contains("install --json requires --dry-run"));
+        .success();
+    let report: serde_json::Value = serde_json::from_slice(&assert.get_output().stdout).unwrap();
+    assert_eq!(report["applied"], true);
+    assert_eq!(report["actions"][0]["result"], "created");
+    assert!(env.host("claude").join("alpha/SKILL.md").is_file());
 }
 
 #[test]

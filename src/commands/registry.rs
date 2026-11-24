@@ -1,10 +1,13 @@
 //! init-registry, skills, share, enable, disable, import. Stream H.
 
+use std::io::Write as _;
+use std::path::Path;
 use std::process::ExitCode;
 
 use serde::Serialize;
 
 use crate::check::audit::format_gate;
+use crate::check::validate::validate_name;
 use crate::cli::*;
 use crate::drive::state::State;
 use crate::registry::catalog::{self, display_path, json_output};
@@ -15,6 +18,7 @@ use crate::registry::share::{self, Failure};
 use crate::{Error, Result, registry::root};
 
 pub fn init_registry(args: &InitRegistryArgs) -> ExitCode {
+    let cache = root::CacheSnapshot::observe();
     let target = match seeds::registry_target(args.path.as_deref()) {
         Ok(target) => target,
         Err(err) => return super::config_error(err),
@@ -46,6 +50,11 @@ pub fn init_registry(args: &InitRegistryArgs) -> ExitCode {
     if let Err(err) = scaffold.create(&target, with_defaults) {
         return super::config_error(err);
     }
+    let created = match root::validate_repo_root(&target) {
+        Ok(path) => path,
+        Err(err) => return super::config_error(err),
+    };
+    cache.remember(&created);
     if !args.no_git {
         seeds::init_git(&target, with_defaults);
     }
@@ -60,6 +69,17 @@ pub fn init_registry(args: &InitRegistryArgs) -> ExitCode {
 pub fn skills(args: &SkillsArgs) -> ExitCode {
     let result = (|| {
         let (manifest, resolution) = load_resolved(false)?;
+        let mut names = manifest::select_names(&manifest, &args.skills, &[])?;
+        if !args.groups.is_empty() {
+            let group_names = manifest::select_names(&manifest, &[], &args.groups)?;
+            if args.skills.is_empty() {
+                names = group_names;
+            } else {
+                names.retain(|name| group_names.binary_search(name).is_ok());
+            }
+        }
+        let selected =
+            (!args.skills.is_empty() || !args.groups.is_empty()).then_some(names.as_slice());
         let state = State::load(None)?;
         let host = args.host.as_deref();
         if let Some(host) = host.filter(|host| !manifest.targets.contains_key(*host)) {
@@ -80,7 +100,7 @@ pub fn skills(args: &SkillsArgs) -> ExitCode {
             host,
             enabled,
             &hosts,
-            &args.groups,
+            selected,
             args.with_governance,
         )?;
         Ok(if args.json {
@@ -103,13 +123,11 @@ pub fn skills(args: &SkillsArgs) -> ExitCode {
 }
 
 pub fn share(args: &ShareArgs) -> ExitCode {
-    let preview = args.plan || args.dry_run;
-    let write = !preview && args.skill.is_some() && args.enable != args.disable;
-    let (manifest, resolution) = match load_resolved(write) {
-        Ok(loaded) => loaded,
-        Err(err) => return super::config_error(err),
-    };
-    if preview {
+    if args.plan || args.dry_run {
+        let (manifest, resolution) = match load_resolved(false) {
+            Ok(loaded) => loaded,
+            Err(err) => return super::config_error(err),
+        };
         return match share::plan_share(&manifest, &args.from_host) {
             Ok(plan) => {
                 let output = if args.json {
@@ -133,13 +151,15 @@ pub fn share(args: &ShareArgs) -> ExitCode {
         return super::config_error("share requires exactly one of --enable or --disable");
     }
 
-    let mut state = match State::load(None) {
-        Ok(state) => state,
+    let resolution = match root::resolve_root(None, false) {
+        Ok(resolution) => resolution,
         Err(err) => return super::config_error(err),
     };
+    if let Some(refusal) = resolution.write_refusal() {
+        return super::config_error(refusal);
+    }
     match share::share(
-        &manifest,
-        &mut state,
+        &resolution,
         &args.from_host,
         skill,
         args.enable,
@@ -161,6 +181,9 @@ pub fn share(args: &ShareArgs) -> ExitCode {
             );
             println!("adopted: {name} -> {}", args.from_host);
             print_hint(&name, args.enable);
+            if let Some(warning) = result.cleanup_warning {
+                eprintln!("warning: {warning}");
+            }
             ExitCode::SUCCESS
         }
         Err(Failure::Config(err)) => super::config_error(err),
@@ -237,9 +260,8 @@ fn set_enabled(args: &SkillNameArgs, enabled: bool) -> ExitCode {
         let path = manifest.root.join(MANIFEST_FILE);
         share::ensure_outside_hosts(&path, share::target_paths(&manifest))?;
         let edit = edit::prepare_enabled(&path, &names, enabled)?;
-        if resolution.would_cache() {
-            root::resolve_root(None, true)?;
-        }
+        resolution.recheck_write()?;
+        resolution.remember();
         edit.commit()?;
         for name in &names {
             println!("{label}: {name}");
@@ -298,6 +320,9 @@ pub fn import(args: &ImportArgs) -> ExitCode {
             println!("registered: {name} ({})", enabled_label(result.enabled));
             if !result.identical {
                 print_hint(&name, args.enable);
+            }
+            if let Some(warning) = result.cleanup_warning {
+                eprintln!("warning: {warning}");
             }
             ExitCode::SUCCESS
         }
@@ -361,5 +386,356 @@ fn print_hint(name: &str, enabled: bool) {
         println!("Next: `my-skills sync {name} --host <host>`.");
     } else {
         println!("Next: `my-skills enable {name}`, then `my-skills sync {name} --host <host>`.");
+    }
+}
+
+// ---------------------------------------------------------------- new (W16 S2)
+
+const NEW_DESCRIPTION_PLACEHOLDER: &str =
+    "TODO: replace this with what the skill does and when an agent should use it.";
+const NEW_MAX_DESCRIPTION: usize = 1024;
+/// Every `--description` validation message starts with this, so the JSON error
+/// maps to `usage`.
+pub const NEW_DESCRIPTION_ERROR: &str = "invalid --description: ";
+
+#[derive(Serialize)]
+struct NewOutput {
+    skill: String,
+    enabled: bool,
+    group: Option<String>,
+    hosts: Vec<String>,
+    canonical_dir: String,
+    canonical_path: String,
+    created: Vec<String>,
+    next: Vec<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    dry_run: bool,
+}
+
+/// `new <name>`: create `skills/<name>/SKILL.md` and register it disabled.
+pub fn new_skill(args: &NewArgs) -> ExitCode {
+    match create_new_skill(args) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => super::config_error(err),
+    }
+}
+
+fn create_new_skill(args: &NewArgs) -> Result<()> {
+    let name = args.name.as_str();
+    if let Some(error) = validate_name(name).first() {
+        return Err(Error::Manifest(format!(
+            "invalid skill name '{name}': {error}"
+        )));
+    }
+    if let Some(group) = &args.group
+        && let Some(error) = validate_name(group).first()
+    {
+        return Err(Error::Manifest(format!(
+            "invalid group name '{group}': {error}"
+        )));
+    }
+    let description = match args.description.as_deref().map(str::trim) {
+        None => NEW_DESCRIPTION_PLACEHOLDER,
+        Some("") => {
+            return Err(Error::Manifest(format!(
+                "{NEW_DESCRIPTION_ERROR}must not be empty"
+            )));
+        }
+        Some(text) => text,
+    };
+    let length = description.chars().count();
+    if length > NEW_MAX_DESCRIPTION {
+        return Err(Error::Manifest(format!(
+            "{NEW_DESCRIPTION_ERROR}exceeds {NEW_MAX_DESCRIPTION} characters ({length})"
+        )));
+    }
+
+    let resolution = root::resolve_root(None, false)?;
+    if let Some(refusal) = resolution.write_refusal() {
+        return Err(Error::Manifest(refusal));
+    }
+    let manifest_path = resolution.root.join(MANIFEST_FILE);
+    // One edit lock covers the checks, the canonical write, the registration,
+    // and any rollback. `new` never touches state.
+    let _lock = if args.dry_run {
+        edit::EditLock::check_available(&manifest_path)?;
+        None
+    } else {
+        Some(edit::EditLock::acquire(&manifest_path)?)
+    };
+    if !args.dry_run {
+        // `new` takes no state lock, so recheck the cache it observed.
+        resolution.recheck_write()?;
+    }
+    let manifest = manifest::load_manifest(&resolution.root, &CliOverrides::default())?;
+    let canonical_dir = manifest.skill_dir(name);
+    let canonical_path = canonical_dir.join("SKILL.md");
+
+    // Any kind of entry counts, including a file or a broken link.
+    match std::fs::symlink_metadata(&canonical_dir) {
+        Ok(_) => {
+            return Err(Error::Manifest(format!(
+                "skill already exists: {} is already there",
+                display_path(&canonical_dir)
+            )));
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(Error::io(&canonical_dir, err)),
+    }
+    if manifest.skills.contains_key(name) {
+        return Err(Error::Manifest(format!(
+            "skill already exists: {name} is already registered in {MANIFEST_FILE} or {}",
+            manifest::LOCAL_MANIFEST_FILE
+        )));
+    }
+    let mut hosts: Vec<String> = Vec::new();
+    for host in &args.hosts {
+        if !manifest.targets.contains_key(host) {
+            return Err(Error::Manifest(format!("unknown host: {host}")));
+        }
+        if !hosts.contains(host) {
+            hosts.push(host.clone());
+        }
+    }
+    share::ensure_outside_hosts(&manifest_path, share::target_paths(&manifest))?;
+    share::ensure_outside_hosts(&canonical_dir, share::target_paths(&manifest))?;
+    // The draft must pass `validate` for every host it can reach: the named
+    // hosts, or else the enabled targets.
+    let reachable: Vec<&str> = if hosts.is_empty() {
+        manifest
+            .targets
+            .values()
+            .filter(|target| target.enabled)
+            .map(|target| target.name.as_str())
+            .collect()
+    } else {
+        hosts.iter().map(String::as_str).collect()
+    };
+    if let Some(config) = reachable
+        .iter()
+        .filter_map(|host| crate::drive::hosts::get_host(host))
+        .min_by_key(|config| config.description_max_chars)
+        .filter(|config| length > config.description_max_chars)
+    {
+        return Err(Error::Manifest(format!(
+            "{NEW_DESCRIPTION_ERROR}exceeds {} characters for {} ({length})",
+            config.description_max_chars, config.name
+        )));
+    }
+
+    let canonical_dir_text = display_path(&canonical_dir);
+    let canonical_path_text = display_path(&canonical_path);
+    let output = NewOutput {
+        skill: name.to_owned(),
+        enabled: false,
+        group: args.group.clone(),
+        hosts: hosts.clone(),
+        created: vec![canonical_dir_text.clone(), canonical_path_text.clone()],
+        next: vec![
+            format!("Edit {canonical_path_text}"),
+            format!("my-skills enable {name}"),
+            format!("my-skills sync {name} --dry-run --json, then commit"),
+        ],
+        canonical_dir: canonical_dir_text,
+        canonical_path: canonical_path_text,
+        dry_run: args.dry_run,
+    };
+
+    if !args.dry_run {
+        materialize_skill(
+            &canonical_dir,
+            &canonical_path,
+            &new_skill_text(name, description),
+            || {
+                edit::prepare_new_skill(&manifest_path, name, args.group.as_deref(), &hosts)?
+                    .commit()
+            },
+        )?;
+        // Conditional on the cache observed at resolution (the other writers'
+        // rule): a newer `set-root` is never overwritten.
+        resolution.remember();
+    }
+
+    if args.json {
+        println!("{}", json_with_registry(&output, &resolution));
+        return Ok(());
+    }
+    let verb = if args.dry_run {
+        println!("Dry run — nothing written");
+        "would create"
+    } else {
+        "created"
+    };
+    for path in &output.created {
+        println!("{verb}: {path}");
+    }
+    println!(
+        "{} {name} in {MANIFEST_FILE} (disabled{}{})",
+        if args.dry_run {
+            "would register"
+        } else {
+            "registered"
+        },
+        args.group
+            .as_deref()
+            .map(|group| format!(", group {group}"))
+            .unwrap_or_default(),
+        if hosts.is_empty() {
+            String::new()
+        } else {
+            format!(", hosts {}", hosts.join(", "))
+        }
+    );
+    println!("Next:");
+    for (index, step) in output.next.iter().enumerate() {
+        println!("  {}. {step}", index + 1);
+    }
+    if args.dry_run {
+        super::print_would_cache_root(&resolution);
+    }
+    Ok(())
+}
+
+fn new_skill_text(name: &str, description: &str) -> String {
+    // A JSON string is also a valid YAML double-quoted scalar.
+    let description = serde_json::to_string(description).expect("a string is serializable");
+    format!(
+        "---\nname: {name}\ndescription: {description}\n---\n\n\
+         # {name}\n\n\
+         ## When to use\n\n\
+         Describe the requests and situations that should trigger this skill.\n\n\
+         ## Steps\n\n\
+         1. Describe the first step.\n\
+         2. Describe what to verify before finishing.\n\n\
+         ## Notes\n\n\
+         Keep this file short; put long references in `references/`.\n"
+    )
+}
+
+/// Create the directory and SKILL.md, then run `register`. Any failure removes
+/// only what this call created (SKILL.md and its directory, never `skills/`
+/// and never a file someone else put there). A rollback that cannot finish is
+/// reported with the original error.
+fn materialize_skill(
+    dir: &Path,
+    skill_md: &Path,
+    text: &str,
+    register: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    if let Some(parent) = dir.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| Error::io(parent, err))?;
+    }
+    // Fails when anything appeared at `dir` since the checks.
+    std::fs::create_dir(dir).map_err(|err| Error::io(dir, err))?;
+    let mut created_file = false;
+    let write = || -> Result<()> {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(skill_md)
+            .map_err(|err| Error::io(skill_md, err))?;
+        created_file = true;
+        file.write_all(edit::native_text(text).as_bytes())
+            .map_err(|err| Error::io(skill_md, err))?;
+        drop(file);
+        register()
+    };
+    let Err(error) = write() else {
+        return Ok(());
+    };
+    let mut problems = Vec::new();
+    if created_file && let Err(err) = std::fs::remove_file(skill_md) {
+        problems.push(format!("{}: {err}", display_path(skill_md)));
+    }
+    // A directory that now holds someone else's files is theirs to keep.
+    let occupied = std::fs::read_dir(dir).is_ok_and(|mut entries| entries.next().is_some());
+    if (created_file || !occupied)
+        && let Err(err) = std::fs::remove_dir(dir)
+    {
+        problems.push(format!("{}: {err}", display_path(dir)));
+    }
+    if problems.is_empty() {
+        Err(error)
+    } else {
+        Err(Error::Manifest(format!(
+            "{error}; rollback failed, remove by hand: {}",
+            problems.join("; ")
+        )))
+    }
+}
+
+#[cfg(test)]
+mod new_tests {
+    use super::*;
+
+    #[test]
+    fn failed_registration_removes_only_the_new_skill_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let skills = temp.path().join("skills");
+        std::fs::create_dir_all(skills.join("other")).unwrap();
+        std::fs::write(skills.join("other/SKILL.md"), "keep").unwrap();
+        let dir = skills.join("draft");
+        let result = materialize_skill(&dir, &dir.join("SKILL.md"), "text", || {
+            assert!(dir.join("SKILL.md").is_file());
+            Err(Error::Manifest("registration failed".into()))
+        });
+        assert!(result.is_err());
+        assert!(!dir.exists());
+        assert_eq!(
+            std::fs::read_to_string(skills.join("other/SKILL.md")).unwrap(),
+            "keep"
+        );
+    }
+
+    #[test]
+    fn an_existing_entry_is_never_removed() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("skills/draft");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "mine").unwrap();
+        let result = materialize_skill(&dir, &dir.join("SKILL.md"), "text", || Ok(()));
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::read_to_string(dir.join("SKILL.md")).unwrap(),
+            "mine"
+        );
+    }
+}
+
+#[cfg(test)]
+mod rollback_tests {
+    use super::*;
+
+    #[test]
+    fn a_skill_file_someone_else_created_is_never_removed() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("skills/draft");
+        // The file already exists, so `create_new` fails after our directory
+        // was made.
+        let theirs = temp.path().join("theirs.md");
+        std::fs::write(&theirs, "theirs").unwrap();
+        let result = materialize_skill(&dir, &theirs, "text", || Ok(()));
+        assert!(result.is_err());
+        assert_eq!(std::fs::read_to_string(&theirs).unwrap(), "theirs");
+        assert!(!dir.exists(), "the empty directory we made is removed");
+    }
+
+    #[test]
+    fn a_directory_holding_foreign_files_is_kept_and_the_failure_is_reported() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("skills/draft");
+        let skill_md = dir.join("SKILL.md");
+        let result = materialize_skill(&dir, &skill_md, "text", || {
+            std::fs::write(dir.join("theirs.txt"), "theirs").unwrap();
+            Err(Error::Manifest("registration failed".into()))
+        });
+        let message = result.unwrap_err().to_string();
+        assert!(message.contains("registration failed"), "{message}");
+        assert!(message.contains("rollback failed"), "{message}");
+        assert!(!skill_md.exists(), "our own file is removed");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("theirs.txt")).unwrap(),
+            "theirs"
+        );
     }
 }

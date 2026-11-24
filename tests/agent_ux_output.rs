@@ -292,14 +292,15 @@ fn clean_previews_show_whether_multi_host_confirmation_is_needed() {
 }
 
 #[test]
-fn sync_json_requires_dry_run() {
+fn sync_json_applies_by_default() {
     let fixture = registry(false);
-    fixture
+    let out = fixture
         .command()
         .args(["sync", "--json"])
         .assert()
-        .code(2)
-        .stderr(contains("sync --json requires --dry-run"));
+        .success();
+    assert_eq!(json(&out)["actions"][0]["result"], "created");
+    assert!(fixture.base.join("hosts/codex/example/SKILL.md").is_file());
 }
 
 #[test]
@@ -433,12 +434,12 @@ fn sync_json_conflicts_with_check_even_with_dry_run() {
 fn connect_usage_errors_leave_empty_config_home_alone() {
     let mut cached = Vec::new();
     for (args, error) in [
-        (
-            &["install", "--json"][..],
-            "install --json requires --dry-run",
-        ),
+        (&["install", "absent", "--json"][..], "unknown skill"),
         (&["uninstall"][..], "uninstall requires a skill name"),
-        (&["sync", "--json"][..], "sync --json requires --dry-run"),
+        (
+            &["sync", "--check", "--json"][..],
+            "not supported with --check",
+        ),
         (&["install", "absent"][..], "unknown skill"),
         (&["sync", "absent"][..], "unknown skill"),
         (&["convert", "absent", "--to", "link"][..], "unknown skill"),

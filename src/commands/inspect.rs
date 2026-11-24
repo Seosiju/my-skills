@@ -193,6 +193,10 @@ pub fn status(args: &StatusArgs) -> ExitCode {
         Ok(m) => m,
         Err(code) => return code,
     };
+    let selected = match select_names(&manifest, &args.skills, &args.groups) {
+        Ok(names) => names,
+        Err(error) => return config_error(error),
+    };
     let state = match State::load(None) {
         Ok(s) => s,
         Err(e) => return config_error(e),
@@ -213,6 +217,9 @@ pub fn status(args: &StatusArgs) -> ExitCode {
     }
     let mut rows = Vec::new();
     for skill in manifest.skills.values() {
+        if !selected.is_empty() && selected.binary_search(&skill.name).is_err() {
+            continue;
+        }
         if !args.json {
             println!("{}", skill.name);
         }

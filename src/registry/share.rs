@@ -13,13 +13,15 @@ use tempfile::{Builder, TempDir};
 use crate::check::audit::{self, AuditGateResult, AuditPolicy, Severity};
 use crate::check::frontmatter::Node;
 use crate::check::validate::{compose_validation, validate_name};
-use crate::drive::apply::utc_now;
+use crate::drive::apply::{CleanupWarning, remove_real_dir, utc_now};
 use crate::drive::hash::hash_directory;
 use crate::drive::link::{EntryKind, entry_kind, remove_link};
-use crate::drive::state::{InstallRecord, State};
+use crate::drive::state::{InstallRecord, State, StateLock, default_state_path};
 use crate::registry::catalog::{display_path, field, metadata, table};
 use crate::registry::edit::{self, ManifestEdit};
-use crate::registry::manifest::{InstallMode, MANIFEST_FILE, Manifest};
+use crate::registry::manifest::{
+    CliOverrides, InstallMode, MANIFEST_FILE, Manifest, load_manifest,
+};
 use crate::{Error, Result, platform::paths};
 
 #[derive(Debug)]
@@ -305,6 +307,7 @@ pub(crate) struct ImportOutcome {
     pub enabled: bool,
     pub identical: bool,
     pub overwritten: bool,
+    pub cleanup_warning: Option<CleanupWarning>,
 }
 
 pub(crate) fn import(
@@ -359,36 +362,51 @@ pub(crate) fn import(
         enable,
         current,
         &enabled_hosts(manifest),
+        dry_run,
     )?;
-    // A dry run stops before anything persistent is written. The temporary
-    // staging copy and edit lock are released when they drop.
-    if !dry_run {
-        snapshot.publish(manifest, &canonical, &old, &hash, &edit, || Ok(()))?;
-    }
+    // A dry run uses the staged snapshot without acquiring the edit lock.
+    let cleanup_warning = if dry_run {
+        None
+    } else {
+        snapshot.publish(manifest, &canonical, &old, &hash, &edit, || Ok(()))?
+    };
     Ok(ImportOutcome {
         name,
         canonical,
         enabled,
         identical: status == "identical",
         overwritten: status == "different",
+        cleanup_warning,
     })
 }
 
 pub(crate) struct ShareOutcome {
     pub name: String,
     pub canonical: PathBuf,
+    pub cleanup_warning: Option<CleanupWarning>,
 }
 
 pub(crate) fn share(
-    manifest: &Manifest,
-    state: &mut State,
+    resolution: &crate::registry::root::RootResolution,
     host: &str,
     skill: &str,
     enabled: bool,
     force: bool,
     skip_audit: bool,
 ) -> Operation<ShareOutcome> {
-    if let Some(reason) = foreign_record_reason(manifest, state, skill, host) {
+    let registry_root = &resolution.root;
+    let manifest = &load_manifest(registry_root, &CliOverrides::default())?;
+    let manifest_path = registry_root.join(MANIFEST_FILE);
+    let state_path = default_state_path();
+    ensure_outside_hosts(registry_root, target_paths(manifest))?;
+    ensure_outside_hosts(&state_path, target_paths(manifest))?;
+    // Sharing edits the manifest and adopts a host copy. Always take the
+    // edit lock before the state lock.
+    let edit_lock = edit::EditLock::acquire(&manifest_path)?;
+    let _state_lock = StateLock::acquire(&state_path)?;
+    resolution.recheck_write()?;
+    let mut state = State::load(Some(&state_path))?;
+    if let Some(reason) = foreign_record_reason(manifest, &state, skill, host) {
         return Err(Failure::Blocked(format!("{skill}: {reason}")));
     }
     let root = host_root(manifest, host)?;
@@ -432,11 +450,12 @@ pub(crate) fn share(
             )));
         }
     }
-    let edit = edit::prepare_registration(
-        &manifest.root.join(MANIFEST_FILE),
+    let edit = edit::prepare_registration_locked(
+        &manifest_path,
         &name,
         enabled,
         &enabled_hosts(manifest),
+        edit_lock,
     )?;
     let audit = audit::run_audit(
         if old.status(&hash) == "identical" {
@@ -446,11 +465,9 @@ pub(crate) fn share(
         },
         &policy,
     )?;
-    ensure_outside_hosts(&state.path, target_paths(manifest))?;
-    // State was initially loaded for the CLI's error ordering. Refresh it
-    // with the manifest lock held so another share's adoption is retained.
-    *state = State::load(Some(&state.path))?;
-    if let Some(reason) = foreign_record_reason(manifest, state, &name, host) {
+    if name != skill
+        && let Some(reason) = foreign_record_reason(manifest, &state, &name, host)
+    {
         return Err(Failure::Blocked(format!("{name}: {reason}")));
     }
     let now = utc_now();
@@ -473,8 +490,14 @@ pub(crate) fn share(
         link_kind: None,
         fallback_reason: None,
     });
-    snapshot.publish(manifest, &canonical, &old, &hash, &edit, || state.save())?;
-    Ok(ShareOutcome { name, canonical })
+    let cleanup_warning =
+        snapshot.publish(manifest, &canonical, &old, &hash, &edit, || state.save())?;
+    resolution.remember();
+    Ok(ShareOutcome {
+        name,
+        canonical,
+        cleanup_warning,
+    })
 }
 
 fn enabled_hosts(manifest: &Manifest) -> Vec<String> {
@@ -700,7 +723,7 @@ impl Snapshot {
         source_hash: &str,
         edit: &ManifestEdit,
         finish: impl FnOnce() -> Result<()>,
-    ) -> Operation<()> {
+    ) -> Operation<Option<CleanupWarning>> {
         let parent = dest.parent().expect("canonical skill has a parent");
         let path = physical_path(parent)?
             .0
@@ -755,10 +778,25 @@ impl Snapshot {
             manifest_rollback?;
             return Err(err.into());
         }
-        if matches!(previous, Canonical::Other(EntryKind::Link(_))) {
-            remove_link(&backup)?;
+        if !backed_up {
+            return Ok(None);
         }
-        Ok(())
+        let cleanup = match previous {
+            Canonical::Other(EntryKind::Link(_)) => remove_link(&backup),
+            Canonical::Other(EntryKind::File) => {
+                fs::remove_file(&backup).map_err(|err| Error::io(&backup, err))
+            }
+            _ => remove_real_dir(&backup),
+        };
+        if let Err(error) = cleanup {
+            // Keep any recovery files at the reported path.
+            let _ = self.temp.keep();
+            return Ok(Some(CleanupWarning {
+                path: backup,
+                error,
+            }));
+        }
+        Ok(None)
     }
 
     fn retain_backup(self, dest: &Path, err: io::Error) -> Failure {

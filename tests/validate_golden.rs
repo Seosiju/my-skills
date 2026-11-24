@@ -15,7 +15,7 @@ struct Diagnostics {
 }
 
 #[test]
-fn matches_python_validation_for_every_fixture_and_builtin_host() {
+fn matches_validation_golden_for_every_fixture_and_builtin_host() {
     let golden: BTreeMap<String, BTreeMap<String, Diagnostics>> =
         serde_json::from_str(include_str!("golden/validate/validation.json")).unwrap();
     let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
@@ -135,7 +135,7 @@ fn host_configuration_controls_limits_and_kept_fields() {
     fs::create_dir(&path).unwrap();
     fs::write(
         path.join("SKILL.md"),
-        "---\nname: tiny-skill\ndescription: 가나\ncustom: yes\nother: no\n---\n",
+        "---\nname: tiny-skill\ndescription: 가나\ncustom: yes\nother: no\nlicense: MIT\ncompatibility: Terminal\nmetadata: {version: '1'}\n---\n",
     )
     .unwrap();
     let host = my_skills::drive::hosts::HostConfig {

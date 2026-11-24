@@ -10,8 +10,38 @@ When a `--json` command hits a usage or configuration error, read the
 ```
 
 Codes are `usage`, `inactive_registry`, `unknown_skill`, `unknown_group`,
-`unknown_host`, and `config`. `hint` is a string or `null`. A blocked validation,
-audit, or dry-run plan uses its normal report shape.
+`unknown_host`, `already_exists`, `invalid_name`, `state_busy` (writer lock
+timed out after 30s), and `config`. `hint` is a string or `null`. A blocked
+validation, audit, or dry-run plan uses its normal report shape.
+
+## Creating skills (`new --json`)
+
+`my-skills new <name> [--group <group>] [--host <host>] [--description <text>] [--dry-run] [--json]`
+creates `skills/<name>/SKILL.md` (outside any host directory) and registers it
+disabled (`enabled = false`), enforcing host description limits (`768` chars
+for built-in hosts). JSON returns `skill`, `enabled`, `group`, `hosts`,
+`canonical_dir`, `canonical_path`, `created`, `next`, and `registry` (plus
+`dry_run: true` only with `--dry-run`). Exit `2` emits `invalid_name`,
+`already_exists`, `unknown_host`, `inactive_registry`, `usage` (including
+`--description` errors), or `config`.
+
+## Resolving names and paths (`resolve`)
+
+Run `my-skills resolve <target> --json` to map a registered skill name,
+canonical path, or host path (including disabled hosts and files inside a skill)
+to its canonical path without hashing or updating state or the root cache.
+Targets that are absolute, start with `.` or `~`, or contain `/` (or `\` on
+Windows) are paths; all others are skill names.
+
+- **Exit `0`:** `state` is `registered` or `unregistered` (real draft dir under
+  `skills/`, or an owned host record removed from `my-skills.toml` whose
+  canonical dir still exists).
+- **Exit `1`:** `state` is `foreign`, `unmanaged`, `ambiguous`, or `unsafe`
+  (`..` traversal, escaping internal link, or redirected host link).
+- **Exit `2`:** unknown skill name (`unknown_skill`) or usage/config error.
+
+Read `canonical_dir`, `canonical_path`, `matched_host`, `mode`, `reason`,
+`write_refusal`, and `registry_agents_md` (all `null` when inapplicable).
 
 ## Validation
 
@@ -23,19 +53,25 @@ means a check failed, and `2` means a usage or configuration error.
 
 The pre-commit gate applies standard validation, the security floor, host
 limits, and the manifest audit policy. An over-limit description fails.
-`--host <host>` narrows host checks to that host. A bare `validate` scans all
-skill directories, including unregistered ones.
+`license`, `compatibility`, and `metadata` do not emit unsupported-field
+warnings; `allowed-tools` keeps its dedicated warning; other unsupported fields
+warn once per skill listing affected hosts. `--host <host>` narrows host checks
+to that host. A bare `validate` scans all skill directories, including
+unregistered ones.
 
-## Dry-run JSON fields and exit codes
+## Dry-run and applied JSON (`install` and `sync`)
 
-Preview writes with `--dry-run --json` instead of parsing text:
+A preview is always `--dry-run --json`; to apply, drop only `--dry-run`:
 
 ```bash
-my-skills install <skill> --host <host> --dry-run --json
-my-skills sync <skill> --host <host> --dry-run --json
+my-skills install <skill> --host <host> --dry-run --json   # preview
+my-skills install <skill> --host <host> --json             # apply
+my-skills sync <skill> --host <host> --dry-run --json      # preview
+my-skills sync <skill> --host <host> --json                # apply
 ```
 
-Read these fields from the plain UTF-8 JSON response:
+Shared fields in both preview (`dry_run: true`) and applied (`dry_run: false`)
+JSON:
 
 - `registry` gives `{path, source}`. The source is `flag` for `--root`,
   `env` for `MY_SKILLS_ROOT`, `cwd` for discovery, or `cache` for the saved root.
@@ -44,27 +80,59 @@ Read these fields from the plain UTF-8 JSON response:
 - `validation`: per-skill and per-host validation checks.
 - `audit`: audit gate outcome and findings.
 - `blocked`: `true` if validation, audit, a blocked plan item, or an inactive
-  cwd registry would refuse the write.
-- `applicable`: `true` only if the same command without `--dry-run` would exit
-  `0` (including the `--yes` requirement for multi-host writes).
+  cwd registry would refuse the write (`needs_yes` alone leaves `blocked: false`).
+- `applicable`: `true` only if the write can proceed without blocking or missing
+  `--yes`.
 - `block_reasons`: structured reasons explaining every refusal, including audit
-  blocks, `block_drift`, `block_foreign`, `needs_yes`, and `inactive_registry`.
+  blocks, `block_drift`, `block_foreign`, `shared_destination` (when a
+  single-host operation would alter a destination shared with an unselected
+  recorded peer), `needs_yes`, `inactive_registry`, and late `conflict`. Host
+  rows in `validation` that merely repeat skill-level errors or warnings are
+  omitted.
+
+Applied JSON (`--json` without `--dry-run`) adds:
+
+- `applied`: `true` when every write succeeded and no action was `blocked` or
+  `failed` (no-op syncs and post-commit cleanup warnings still return `true`).
+- `summary`: `{created, updated, removed, unchanged, blocked, failed}` (excludes
+  `skipped` rows).
+- `cleanup_warnings`: `[{skill, host, path, message}]`.
+- Per-action `result` (`created`, `updated`, `removed`, `unchanged`, `blocked`,
+  `failed`, `skipped`), `requested_mode`, `mode` (actual mode after fallback, or
+  `null` when skipped/blocked/failed before completion), `fallback_reason`, and
+  `error`.
 
 Exit-code rules:
 
 - Both `install --dry-run` and `sync --dry-run` exit `1` **only** on validation
   failure and exit `0` otherwise — even when `blocked: true` or
   `applicable: false`.
-- Use `sync --check` when you need a non-zero exit code for any drift.
-- `sync --json` requires `--dry-run`.
+- Without `--dry-run`, `install --json` and `sync --json` exit `0` when applied,
+  `1` when blocked or failed, and `2` on usage, configuration, `inactive_registry`,
+  or `needs_yes` refusals (post-plan refusals still emit the applied JSON
+  document; early errors such as `unknown_skill`, `state_busy`, and
+  `sync --json --check` emit `{"error": ...}`).
+- Use `sync --check` when you need a non-zero exit code for any drift (drift
+  only; it does not run validation or audit).
+- Explicit `sync <skill...>` or `sync --group <group>` validates and audits all
+  wanted skills on the selected hosts, including `FRESH` links (failing `1` if a
+  wanted skill is broken). Disabled skills whose only planned action is `REMOVE`
+  (prune) skip those checks unless `--all` puts them in scope to connect.
 - `sync --check` takes precedence over `--dry-run` and cannot be combined with
   `--json`.
 
-## Compact catalog results
+## Compact catalog and status filters
 
-Use `my-skills skills --json --brief` for compact rows. A row keeps `error`
-when skill metadata is missing or invalid. Add `--with-governance` to put
-`audit` and `provenance` under `governance` in each brief row.
+Use `my-skills skills [skill...] --json --brief` for compact rows. Positional
+`skill...` names intersect (AND) with `--group`, `--host`, and
+`--enabled`/`--disabled`. A row keeps `error` when skill metadata is missing or
+invalid. Add `--with-governance` to put `audit` and `provenance` under
+`governance` in each brief row.
+
+Use `my-skills status [skill...] --group <group> --json` for a top-level JSON
+array filtered by the union of names and groups; explicitly selected disabled
+skills keep their normal per-host labels (such as `MISSING`). Unknown skill names
+exit `2` (`unknown_skill`).
 
 ## Comparing installed content
 

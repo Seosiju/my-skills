@@ -1,6 +1,7 @@
 //! Environment, registry, and connection diagnostics.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -11,6 +12,7 @@ use crate::cli::DoctorArgs;
 use crate::drive::link::{self, Created, LinkKind};
 use crate::drive::state::{self, InstallRecord, State};
 use crate::git::hooks::{self, Git, HookStatus};
+use crate::registry::catalog::{self, CatalogCost};
 use crate::registry::manifest::{self, InstallMode, Manifest};
 use crate::registry::root::{self, RootSource};
 use crate::{check::validate, drive::hosts, drive::plan, platform::paths, update};
@@ -72,6 +74,8 @@ struct HostStatus {
     path: String,
     configured_mode: Option<InstallMode>,
     connections: ConnectionCounts,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    catalog: Option<CatalogCost>,
 }
 
 #[derive(Serialize)]
@@ -184,10 +188,13 @@ impl Report {
             git_diagnostics(registry.path.as_deref())
         };
         let (connections, mut host_connections) = Connections::collect(manifest.as_ref());
+        let mut catalog = manifest.as_ref().map_or_else(BTreeMap::new, |manifest| {
+            catalog::costs(manifest, hosts::ALL.map(|host| host.name))
+        });
         let hosts = hosts::ALL
             .map(|host| {
                 let counts = host_connections.remove(host.name).unwrap_or_default();
-                HostStatus::collect(host, manifest.as_ref(), counts)
+                HostStatus::collect(host, manifest.as_ref(), counts, catalog.remove(host.name))
             })
             .into();
         Self {
@@ -248,6 +255,16 @@ impl Report {
                 "Skills:   {} registered, {} enabled",
                 skills.registered, skills.enabled
             );
+            let catalog = self
+                .hosts
+                .iter()
+                .filter_map(HostStatus::catalog_text)
+                .collect::<Vec<_>>();
+            if catalog.is_empty() {
+                println!("Catalog: no enabled hosts");
+            } else {
+                println!("Catalog: {}", catalog.join(" · "));
+            }
         }
         println!("State:    {}", self.state_path);
         println!("Data:     {}", self.data_root);
@@ -376,6 +393,7 @@ impl HostStatus {
         host: &hosts::HostConfig,
         manifest: Option<&Manifest>,
         connections: ConnectionCounts,
+        catalog: Option<CatalogCost>,
     ) -> Self {
         let target = manifest.and_then(|manifest| manifest.targets.get(host.name));
         let path = target.map_or_else(
@@ -395,7 +413,34 @@ impl HostStatus {
             path: paths::display_path(&path),
             configured_mode: manifest.map(|m| m.effective_install_mode(host.name)),
             connections,
+            catalog,
         }
+    }
+
+    fn catalog_text(&self) -> Option<String> {
+        let catalog = self.catalog.as_ref()?;
+        let unit = if catalog.skills == 1 {
+            "skill"
+        } else {
+            "skills"
+        };
+        let mut text = format!(
+            "{} {} {unit} / {} chars",
+            self.name, catalog.skills, catalog.description_chars,
+        );
+        if !catalog.longest.is_empty() {
+            let longest = catalog
+                .longest
+                .iter()
+                .map(|entry| format!("{} {}", entry.name, entry.chars))
+                .collect::<Vec<_>>()
+                .join(", ");
+            write!(text, " (longest: {longest})").expect("writing to a String");
+        }
+        if catalog.invalid > 0 {
+            write!(text, " ({} invalid)", catalog.invalid).expect("writing to a String");
+        }
+        Some(text)
     }
 }
 
