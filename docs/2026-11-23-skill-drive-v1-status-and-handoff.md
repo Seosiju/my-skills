@@ -1,7 +1,7 @@
 # Skill Drive v1: 진행 현황과 작업 인계
 
-> 기준 시점: 2026-11-24 (KST). `dev` = `72aaf89` 이후 (wave4 `a348cff`, H 기록 `89f51db`, 맥 runbook `72aaf89`)
-> 상태: Rust v1 기능 구현, §7 A~E, H, K 완료. Windows PC는 H에서, 맥은 G 1~5단계(2026-11-24)에서 Rust 판과 link로 전환했다. G의 남은 필수 항목은 Windows 쪽 6.1
+> 기준 시점: 2026-11-24 (KST). `dev` = `7f6ecc9` 이후 (wave4 `a348cff`, H 기록 `89f51db`, 맥 runbook `72aaf89`, G 기록 `7f6ecc9`)
+> 상태: Rust v1 기능 구현, §7 A~E, G, H, K 완료. Windows PC는 H에서, 맥은 G(2026-11-24)에서 Rust 판과 link로 전환했다. 맥이 push한 레지스트리 변경을 Windows가 post-merge로 받는 것까지 확인했다(G 6.1)
 > 설계 문서: `docs/2026-11-23-skill-drive-rust-v1-spec.md` (이하 "스펙")
 > 작업 지시서와 보고서: `docs/tasks/2026-11-23-rust-v1/`
 
@@ -24,7 +24,7 @@
 | CI (`dev`) | Rust 검사와 테스트를 Ubuntu, macOS, Windows에서 실행. 최신 결과는 §9 명령으로 확인 |
 | 릴리스 | **Python v0.4.2** (태그 `v0.4.2`, GitHub Release "Latest"). Rust v1 릴리스는 아직 없고, Rust 릴리스 workflow도 실행되지 않았다 |
 | `main` | v0.4.2 (`ca41abd`, `release/v0.4.2` 병합). Rust 코드는 아직 없다. `main`은 `dev`에 다시 병합했다(`382a19a`) |
-| **실제 사용자 환경** | **맥(2026-11-24, G 1~5단계)**: Rust `1.0.0-alpha.0`을 my-skills 전용 폴더에 `cargo install --root`로 설치하고 그 `bin`만 PATH 앞에 둠(Python 0.4.1은 지우지 않음). 기기별 `my-skills.local.toml`로 기본 link, 세 host 모두 symlink로 FRESH, 레지스트리 hook 4종 설치. 결과 표는 스펙 §11. **Windows PC(2026-11-23, H)**: Rust `1.0.0-alpha.0`을 `cargo install`로 설치(PATH 1번 `.cargo\bin`), 기기별 `my-skills.local.toml`로 기본 link와 agy copy를 지정, 모든 연결 FRESH(claude·codex는 link, agy는 copy), 레지스트리 hook 4종 설치. 레지스트리 manifest 기본값은 G 5단계에서 `install_mode = "link"`로 바꿨다(두 기기 모두 기기별 설정이 우선이라 동작은 같음) |
+| **실제 사용자 환경** | **맥(2026-11-24, G)**: Rust `1.0.0-alpha.0`을 my-skills 전용 폴더에 `cargo install --root`로 설치하고 그 `bin`만 PATH 앞에 둠(Python 0.4.1은 지우지 않음). 기기별 `my-skills.local.toml`로 기본 link, 세 host 모두 symlink로 FRESH, 레지스트리 hook 4종 설치. 결과 표는 스펙 §11. **Windows PC(2026-11-23, H)**: Rust `1.0.0-alpha.0`을 `cargo install`로 설치(PATH 1번 `.cargo\bin`), 기기별 `my-skills.local.toml`로 기본 link와 agy copy를 지정, 모든 연결 FRESH(claude·codex는 link, agy는 copy), 레지스트리 hook 4종 설치, 2026-11-24에 맥이 push한 레지스트리 변경을 post-merge로 받음(G 6.1). 레지스트리 manifest 기본값은 G 5단계에서 `install_mode = "link"`로 바꿨다(두 기기 모두 기기별 설정이 우선이라 동작은 같음) |
 | 감사 세션의 사전 점검 | 빌드한 v1 binary를 실제 레지스트리에 읽기 전용으로 실행: 모든 연결이 FRESH였고, `convert --to link --host all --dry-run`은 막힌 항목 없이 활성 host의 copy 연결 전체를 CONVERT로 계획했다. 비활성 host(hermes) 기록은 대상에서 빠졌다 |
 | Windows | CI에서 junction 테스트 4개 통과. **실기기 확인 완료(H, 2026-11-23)**: Claude Code와 Codex는 junction 스킬을 발견하고, agy 1.5.14는 발견하지 못해 copy로 연결한다. 결과 표는 스펙 §12 |
 
@@ -66,8 +66,9 @@ flowchart LR
 | 이후 | **H 3단계(이 Windows PC)**: release binary(`071ca28`)로 runbook 3.1~3.6 진행. junction 연결, 해제, Git Bash의 pre-commit, post-checkout, post-merge, `HOME=/c/...` 경로, 공백 경로 모두 정상. 새 세션 확인에서 **Claude Code와 Codex는 junction 스킬을 찾았지만 agy 1.5.14는 못 찾음**(같은 폴더의 일반 폴더는 찾음, 모델 호출 없는 `/skills` 조회로 확인). Git Bash에서 `agy -p '/skills'`는 MSYS가 경로로 바꿔 버리므로 PowerShell에서 실행해야 함 | 스펙 §12 기록은 H 5단계에서 |
 | 이후 | **wave4: host별 `install_mode`**. agy(Gemini 4 Neon high)가 개발: `[targets.<host>] install_mode`(우선순위 CLI > host > defaults, 기록된 연결은 유지), `convert --host all`에서 방식을 명시한 host 건너뛰기, Windows에서 agy link일 때 doctor 경고, doctor의 `\\?\` 표시 제거. Codex(medium) 체크리스트 검토와 agy 블라인드 검토 → 수정 한 번(빈 assertion 2곳 등) → 둘 다 병합 판정. 중간 커밋이 Windows에서 실패하던 것은 통합 담당이 커밋을 다시 묶어 7개 커밋 모두 fmt, clippy, 테스트 통과(최종 221개)를 확인했고, 트리는 검토한 것과 같음(`33bc860`) | `29bf51c`..`4df4a61`, `a348cff` |
 | 2026-11-24 | **맥 점검**(통합 담당 Claude, 맥): `dev` pull 뒤 테스트, 맥 runbook 명령과 코드 대조, 실제 환경 읽기 전용 점검(§6.6). Windows PC의 Claude가 검토해 권고하고 사용자가 결정: 개발 도구는 rustup stable을 `rustup run stable`로 쓰고, `doctor.rs`의 lint는 이번에 고치지 않음. 맥 runbook 2·4.1·4.2·5.4단계와 이 문서를 고침. §7 K 정리 | `a447574` |
-| 2026-11-24 | **맥 수정의 Windows 검토**(Windows PC의 Claude): `a447574`를 받아 정적 검토, runbook bash 블록 33개 `bash -n`, 5.4 스크립트를 가짜 홈 폴더로 실행. 대부분 그대로 맞았고, 5.4 스크립트의 들여쓰기 문제와 `~/.claude/rules/` 누락, 이 표의 끊김, 결정 주체 문구를 고침(§6.7) | 이 문서를 고친 커밋 |
-| 2026-11-24 | **G 1~5단계(맥)**(통합 담당 Claude, 맥): 사용자가 [멈춤]에서 기다리지 않고 진행하되 STOP, BLOCK, 지우기·덮어쓰기, runbook과 다른 출력에서 멈추도록 지시. 멈춘 곳 없음. `c4d0df1` 빌드와 테스트 224개, 시험용 스킬로 세 에이전트의 symlink 발견(agy 1.5.15 포함), hook 3종, 실제 전환, link 반영과 발견, 레지스트리 manifest와 안내 문서 수정과 push, 이 맥의 전역 안내 수정. 6.2는 사용자 결정으로 보류(스펙 §11) | 이 문서를 고친 커밋 |
+| 2026-11-24 | **맥 수정의 Windows 검토**(Windows PC의 Claude): `a447574`를 받아 정적 검토, runbook bash 블록 33개 `bash -n`, 5.4 스크립트를 가짜 홈 폴더로 실행. 대부분 그대로 맞았고, 5.4 스크립트의 들여쓰기 문제와 `~/.claude/rules/` 누락, 이 표의 끊김, 결정 주체 문구를 고침(§6.7) | `c4d0df1` |
+| 2026-11-24 | **G 1~5단계(맥)**(통합 담당 Claude, 맥): 사용자가 [멈춤]에서 기다리지 않고 진행하되 STOP, BLOCK, 지우기·덮어쓰기, runbook과 다른 출력에서 멈추도록 지시. 멈춘 곳 없음. `c4d0df1` 빌드와 테스트 224개, 시험용 스킬로 세 에이전트의 symlink 발견(agy 1.5.15 포함), hook 3종, 실제 전환, link 반영과 발견, 레지스트리 manifest와 안내 문서 수정과 push, 이 맥의 전역 안내 수정. 6.2는 사용자 결정으로 보류(스펙 §11) | `7f6ecc9` |
+| 2026-11-24 | **G 6.1(Windows)**(Windows PC의 Claude): tool repo `7f6ecc9`를 받고 레지스트리를 사전 확인. 이 에이전트 세션의 PATH가 예전 것이라 `my-skills`가 Python 판으로 잡혀 멈춤(사용자 PATH는 `.cargo\bin`이 1번). 사용자 결정으로 명령에만 `.cargo\bin`을 PATH 앞에 두고 진행. `origin/main`이 맥이 알려 준 SHA와 같고 fast-forward임을 확인한 뒤 merge. post-merge가 agy 복사본을 갱신, 모두 FRESH, `sync --check` 0. **G 완료** | 이 문서를 고친 커밋 |
 
 Codex 운영:
 - 1단계: `gpt-6.2-sol` `xhigh` 5개. 5시간 한도의 약 51%포인트를 썼다(99% → 48%).
@@ -118,7 +119,7 @@ Codex 운영:
 ### 확인하지 않은 것
 
 - 릴리스 workflow, 설치 스크립트, `update`의 실제 다운로드
-- 맥에서 push한 변경이 Windows의 post-merge로 반영되는지(맥 runbook 6단계)
+- Windows에서 push한 변경을 맥이 실제 레지스트리에서 post-merge로 받는 방향(맥 runbook 6.2는 사용자 결정으로 보류)
 
 ### CI가 잡아 고친 문제
 
@@ -272,7 +273,7 @@ Windows PC의 Claude가 정적으로 검토했다. 맥 명령은 Windows에서 �
 | D | ~~`dev`에서 Python 제거, Rust를 루트로 이동~~ **완료**(`d88f7db`). 지워진 Python smoke가 하던 tool repo `skills/` 검증은 `tests/repo_skills_smoke.rs`로 복원했다(`de4f63f`, `7186fda`) | C | — |
 | E | ~~tool repo 문서~~ **완료**(`5309157`, `71f1cdc`). `SEED_REVISION`은 `CARGO_PKG_VERSION`을 따른다. v1.0.0 때 바꿀 `--branch dev` 위치 목록은 `docs/release-checklist.md`에 있다 | D | — |
 | F | `v1.0.0-alpha.1` pre-release: `Cargo.toml` 버전을 `1.0.0-alpha.1`로 올림 → 태그와 버전을 비교하는 CI 단계 추가 → 태그. 주의: **Release Rust의 `workflow_dispatch`는 workflow 파일이 기본 브랜치(`main`)에 있어야 수동 실행된다. 지금 `main`에는 없으므로, 태그 전 시험 실행은 할 수 없고 첫 태그 실행이 첫 전체 실행이 된다**(`docs/release-checklist.md`) | — (A·D 뒤가 깔끔하지만 필수는 아님) | **필요 (태그)** |
-| G | **1~5단계 완료(2026-11-24), 6.1 대기**: 맥 runbook으로 진행했고 결과는 스펙 §11. 남은 필수 항목은 Windows 쪽 6.1(맥이 push한 레지스트리 커밋을 post-merge로 받기). 6.2는 사용자 결정으로 보류. 아래는 원래 범위. **맥 전환**: binary 설치 → `convert --to link` dry-run → 승인 → 전환. 레지스트리 `install_mode` 수정, `hooks install`. 에이전트가 읽는 문서 수정: 레지스트리의 `skills/my-skills/SKILL.md`, `AGENTS.md`(동기화 단계, agy 복사 설치 문구, 그룹 비활성화 시 uninstall 안내), `instructions/global.md`, `README.md`, 그리고 Claude·Codex·agy 전역 안내의 "동기화" 절차 | binary 하나 (F 또는 직접 빌드) | **필요 (dry-run과 문서 diff 확인 후)** |
+| G | ~~맥 전환~~ **완료(2026-11-24, 6.2는 사용자 결정으로 보류)**: 1~5단계는 맥, 6.1은 Windows에서 맥 runbook으로 진행했고 결과는 스펙 §11. 아래는 원래 범위. **맥 전환**: binary 설치 → `convert --to link` dry-run → 승인 → 전환. 레지스트리 `install_mode` 수정, `hooks install`. 에이전트가 읽는 문서 수정: 레지스트리의 `skills/my-skills/SKILL.md`, `AGENTS.md`(동기화 단계, agy 복사 설치 문구, 그룹 비활성화 시 uninstall 안내), `instructions/global.md`, `README.md`, 그리고 Claude·Codex·agy 전역 안내의 "동기화" 절차 | binary 하나 (F 또는 직접 빌드) | **필요 (dry-run과 문서 diff 확인 후)** |
 | H | ~~Windows 실기기~~ **완료(2026-11-23)**. 직접 빌드한 binary로 runbook 1~5단계를 진행했다. F 이후에는 릴리스 binary로 한 번 더 교체한다(설치 스크립트 확인 포함) | binary 하나 (F 또는 그 PC에서 빌드) | — |
 | I | v1.0.0: `dev`를 `main`에 병합, README를 binary 설치 방식으로, 태그 | C, G, H | **필요** |
 | J | 자동 pull (macOS launchd, Windows 작업 스케줄러) | I | 스펙 작성 후 승인 |
@@ -284,7 +285,7 @@ Windows PC의 Claude가 정적으로 검토했다. 맥 명령은 Windows에서 �
 ```mermaid
 flowchart LR
   AB["A · B (완료)"] --> C["C (완료)"] --> DE["D · E (완료)"] --> F["F"]
-  F --> G["G 맥"]
+  F --> G["G 맥 (완료)"]
   F --> H["H Windows (완료)"]
   G --> I["I v1.0.0"]
   H --> I
@@ -356,7 +357,7 @@ cargo run -- --help
 ### 맥에서 이어갈 때 (G)
 
 **`docs/2026-11-23-skill-drive-macos-runbook.md`를 그대로 넘긴다.** Windows 판과 같은 구조이고, Windows에서 확인한 결과를 반영했다.
-2026-11-24: 1~5단계 완료(스펙 §11). 남은 필수 항목은 Windows 쪽 6.1이다. 다른 맥에서 다시 할 때는 runbook의 승인 지점(계획, dry-run, diff)마다 사용자 승인이 필요하다(§7 G).
+2026-11-24: 완료. 1~5단계는 맥, 6.1은 Windows에서 진행했다(스펙 §11). 6.2는 사용자 결정으로 보류. 다른 맥에서 다시 할 때는 runbook의 승인 지점(계획, dry-run, diff)마다 사용자 승인이 필요하다(§7 G).
 - agy 1.5.14는 Windows junction을 발견하지 못했다. 맥에서는 agy 1.5.15가 symlink 스킬을 발견했다(runbook 3.3, 2026-11-24).
 - 전환 전에 열려 있던 터미널과 에이전트 세션은 예전 PATH를 쓴다. 그 세션에서 레지스트리 git 작업을 하면 hook이 Python 판을 찾아 실패하므로 새 세션을 연다.
 - 레지스트리 manifest 기본값을 link로 바꾸는 변경(runbook 5단계)은 push하면 Windows PC에도 간다. Windows PC는 기기별 설정(`my-skills.local.toml`)이 우선이라 동작이 바뀌지 않는다.

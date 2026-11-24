@@ -476,8 +476,8 @@ skills/                    빌드 시 바이너리에 포함하는 시드 원본
 | 전환 (4단계) | 활성 host의 copy 연결 전체를 convert. bootstrap에서 새 연결 없음. 건너뛴 host 없음, BLOCK 없음, hermes 기록은 백업과 같음 |
 | link 바로 반영 (4.5), 전환 뒤 발견 (4.6) | claude, codex, agy 모두 예 / 모두 예 |
 | 공유 레지스트리 변경 (5단계) | manifest `[defaults] install_mode = "link"`. 고친 문서: `AGENTS.md`, `README.md`, `instructions/global.md`, `skills/my-skills/SKILL.md`. 이 맥의 전역 안내(Claude, Codex, agy)는 수정 완료 기준 문단만 고침(원본은 비공개 작업 폴더에 백업). 레지스트리 push 완료 |
-| 두 기기 확인 (6단계) | 6.1은 Windows에서 진행 예정. 6.2는 보류(사용자 결정) |
-| 기타 | (a) 이미 열려 있던 터미널과 에이전트 세션은 예전 PATH를 쓴다. 그 세션에서 레지스트리 git 작업을 하면 hook이 Python 판을 찾아 실패하므로 새 세션을 연다. (b) runbook 5.2의 `grep`은 영어 단어만 찾아 한국어 문서의 동기화, 복사 표현을 놓친다. 파일을 직접 읽어 고쳤다. (c) 레지스트리의 `my-skills` 스킬은 seed와 일부러 다른 정책 문구가 있어 seed로 덮지 않고, Rust v1과 link에 맞지 않는 사실만 고쳤다 |
+| 두 기기 확인 (6단계) | 6.1 통과(2026-11-24, Windows): 레지스트리 `origin/main`이 맥이 알려 준 SHA와 같고 fast-forward임을 확인한 뒤 `merge --ff-only`. post-merge가 agy 복사본을 갱신(`updated: my-skills -> agy` 포함)하고 link 연결은 바로 반영. `status` 모두 FRESH(manifest에서 claude를 지원하지 않는 스킬은 UNSUPPORTED), `sync --check` 0. 6.2는 보류(사용자 결정) |
+| 기타 | (a) 이미 열려 있던 터미널과 에이전트 세션은 예전 PATH를 쓴다. 그 세션에서 레지스트리 git 작업을 하면 hook이 Python 판을 찾아 실패하므로 새 세션을 연다. Windows 6.1에서도 같았다: 이미 열려 있던 에이전트 세션의 PATH에 `.cargoin`이 없어 Python 판이 먼저 잡혔고(사용자 PATH에서는 1번), 사용자 결정으로 그 세션의 명령에만 `.cargoin`을 PATH 앞에 두고 진행했다. (b) runbook 5.2의 `grep`은 영어 단어만 찾아 한국어 문서의 동기화, 복사 표현을 놓친다. 파일을 직접 읽어 고쳤다. (c) 레지스트리의 `my-skills` 스킬은 seed와 일부러 다른 정책 문구가 있어 seed로 덮지 않고, Rust v1과 link에 맞지 않는 사실만 고쳤다 |
 
 ## 12. Windows 작업 지시서 (Windows PC에서 실행)
 
