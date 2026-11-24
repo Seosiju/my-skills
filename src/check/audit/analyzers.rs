@@ -1,6 +1,6 @@
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::{MAIN_SEPARATOR, Path, PathBuf};
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -27,10 +27,19 @@ pub(super) struct FileContext {
     pub has_nul: bool,
 }
 
+fn relative_display(relative: &Path) -> String {
+    let text = relative.to_string_lossy();
+    if MAIN_SEPARATOR == '/' {
+        text.into_owned()
+    } else {
+        text.replace(MAIN_SEPARATOR, "/")
+    }
+}
+
 impl FileContext {
     fn read(root: &Path, relative: &Path) -> Self {
         let mut context = Self {
-            file: relative.to_string_lossy().into_owned(),
+            file: relative_display(relative),
             text: None,
             decode_error: false,
             has_nul: false,
@@ -150,10 +159,10 @@ fn dataflow(root: &Path, files: &[PathBuf]) -> Result<Option<AuditFinding>, Audi
         };
         let (reader, sender) = commands::capabilities(text);
         if reader {
-            readers.push(relative.to_string_lossy());
+            readers.push(relative_display(relative));
         }
         if sender {
-            senders.push(relative.to_string_lossy());
+            senders.push(relative_display(relative));
         }
     }
     if readers.is_empty() || senders.is_empty() {
@@ -282,5 +291,11 @@ mod tests {
                 .message
                 .ends_with(&path_repr(&root.path().join("unavailable.txt")))
         );
+    }
+
+    #[test]
+    fn relative_display_normalizes_separators_to_forward_slash() {
+        let nested = Path::new("nested").join("sub").join("sender.sh");
+        assert_eq!(relative_display(&nested), "nested/sub/sender.sh");
     }
 }
