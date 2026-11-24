@@ -98,11 +98,9 @@ impl Fixture {
         let suffix = std::env::consts::EXE_SUFFIX;
         let dirs = std::env::split_paths(&inherited).filter(|dir| {
             dir.is_absolute()
-                && !["my-skills", "agy", "claude", "codex", "hermes"]
-                    .iter()
-                    .any(|name| {
-                        dir.join(name).is_file() || dir.join(format!("{name}{suffix}")).is_file()
-                    })
+                && !["my-skills", "agy", "claude", "codex"].iter().any(|name| {
+                    dir.join(name).is_file() || dir.join(format!("{name}{suffix}")).is_file()
+                })
         });
         std::env::join_paths(std::iter::once(self.bin.clone()).chain(dirs)).unwrap()
     }

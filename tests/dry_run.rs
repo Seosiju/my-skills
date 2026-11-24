@@ -26,10 +26,10 @@ impl Env {
         )
         .unwrap();
         let mut toml = String::from("schema_version = 1\nskills_root = \"skills\"\n");
-        for host in ["claude", "codex", "agy", "hermes"] {
+        for host in ["claude", "codex", "agy", "custom"] {
             toml.push_str(&format!(
                 "\n[targets.{host}]\nenabled = {}\npath = '{}'\n",
-                host != "hermes",
+                host != "custom",
                 env.tmp.path().join("hosts").join(host).display()
             ));
         }

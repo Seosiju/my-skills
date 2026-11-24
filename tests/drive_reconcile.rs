@@ -8,9 +8,11 @@ use my_skills::drive::apply::{self, Connection, Outcome};
 use my_skills::drive::link::{self, EntryKind};
 use my_skills::drive::plan::{self, Action, Status, SyncScope};
 use my_skills::drive::state::State;
-use my_skills::registry::manifest::{CliOverrides, InstallMode, Manifest, load_manifest};
+use my_skills::registry::manifest::{
+    CliOverrides, InstallMode, LOCAL_MANIFEST_FILE, Manifest, load_manifest,
+};
 
-const HOSTS: [&str; 4] = ["agy", "claude", "codex", "hermes"];
+const HOSTS: [&str; 3] = ["agy", "claude", "codex"];
 
 struct Drive {
     _tmp: tempfile::TempDir,
@@ -53,9 +55,8 @@ impl Drive {
             "schema_version = 1\nskills_root = \"skills\"\n\n[defaults]\ninstall_mode = \"{mode}\"\n"
         );
         for host in HOSTS {
-            let enabled = host != "hermes";
             toml.push_str(&format!(
-                "\n[targets.{host}]\nenabled = {enabled}\npath = \"{}\"\n",
+                "\n[targets.{host}]\nenabled = true\npath = \"{}\"\n",
                 self.host_dir(host)
                     .display()
                     .to_string()
@@ -63,7 +64,7 @@ impl Drive {
             ));
         }
         toml.push_str(&format!(
-            "\n[skills.alpha]\nenabled = {alpha_enabled}\nhosts = [\"claude\", \"codex\", \"agy\"]\n"
+            "\n[skills.alpha]\nenabled = {alpha_enabled}\nhosts = [\"claude\", \"codex\", \"agy\", \"custom\"]\n"
         ));
         if beta_registered {
             toml.push_str(
@@ -71,6 +72,15 @@ impl Drive {
             );
         }
         fs::write(self.registry.join("my-skills.toml"), toml).unwrap();
+    }
+
+    fn write_custom_target(&self, enabled: bool) {
+        let path = serde_json::to_string(&self.host_dir("custom")).unwrap();
+        fs::write(
+            self.registry.join(LOCAL_MANIFEST_FILE),
+            format!("[targets.custom]\nenabled = {enabled}\npath = {path}\n"),
+        )
+        .unwrap();
     }
 
     fn manifest(&self) -> Manifest {
@@ -86,7 +96,7 @@ impl Drive {
         let manifest = self.manifest();
         let mut state = self.state();
         let skills: Vec<_> = manifest.skills.values().collect();
-        let hosts: Vec<String> = HOSTS.iter().map(|h| h.to_string()).collect();
+        let hosts: Vec<_> = manifest.targets.keys().cloned().collect();
         let scope = SyncScope {
             skills: &skills,
             hosts: &hosts,
@@ -129,6 +139,7 @@ fn assert_canonical_intact(registry: &Path, skill: &str) {
 #[test]
 fn first_sync_links_every_wanted_pair_and_skips_disabled_target() {
     let drive = Drive::new();
+    drive.write_custom_target(false);
     let items = drive.sync(true);
 
     let mut expected = Vec::new();
@@ -140,7 +151,7 @@ fn first_sync_links_every_wanted_pair_and_skips_disabled_target() {
     assert_eq!(
         actions(&items),
         expected,
-        "hermes is disabled and must be skipped"
+        "the custom target is disabled and must be skipped"
     );
     for item in &items {
         assert_eq!(item.mode, InstallMode::Link);
@@ -150,7 +161,7 @@ fn first_sync_links_every_wanted_pair_and_skips_disabled_target() {
         ));
     }
     assert_eq!(drive.status("alpha", "claude"), Status::Fresh);
-    assert!(!drive.host_dir("hermes").join("alpha").exists());
+    assert!(!drive.host_dir("custom").join("alpha").exists());
 }
 
 #[test]
@@ -282,33 +293,34 @@ fn deleted_canonical_shows_broken_and_is_pruned() {
 }
 
 #[test]
-fn disabled_target_installs_are_never_touched() {
-    // I7: a leftover hermes copy with a record must survive every sync.
+fn disabled_and_missing_target_installs_are_never_touched() {
+    // I7: a managed copy must survive while its target is disabled or absent.
     let drive = Drive::new();
-    drive.write_manifest(true, true, "copy");
+    drive.write_custom_target(true);
     let manifest = drive.manifest();
     let mut state = drive.state();
-    // Simulate the install made back when hermes was still in alpha's hosts.
-    let mut skill = manifest.skills.get("alpha").unwrap().clone();
-    skill.hosts.push("hermes".into());
-    let skill = &skill;
-    let mut item =
-        plan::plan_install_one(&manifest, skill, "hermes", &state, InstallMode::Copy).unwrap();
+    let skill = &manifest.skills["alpha"];
+    let item =
+        plan::plan_install_one(&manifest, skill, "custom", &state, InstallMode::Copy).unwrap();
     assert_eq!(item.action, Action::Create);
-    item.mode = InstallMode::Copy;
     apply::apply(&item, &mut state, None).unwrap();
+    let record = state.get("alpha", "custom").unwrap();
+    let copy_path = drive.host_dir("custom").join("alpha/SKILL.md");
+    let contents = fs::read(&copy_path).unwrap();
 
     drive.write_manifest(false, false, "link");
-    let items = drive.sync(true);
-    assert!(items.iter().all(|i| i.host != "hermes"), "{items:?}");
-    assert!(
-        drive
-            .host_dir("hermes")
-            .join("alpha")
-            .join("SKILL.md")
-            .is_file()
-    );
-    assert!(drive.state().get("alpha", "hermes").is_some());
+    drive.write_custom_target(false);
+    let assert_copy_survives_sync = || {
+        let items = drive.sync(true);
+        assert!(items.iter().all(|i| i.host != "custom"), "{items:?}");
+        assert_eq!(fs::read(&copy_path).unwrap(), contents);
+        assert_eq!(drive.state().get("alpha", "custom"), Some(record));
+    };
+    assert_copy_survives_sync();
+
+    fs::remove_file(drive.registry.join(LOCAL_MANIFEST_FILE)).unwrap();
+    assert!(!drive.manifest().targets.contains_key("custom"));
+    assert_copy_survives_sync();
 }
 
 #[test]

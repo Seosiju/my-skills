@@ -39,7 +39,7 @@ Out of scope:
 
 - Vulnerabilities in a user's private local skills that are not part of this
   repository.
-- Host tools such as Claude Code, Codex, Hermes, or Antigravity CLI outside
+- Host tools such as Claude Code, Codex, or Antigravity CLI outside
   the files written by `my-skills`.
 - Public information already intentionally committed to the repository.
 
@@ -62,6 +62,6 @@ test host paths and isolate config, state, and data from your own.
 cargo run -- doctor --no-update-check
 cargo run -- skills --json
 cargo run -- bootstrap --dry-run
-cargo run -- install my-skills --host hermes --dry-run
+cargo run -- install my-skills --host codex --dry-run
 cargo run -- install my-skills --host agy --dry-run
 ```

@@ -99,7 +99,7 @@ pub struct Manifest {
     /// Explicit CLI `--mode` override, which takes precedence over target and default modes.
     pub cli_install_mode: Option<InstallMode>,
     pub audit: AuditSettings,
-    /// Every built-in host plus every declared target, sorted by name.
+    /// Built-in hosts and declared targets with paths, sorted by name.
     pub targets: BTreeMap<String, Target>,
     pub skills: BTreeMap<String, Skill>,
 }
@@ -139,8 +139,8 @@ pub struct CliOverrides {
 /// Load `root/my-skills.toml` plus the optional local file.
 ///
 /// Errors (as `Error::Manifest`) mirror v0.4.1 messages: missing manifest,
-/// invalid TOML (with file path), target without a path and no built-in
-/// default.
+/// invalid TOML (with file path), enabled target without a path or built-in
+/// default. Disabled targets without a path or built-in default are omitted.
 pub fn load_manifest(root: &Path, cli: &CliOverrides) -> Result<Manifest> {
     let main_path = root.join(MANIFEST_FILE);
     let main = read_table(&main_path)?
@@ -312,6 +312,22 @@ fn resolve_targets(
     for name in names {
         let values = target_values.table(name);
         let host = hosts::get_host(name);
+        let enabled = values.boolean("enabled", host.is_none_or(|host| host.default_enabled));
+        let default_path = host.map(|host| Path::new(host.default_user_path));
+        let path = match cli.target_paths.get(name) {
+            Some(path) if !path.as_os_str().is_empty() => Some(path.as_path()),
+            // An explicitly empty CLI path falls back to the built-in default.
+            Some(_) => default_path,
+            None => values
+                .string("path")
+                .filter(|path| !path.is_empty())
+                .map(Path::new)
+                .or(default_path),
+        };
+        if path.is_none() && !enabled {
+            continue;
+        }
+
         let target_mode = values
             .local
             .and_then(|table| table.get("install_mode"))
@@ -335,31 +351,16 @@ fn resolve_targets(
                 }
             }),
         };
-        let path = match cli.target_paths.get(name) {
-            Some(path) if !path.as_os_str().is_empty() => expand_os_path(path),
-            override_path => {
-                // An explicitly empty CLI path takes the same fallback as an empty TOML path.
-                let configured = if override_path.is_none() {
-                    values.string("path")
-                } else {
-                    None
-                };
-                let value = configured
-                    .filter(|path| !path.is_empty())
-                    .or_else(|| host.map(|host| host.default_user_path))
-                    .ok_or_else(|| {
-                        Error::Manifest(format!(
-                            "target '{name}' has no path and no built-in default"
-                        ))
-                    })?;
-                expand_path(value)
-            }
-        };
+        let path = path.ok_or_else(|| {
+            Error::Manifest(format!(
+                "target '{name}' has no path and no built-in default"
+            ))
+        })?;
         let target = Target {
             name: name.into(),
-            enabled: values.boolean("enabled", host.is_none_or(|host| host.default_enabled)),
+            enabled,
             scope: values.string("scope").unwrap_or("user").into(),
-            path,
+            path: expand_os_path(path),
             install_mode,
         };
         targets.insert(name.into(), target);

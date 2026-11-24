@@ -108,7 +108,6 @@ clone한 폴더에서 `my-skills hooks install`을 한 번 실행하세요. 그�
 | Claude Code | `~/.claude/skills` | 켜짐 |
 | Codex | `~/.agents/skills` | 켜짐 |
 | Antigravity CLI(`agy`) | `~/.gemini/config/skills` | 꺼짐. `my-skills.toml`에서 켭니다 |
-| Hermes | `~/.hermes/skills` | 꺼짐 |
 
 Windows에서는 링크 대신 디렉터리 junction을 씁니다. Antigravity CLI는 junction을
 인식하지 못하므로 Windows에서는 복사로 연결합니다([방법](docs/reference.md#antigravity-cli-agy)).

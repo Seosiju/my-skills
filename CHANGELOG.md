@@ -7,8 +7,12 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ## [Unreleased]
 
-- New registries disable Hermes by default. You can still install to Hermes
-  explicitly with `--host hermes`.
+### Removed
+
+- Hermes is no longer a supported host. The built-in hosts are Claude Code,
+  Codex, and Antigravity CLI. Old registries keep loading: a `[targets.hermes]`
+  table with a `path` becomes an ordinary custom target, a disabled one without
+  a path is ignored, and existing Hermes copies are left in place.
 
 ## [1.0.2] - 2026-11-24
 

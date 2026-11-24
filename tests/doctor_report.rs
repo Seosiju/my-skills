@@ -386,7 +386,7 @@ fn doctor_connection_summary_and_full_validation_find_different_problems() {
     let fixture = Fixture::isolated();
     fixture.init();
     fixture.write("my-skills.toml", &format!(
-        "{REGISTERED}[targets.claude]\nenabled = false\n[targets.hermes]\nenabled = false\n[targets.codex]\npath = \"~/target\"\n[skills.broken]\nhosts = [\"codex\"]\n"
+        "{REGISTERED}[targets.claude]\nenabled = false\n[targets.agy]\nenabled = false\n[targets.codex]\npath = \"~/target\"\n[skills.broken]\nhosts = [\"codex\"]\n"
     ));
     fixture.write("skills/example/SKILL.md", &skill("example"));
     fixture.write("skills/broken/SKILL.md", "pre-existing invalid content\n");

@@ -22,7 +22,7 @@ const SEED_SKILLS: [(&str, bool); 3] = [
     ("my-skills", true),
     ("my-jira", false),
 ];
-const SEED_HOSTS: &str = r#"["claude", "codex", "hermes", "agy"]"#;
+const SEED_HOSTS: &str = r#"["claude", "codex", "agy"]"#;
 // Record the package version that supplied the embedded seeds.
 const SEED_REVISION: &str = env!("CARGO_PKG_VERSION");
 
@@ -67,11 +67,6 @@ path = "~/.claude/skills"
 enabled = true
 scope = "user"
 path = "~/.agents/skills"
-
-[targets.hermes]
-enabled = false
-scope = "user"
-path = "~/.hermes/skills"
 
 [targets.agy]
 enabled = false

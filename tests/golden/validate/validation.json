@@ -12,10 +12,6 @@
       "errors": [],
       "warnings": []
     },
-    "hermes": {
-      "errors": [],
-      "warnings": []
-    },
     "standard": {
       "errors": [],
       "warnings": []
@@ -34,10 +30,6 @@
       "errors": [],
       "warnings": []
     },
-    "hermes": {
-      "errors": [],
-      "warnings": []
-    },
     "standard": {
       "errors": [],
       "warnings": []
@@ -53,10 +45,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [],
       "warnings": []
     },
@@ -84,12 +72,6 @@
         "codex may ignore unsupported frontmatter fields: x-note"
       ]
     },
-    "hermes": {
-      "errors": [],
-      "warnings": [
-        "hermes may ignore unsupported frontmatter fields: x-note"
-      ]
-    },
     "standard": {
       "errors": [],
       "warnings": []
@@ -115,13 +97,6 @@
       "warnings": [
         "'allowed-tools' has inconsistent host support and may be ignored",
         "codex may ignore unsupported frontmatter fields: allowed_tools"
-      ]
-    },
-    "hermes": {
-      "errors": [],
-      "warnings": [
-        "'allowed-tools' has inconsistent host support and may be ignored",
-        "hermes may ignore unsupported frontmatter fields: allowed_tools"
       ]
     },
     "standard": {
@@ -153,13 +128,6 @@
         "codex may ignore unsupported frontmatter fields: a-extra, allowed-tools, allowed_tools, z-extra"
       ]
     },
-    "hermes": {
-      "errors": [],
-      "warnings": [
-        "'allowed-tools' has inconsistent host support and may be ignored",
-        "hermes may ignore unsupported frontmatter fields: a-extra, allowed-tools, allowed_tools, z-extra"
-      ]
-    },
     "standard": {
       "errors": [],
       "warnings": [
@@ -181,12 +149,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "malformed YAML in frontmatter: while scanning a double-quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"oops\\q\"\n                 ^\nfound unknown escape character 'q'\n  in \"<unicode string>\", line 2, column 20:\n    description: \"oops\\q\"\n                       ^"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "malformed YAML in frontmatter: while scanning a double-quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"oops\\q\"\n                 ^\nfound unknown escape character 'q'\n  in \"<unicode string>\", line 2, column 20:\n    description: \"oops\\q\"\n                       ^"
       ],
@@ -221,13 +183,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "name must be lowercase alphanumeric words separated by single hyphens (no leading, trailing, or consecutive hyphens)",
-        "directory name 'bad-name' does not match frontmatter name 'Bad--Name'"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "name must be lowercase alphanumeric words separated by single hyphens (no leading, trailing, or consecutive hyphens)",
@@ -250,12 +205,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "directory name 'big-integer' does not match frontmatter name '295147905179352825856'"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "directory name 'big-integer' does not match frontmatter name '295147905179352825856'"
       ],
@@ -290,13 +239,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "name must be lowercase alphanumeric words separated by single hyphens (no leading, trailing, or consecutive hyphens)",
-        "directory name 'binary-name' does not match frontmatter name 'b\"Hi'\\\\u\\x00\\xc3\\xa9\"'"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "name must be lowercase alphanumeric words separated by single hyphens (no leading, trailing, or consecutive hyphens)",
@@ -315,10 +257,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [],
       "warnings": []
     },
@@ -343,13 +281,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "frontmatter is missing required field 'name'",
-        "frontmatter is missing required field 'description'"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "frontmatter is missing required field 'name'",
         "frontmatter is missing required field 'description'"
@@ -386,13 +317,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "name must be lowercase alphanumeric words separated by single hyphens (no leading, trailing, or consecutive hyphens)",
-        "directory name 'bool-true' does not match frontmatter name 'True'"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "name must be lowercase alphanumeric words separated by single hyphens (no leading, trailing, or consecutive hyphens)",
@@ -415,12 +339,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "frontmatter must be a YAML mapping, got bool"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "frontmatter must be a YAML mapping, got bool"
       ],
@@ -452,12 +370,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "frontmatter must be a YAML mapping, got date"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "frontmatter must be a YAML mapping, got date"
@@ -484,12 +396,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "directory name 'date-name' does not match frontmatter name '2020-01-02'"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "directory name 'date-name' does not match frontmatter name '2020-01-02'"
@@ -511,12 +417,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "frontmatter must be a YAML mapping, got datetime"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "frontmatter must be a YAML mapping, got datetime"
       ],
@@ -551,13 +451,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "name must be lowercase alphanumeric words separated by single hyphens (no leading, trailing, or consecutive hyphens)",
-        "directory name 'datetime-name' does not match frontmatter name '2020-01-02 03:04:05.120000-04:30'"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "name must be lowercase alphanumeric words separated by single hyphens (no leading, trailing, or consecutive hyphens)",
@@ -585,12 +478,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "malformed YAML in frontmatter: found duplicate anchor 'meta'; first occurrence\n  in \"<unicode string>\", line 1, column 7:\n    name: &meta duplicate-anchor\n          ^\nsecond occurrence\n  in \"<unicode string>\", line 2, column 14:\n    description: &meta test\n                 ^"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "malformed YAML in frontmatter: found duplicate anchor 'meta'; first occurrence\n  in \"<unicode string>\", line 1, column 7:\n    name: &meta duplicate-anchor\n          ^\nsecond occurrence\n  in \"<unicode string>\", line 2, column 14:\n    description: &meta test\n                 ^"
@@ -608,10 +495,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [],
       "warnings": []
     },
@@ -636,13 +519,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "frontmatter is missing required field 'name'",
-        "frontmatter is missing required field 'description'"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "frontmatter is missing required field 'name'",
         "frontmatter is missing required field 'description'"
@@ -679,13 +555,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "frontmatter is missing required field 'name'",
-        "frontmatter is missing required field 'description'"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "frontmatter is missing required field 'name'",
@@ -708,12 +577,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "file is empty: no frontmatter found"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "file is empty: no frontmatter found"
       ],
@@ -748,13 +611,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "frontmatter is missing required field 'name'",
-        "frontmatter is missing required field 'description'"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "frontmatter is missing required field 'name'",
@@ -782,12 +638,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "frontmatter must be a YAML mapping, got float"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "frontmatter must be a YAML mapping, got float"
@@ -805,10 +655,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [],
       "warnings": []
     },
@@ -834,12 +680,6 @@
       "errors": [],
       "warnings": [
         "codex may ignore unsupported frontmatter fields: metadata"
-      ]
-    },
-    "hermes": {
-      "errors": [],
-      "warnings": [
-        "hermes may ignore unsupported frontmatter fields: metadata"
       ]
     },
     "standard": {
@@ -872,14 +712,6 @@
         "codex may ignore unsupported frontmatter fields: metadata"
       ]
     },
-    "hermes": {
-      "errors": [
-        "hermes description exceeds 768 characters"
-      ],
-      "warnings": [
-        "hermes may ignore unsupported frontmatter fields: metadata"
-      ]
-    },
     "standard": {
       "errors": [],
       "warnings": []
@@ -899,12 +731,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "malformed YAML in frontmatter: while scanning a block scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: |bogus\n                 ^\nexpected chomping or indentation indicators, but found 'b'\n  in \"<unicode string>\", line 2, column 15:\n    description: |bogus\n                  ^"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "malformed YAML in frontmatter: while scanning a block scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: |bogus\n                 ^\nexpected chomping or indentation indicators, but found 'b'\n  in \"<unicode string>\", line 2, column 15:\n    description: |bogus\n                  ^"
       ],
@@ -936,12 +762,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "malformed YAML in frontmatter: while scanning a double-quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"bad\\u12z9\"\n                 ^\nexpected escape sequence of 4 hexadecimal numbers, but found 'z'\n  in \"<unicode string>\", line 2, column 20:\n    description: \"bad\\u12z9\"\n                       ^"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "malformed YAML in frontmatter: while scanning a double-quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"bad\\u12z9\"\n                 ^\nexpected escape sequence of 4 hexadecimal numbers, but found 'z'\n  in \"<unicode string>\", line 2, column 20:\n    description: \"bad\\u12z9\"\n                       ^"
@@ -963,12 +783,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "malformed YAML in frontmatter: while parsing a block mapping\n  in \"<unicode string>\", line 1, column 1:\n    name: invalid-indentation\n    ^\nexpected <block end>, but found '<block mapping start>'\n  in \"<unicode string>\", line 3, column 3:\n      extra: x\n      ^"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "malformed YAML in frontmatter: while parsing a block mapping\n  in \"<unicode string>\", line 1, column 1:\n    name: invalid-indentation\n    ^\nexpected <block end>, but found '<block mapping start>'\n  in \"<unicode string>\", line 3, column 3:\n      extra: x\n      ^"
       ],
@@ -1000,12 +814,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "malformed YAML in frontmatter: while constructing a mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {<<: [x]}\n                 ^\nexpected a mapping for merging, but found scalar\n  in \"<unicode string>\", line 2, column 20:\n    description: {<<: [x]}\n                       ^"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "malformed YAML in frontmatter: while constructing a mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {<<: [x]}\n                 ^\nexpected a mapping for merging, but found scalar\n  in \"<unicode string>\", line 2, column 20:\n    description: {<<: [x]}\n                       ^"
@@ -1027,12 +835,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "malformed YAML in frontmatter: while scanning for the next token\nfound character '@' that cannot start any token\n  in \"<unicode string>\", line 2, column 14:\n    description: @oops\n                 ^"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "malformed YAML in frontmatter: while scanning for the next token\nfound character '@' that cannot start any token\n  in \"<unicode string>\", line 2, column 14:\n    description: @oops\n                 ^"
       ],
@@ -1097,23 +899,6 @@
         "'allowed-tools' has inconsistent host support and may be ignored"
       ]
     },
-    "hermes": {
-      "errors": [
-        "name must be lowercase alphanumeric words separated by single hyphens (no leading, trailing, or consecutive hyphens)",
-        "directory name 'links-fail' does not match frontmatter name 'Wrong'",
-        "frontmatter is missing required field 'description'",
-        "referenced supporting file not found: missing.txt?raw=1#anchor",
-        "referenced supporting file not found: missing.png",
-        "referenced supporting file not found: missing.py",
-        "referenced supporting file not found: assets/(nested",
-        "referenced supporting file not found: missing.txt \"title\"",
-        "referenced supporting file not found: missing.txt",
-        "referenced supporting file not found: missing\nfile"
-      ],
-      "warnings": [
-        "'allowed-tools' has inconsistent host support and may be ignored"
-      ]
-    },
     "standard": {
       "errors": [
         "name must be lowercase alphanumeric words separated by single hyphens (no leading, trailing, or consecutive hyphens)",
@@ -1145,10 +930,6 @@
       "errors": [],
       "warnings": []
     },
-    "hermes": {
-      "errors": [],
-      "warnings": []
-    },
     "standard": {
       "errors": [],
       "warnings": []
@@ -1168,12 +949,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "malformed YAML in frontmatter: while scanning a quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"oops\n                 ^\nfound unexpected end of stream\n  in \"<unicode string>\", line 2, column 19:\n    description: \"oops\n                      ^"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "malformed YAML in frontmatter: while scanning a quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"oops\n                 ^\nfound unexpected end of stream\n  in \"<unicode string>\", line 2, column 19:\n    description: \"oops\n                      ^"
       ],
@@ -1205,12 +980,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "malformed YAML in frontmatter: mapping values are not allowed here\n  in \"<unicode string>\", line 2, column 17:\n    description: key: value\n                    ^"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "malformed YAML in frontmatter: mapping values are not allowed here\n  in \"<unicode string>\", line 2, column 17:\n    description: key: value\n                    ^"
@@ -1237,12 +1006,6 @@
         "codex may ignore unsupported frontmatter fields: first, second"
       ]
     },
-    "hermes": {
-      "errors": [],
-      "warnings": [
-        "hermes may ignore unsupported frontmatter fields: first, second"
-      ]
-    },
     "standard": {
       "errors": [],
       "warnings": []
@@ -1262,12 +1025,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "malformed YAML in frontmatter: found undefined alias 'unknown'\n  in \"<unicode string>\", line 2, column 14:\n    description: *unknown\n                 ^"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "malformed YAML in frontmatter: found undefined alias 'unknown'\n  in \"<unicode string>\", line 2, column 14:\n    description: *unknown\n                 ^"
       ],
@@ -1299,12 +1056,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "malformed YAML in frontmatter: while scanning a simple key\n  in \"<unicode string>\", line 2, column 1:\n    description\n    ^\ncould not find expected ':'\n  in \"<unicode string>\", line 2, column 12:\n    description\n               ^"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "malformed YAML in frontmatter: while scanning a simple key\n  in \"<unicode string>\", line 2, column 1:\n    description\n    ^\ncould not find expected ':'\n  in \"<unicode string>\", line 2, column 12:\n    description\n               ^"
@@ -1326,12 +1077,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "frontmatter is missing required field 'description'"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "frontmatter is missing required field 'description'"
       ],
@@ -1363,12 +1108,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "SKILL.md not found"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "SKILL.md not found"
@@ -1390,12 +1129,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "malformed YAML in frontmatter: while parsing a flow mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {one: two\n                 ^\nexpected ',' or '}', but got '<stream end>'\n  in \"<unicode string>\", line 2, column 23:\n    description: {one: two\n                          ^"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "malformed YAML in frontmatter: while parsing a flow mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {one: two\n                 ^\nexpected ',' or '}', but got '<stream end>'\n  in \"<unicode string>\", line 2, column 23:\n    description: {one: two\n                          ^"
       ],
@@ -1427,12 +1160,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "malformed YAML in frontmatter: while parsing a flow sequence\n  in \"<unicode string>\", line 2, column 14:\n    description: [one\n                 ^\nexpected ',' or ']', but got '<stream end>'\n  in \"<unicode string>\", line 2, column 18:\n    description: [one\n                     ^"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "malformed YAML in frontmatter: while parsing a flow sequence\n  in \"<unicode string>\", line 2, column 14:\n    description: [one\n                 ^\nexpected ',' or ']', but got '<stream end>'\n  in \"<unicode string>\", line 2, column 18:\n    description: [one\n                     ^"
@@ -1454,12 +1181,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "frontmatter is missing required field 'name'"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "frontmatter is missing required field 'name'"
       ],
@@ -1491,12 +1212,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "referenced supporting file not found: scripts/missing.py"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "referenced supporting file not found: scripts/missing.py"
@@ -1523,12 +1238,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "malformed YAML in frontmatter: while scanning a quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"unterminated\n                 ^\nfound unexpected end of stream\n  in \"<unicode string>\", line 3, column 10:\n    next: key\n             ^"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "malformed YAML in frontmatter: while scanning a quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"unterminated\n                 ^\nfound unexpected end of stream\n  in \"<unicode string>\", line 3, column 10:\n    next: key\n             ^"
@@ -1550,12 +1259,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "malformed YAML in frontmatter: expected a single document in the stream\n  in \"<unicode string>\", line 1, column 1:\n    name: multiple-documents\n    ^\nbut found another document\n  in \"<unicode string>\", line 4, column 1:\n    --- {name: x}\n    ^"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "malformed YAML in frontmatter: expected a single document in the stream\n  in \"<unicode string>\", line 1, column 1:\n    name: multiple-documents\n    ^\nbut found another document\n  in \"<unicode string>\", line 4, column 1:\n    --- {name: x}\n    ^"
       ],
@@ -1593,14 +1296,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "name exceeds 64 characters",
-        "name must be lowercase alphanumeric words separated by single hyphens (no leading, trailing, or consecutive hyphens)",
-        "directory name 'name-limit' does not match frontmatter name 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "name exceeds 64 characters",
@@ -1624,12 +1319,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "directory name 'name-mismatch' does not match frontmatter name 'different-name'"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "directory name 'name-mismatch' does not match frontmatter name 'different-name'"
       ],
@@ -1667,14 +1356,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "name exceeds 64 characters",
-        "name must be lowercase alphanumeric words separated by single hyphens (no leading, trailing, or consecutive hyphens)",
-        "directory name 'nested-name' does not match frontmatter name '{'z': [True, 83, 1e-08, '2020-01-02'], 'a': [datetime.date(2020, 1, 2)]}'"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "name exceeds 64 characters",
@@ -1703,12 +1384,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "missing opening '---': frontmatter must start on the first line"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "missing opening '---': frontmatter must start on the first line"
@@ -1730,12 +1405,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "frontmatter must be a YAML mapping, got list"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "frontmatter must be a YAML mapping, got list"
       ],
@@ -1770,13 +1439,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "frontmatter is missing required field 'name'",
-        "frontmatter is missing required field 'description'"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "frontmatter is missing required field 'name'",
@@ -1799,12 +1461,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "frontmatter must be a YAML mapping, got int"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "frontmatter must be a YAML mapping, got int"
       ],
@@ -1839,13 +1495,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "frontmatter is missing required field 'name'",
-        "frontmatter is missing required field 'description'"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "frontmatter is missing required field 'name'",
@@ -1864,10 +1513,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [],
       "warnings": []
     },
@@ -1892,13 +1537,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "name must be lowercase alphanumeric words separated by single hyphens (no leading, trailing, or consecutive hyphens)",
-        "directory name 'ordered-pairs-name' does not match frontmatter name '[('a', 'b'), ('a', 'c')]'"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "name must be lowercase alphanumeric words separated by single hyphens (no leading, trailing, or consecutive hyphens)",
         "directory name 'ordered-pairs-name' does not match frontmatter name '[('a', 'b'), ('a', 'c')]'"
@@ -1932,12 +1570,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "frontmatter must be a YAML mapping, got set"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "frontmatter must be a YAML mapping, got set"
@@ -1965,15 +1597,6 @@
       ]
     },
     "codex": {
-      "errors": [
-        "frontmatter is missing required field 'description'",
-        "referenced supporting file not found: missing.txt"
-      ],
-      "warnings": [
-        "'allowed-tools' has inconsistent host support and may be ignored"
-      ]
-    },
-    "hermes": {
       "errors": [
         "frontmatter is missing required field 'description'",
         "referenced supporting file not found: missing.txt"
@@ -2017,14 +1640,6 @@
         "codex may ignore unsupported frontmatter fields: metadata"
       ]
     },
-    "hermes": {
-      "errors": [
-        "hermes description exceeds 768 characters"
-      ],
-      "warnings": [
-        "hermes may ignore unsupported frontmatter fields: metadata"
-      ]
-    },
     "standard": {
       "errors": [],
       "warnings": []
@@ -2044,12 +1659,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "description exceeds 1024 characters (1025)"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "description exceeds 1024 characters (1025)"
       ],
@@ -2084,13 +1693,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "name must be lowercase alphanumeric words separated by single hyphens (no leading, trailing, or consecutive hyphens)",
-        "directory name 'tagged-scalars' does not match frontmatter name 'True'"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "name must be lowercase alphanumeric words separated by single hyphens (no leading, trailing, or consecutive hyphens)",
@@ -2109,10 +1711,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [],
       "warnings": []
     },
@@ -2135,12 +1733,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "malformed YAML in frontmatter: while constructing a mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {[]: x}\n                 ^\nfound unhashable key\n  in \"<unicode string>\", line 2, column 15:\n    description: {[]: x}\n                  ^"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "malformed YAML in frontmatter: while constructing a mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {[]: x}\n                 ^\nfound unhashable key\n  in \"<unicode string>\", line 2, column 15:\n    description: {[]: x}\n                  ^"
       ],
@@ -2172,12 +1764,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "malformed YAML in frontmatter: could not determine a constructor for the tag '!custom'\n  in \"<unicode string>\", line 2, column 14:\n    description: !custom text\n                 ^"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "malformed YAML in frontmatter: could not determine a constructor for the tag '!custom'\n  in \"<unicode string>\", line 2, column 14:\n    description: !custom text\n                 ^"
@@ -2204,12 +1790,6 @@
       ],
       "warnings": []
     },
-    "hermes": {
-      "errors": [
-        "unterminated frontmatter: no closing '---' delimiter found"
-      ],
-      "warnings": []
-    },
     "standard": {
       "errors": [
         "unterminated frontmatter: no closing '---' delimiter found"
@@ -2231,12 +1811,6 @@
       "warnings": []
     },
     "codex": {
-      "errors": [
-        "malformed YAML in frontmatter: could not determine a constructor for the tag 'tag:yaml.org,2002:value'\n  in \"<unicode string>\", line 2, column 14:\n    description: =\n                 ^"
-      ],
-      "warnings": []
-    },
-    "hermes": {
       "errors": [
         "malformed YAML in frontmatter: could not determine a constructor for the tag 'tag:yaml.org,2002:value'\n  in \"<unicode string>\", line 2, column 14:\n    description: =\n                 ^"
       ],

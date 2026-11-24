@@ -70,7 +70,7 @@ impl Env {
             ("claude", true),
             ("codex", true),
             ("agy", true),
-            ("hermes", false),
+            ("custom", false),
         ] {
             toml.push_str(&format!(
                 "\n[targets.{host}]\nenabled = {enabled}\npath = '{}'\n",

@@ -111,7 +111,6 @@ each machine, and run `my-skills hooks install` once in each clone. After that:
 | Claude Code | `~/.claude/skills` | on |
 | Codex | `~/.agents/skills` | on |
 | Antigravity CLI (`agy`) | `~/.gemini/config/skills` | off, turn it on in `my-skills.toml` |
-| Hermes | `~/.hermes/skills` | off |
 
 On Windows, links are directory junctions. Antigravity CLI doesn't see
 junctions, so connect it with copies there
