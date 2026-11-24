@@ -40,9 +40,7 @@ pub const STATE_BUSY_PREFIX: &str = "state is busy: ";
 /// Match the originating diagnostics here so existing human output stays intact.
 fn config_error_details(message: &str) -> (&'static str, Option<&'static str>) {
     match message {
-        "install --json requires --dry-run"
-        | "sync --json requires --dry-run"
-        | "sync --json is not supported with --check; use --dry-run --json" => {
+        "sync --json is not supported with --check; use --dry-run --json" => {
             ("usage", Some("Use --dry-run --json to request a plan."))
         }
         "share requires a skill name unless --plan is used"
