@@ -215,6 +215,20 @@ fn different_active_root(resolution: &RootResolution) -> Option<&Path> {
         .filter(|active| *active != resolve(&resolution.root))
 }
 
+/// Fail fast on a `--root` that is not a registry. `cli::run` calls it before
+/// dispatch so every command reports the same usage error.
+pub fn check_explicit_root() -> Result<()> {
+    match explicit_root() {
+        Some(path) if !is_root(&resolve(&manifest::expand_os_path(path))) => {
+            Err(Error::Manifest(format!(
+                "--root {} does not contain {MANIFEST_FILE}",
+                paths::display_path(path)
+            )))
+        }
+        _ => Ok(()),
+    }
+}
+
 fn discover_root(start: Option<&Path>) -> Result<RootResolution> {
     if let Some(path) = explicit_root() {
         let root = resolve(&manifest::expand_os_path(path));

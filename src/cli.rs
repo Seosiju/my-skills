@@ -485,6 +485,10 @@ pub struct HooksRunArgs {
     pub git_args: Vec<String>,
 }
 
+/// `set-root` and `init-registry` take the registry path as their argument;
+/// `--root` never saves anything, so the two cannot be combined.
+pub const ROOT_WITH_SET_ROOT: &str = "--root cannot be combined with set-root or init-registry; pass the registry path as their argument";
+
 impl Command {
     /// True when the user asked for machine-readable output, so errors should
     /// be machine-readable too.
@@ -505,8 +509,16 @@ impl Command {
 }
 
 pub fn run(cli: Cli) -> ExitCode {
-    crate::registry::root::set_explicit_root(cli.root);
     commands::set_json_errors(cli.command.wants_json());
+    if cli.root.is_some() && matches!(cli.command, Command::SetRoot(_) | Command::InitRegistry(_)) {
+        return commands::config_error(ROOT_WITH_SET_ROOT);
+    }
+    crate::registry::root::set_explicit_root(cli.root);
+    // A wrong --root is a usage error for every command, including ones that
+    // never resolve the registry (update, data-path).
+    if let Err(error) = crate::registry::root::check_explicit_root() {
+        return commands::config_error(error);
+    }
     match cli.command {
         Command::Validate(args) => commands::inspect::validate(&args),
         Command::Audit(args) => commands::inspect::audit(&args),

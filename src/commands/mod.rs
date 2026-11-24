@@ -44,10 +44,17 @@ fn config_error_details(message: &str) -> (&'static str, Option<&'static str>) {
         | "share requires exactly one of --enable or --disable"
         | "uninstall requires a skill name"
         | "enable requires a skill name"
-        | "disable requires a skill name" => ("usage", None),
+        | "disable requires a skill name"
+        | crate::cli::ROOT_WITH_SET_ROOT => ("usage", None),
+        m if m.starts_with("--root ") && m.ends_with(" does not contain my-skills.toml") => (
+            "usage",
+            Some("Pass --root a registry folder that contains my-skills.toml."),
+        ),
         m if m.starts_with("refusing to write to cwd registry ") => (
             "inactive_registry",
-            Some("Run from the active registry or select a registry with my-skills set-root."),
+            Some(
+                "Run from the active registry, pass --root <path>, or switch with my-skills set-root.",
+            ),
         ),
         m if m.starts_with("unknown skill: ") || m.starts_with("unknown skill(s): ") => {
             ("unknown_skill", None)
@@ -87,16 +94,4 @@ pub fn set_json_errors(on: bool) {
 /// True when errors should also be printed as JSON on stdout.
 pub fn json_errors() -> bool {
     JSON_ERRORS.load(Ordering::Relaxed)
-}
-
-/// Wave 14 contract shim: one optional skill and no `--group` until the
-/// selection stream (A) implements several skills and groups.
-pub(crate) fn one_skill<'a>(
-    skills: &'a [String],
-    groups: &[String],
-) -> std::result::Result<Option<&'a str>, String> {
-    if skills.len() > 1 || !groups.is_empty() {
-        return Err("several skills and --group are not implemented yet".into());
-    }
-    Ok(skills.first().map(String::as_str))
 }
