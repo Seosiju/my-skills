@@ -394,6 +394,9 @@ fn print_hint(name: &str, enabled: bool) {
 const NEW_DESCRIPTION_PLACEHOLDER: &str =
     "TODO: replace this with what the skill does and when an agent should use it.";
 const NEW_MAX_DESCRIPTION: usize = 1024;
+/// Every `--description` validation message starts with this, so the JSON error
+/// maps to `usage`.
+pub const NEW_DESCRIPTION_ERROR: &str = "invalid --description: ";
 
 #[derive(Serialize)]
 struct NewOutput {
@@ -433,13 +436,17 @@ fn create_new_skill(args: &NewArgs) -> Result<()> {
     }
     let description = match args.description.as_deref().map(str::trim) {
         None => NEW_DESCRIPTION_PLACEHOLDER,
-        Some("") => return Err(Error::Manifest("--description must not be empty".into())),
+        Some("") => {
+            return Err(Error::Manifest(format!(
+                "{NEW_DESCRIPTION_ERROR}must not be empty"
+            )));
+        }
         Some(text) => text,
     };
     let length = description.chars().count();
     if length > NEW_MAX_DESCRIPTION {
         return Err(Error::Manifest(format!(
-            "description exceeds {NEW_MAX_DESCRIPTION} characters ({length})"
+            "{NEW_DESCRIPTION_ERROR}exceeds {NEW_MAX_DESCRIPTION} characters ({length})"
         )));
     }
 
@@ -456,6 +463,10 @@ fn create_new_skill(args: &NewArgs) -> Result<()> {
     } else {
         Some(edit::EditLock::acquire(&manifest_path)?)
     };
+    if !args.dry_run {
+        // `new` takes no state lock, so recheck the cache it observed.
+        resolution.recheck_write()?;
+    }
     let manifest = manifest::load_manifest(&resolution.root, &CliOverrides::default())?;
     let canonical_dir = manifest.skill_dir(name);
     let canonical_path = canonical_dir.join("SKILL.md");
@@ -487,6 +498,30 @@ fn create_new_skill(args: &NewArgs) -> Result<()> {
         }
     }
     share::ensure_outside_hosts(&manifest_path, share::target_paths(&manifest))?;
+    share::ensure_outside_hosts(&canonical_dir, share::target_paths(&manifest))?;
+    // The draft must pass `validate` for every host it can reach: the named
+    // hosts, or else the enabled targets.
+    let reachable: Vec<&str> = if hosts.is_empty() {
+        manifest
+            .targets
+            .values()
+            .filter(|target| target.enabled)
+            .map(|target| target.name.as_str())
+            .collect()
+    } else {
+        hosts.iter().map(String::as_str).collect()
+    };
+    if let Some(config) = reachable
+        .iter()
+        .filter_map(|host| crate::drive::hosts::get_host(host))
+        .min_by_key(|config| config.description_max_chars)
+        .filter(|config| length > config.description_max_chars)
+    {
+        return Err(Error::Manifest(format!(
+            "{NEW_DESCRIPTION_ERROR}exceeds {} characters for {} ({length})",
+            config.description_max_chars, config.name
+        )));
+    }
 
     let canonical_dir_text = display_path(&canonical_dir);
     let canonical_path_text = display_path(&canonical_path);
@@ -516,9 +551,9 @@ fn create_new_skill(args: &NewArgs) -> Result<()> {
                     .commit()
             },
         )?;
-        if resolution.would_cache() {
-            let _ = root::cache_repo_root(&resolution.root);
-        }
+        // Conditional on the cache observed at resolution (the other writers'
+        // rule): a newer `set-root` is never overwritten.
+        resolution.remember();
     }
 
     if args.json {
@@ -578,7 +613,9 @@ fn new_skill_text(name: &str, description: &str) -> String {
 }
 
 /// Create the directory and SKILL.md, then run `register`. Any failure removes
-/// only what this call created (SKILL.md and its directory, never `skills/`).
+/// only what this call created (SKILL.md and its directory, never `skills/`
+/// and never a file someone else put there). A rollback that cannot finish is
+/// reported with the original error.
 fn materialize_skill(
     dir: &Path,
     skill_md: &Path,
@@ -590,22 +627,41 @@ fn materialize_skill(
     }
     // Fails when anything appeared at `dir` since the checks.
     std::fs::create_dir(dir).map_err(|err| Error::io(dir, err))?;
-    let result = (|| {
+    let mut created_file = false;
+    let write = || -> Result<()> {
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(skill_md)
             .map_err(|err| Error::io(skill_md, err))?;
+        created_file = true;
         file.write_all(edit::native_text(text).as_bytes())
             .map_err(|err| Error::io(skill_md, err))?;
         drop(file);
         register()
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(skill_md);
-        let _ = std::fs::remove_dir(dir);
+    };
+    let Err(error) = write() else {
+        return Ok(());
+    };
+    let mut problems = Vec::new();
+    if created_file && let Err(err) = std::fs::remove_file(skill_md) {
+        problems.push(format!("{}: {err}", display_path(skill_md)));
     }
-    result
+    // A directory that now holds someone else's files is theirs to keep.
+    let occupied = std::fs::read_dir(dir).is_ok_and(|mut entries| entries.next().is_some());
+    if (created_file || !occupied)
+        && let Err(err) = std::fs::remove_dir(dir)
+    {
+        problems.push(format!("{}: {err}", display_path(dir)));
+    }
+    if problems.is_empty() {
+        Err(error)
+    } else {
+        Err(Error::Manifest(format!(
+            "{error}; rollback failed, remove by hand: {}",
+            problems.join("; ")
+        )))
+    }
 }
 
 #[cfg(test)]
@@ -642,6 +698,44 @@ mod new_tests {
         assert_eq!(
             std::fs::read_to_string(dir.join("SKILL.md")).unwrap(),
             "mine"
+        );
+    }
+}
+
+#[cfg(test)]
+mod rollback_tests {
+    use super::*;
+
+    #[test]
+    fn a_skill_file_someone_else_created_is_never_removed() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("skills/draft");
+        // The file already exists, so `create_new` fails after our directory
+        // was made.
+        let theirs = temp.path().join("theirs.md");
+        std::fs::write(&theirs, "theirs").unwrap();
+        let result = materialize_skill(&dir, &theirs, "text", || Ok(()));
+        assert!(result.is_err());
+        assert_eq!(std::fs::read_to_string(&theirs).unwrap(), "theirs");
+        assert!(!dir.exists(), "the empty directory we made is removed");
+    }
+
+    #[test]
+    fn a_directory_holding_foreign_files_is_kept_and_the_failure_is_reported() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("skills/draft");
+        let skill_md = dir.join("SKILL.md");
+        let result = materialize_skill(&dir, &skill_md, "text", || {
+            std::fs::write(dir.join("theirs.txt"), "theirs").unwrap();
+            Err(Error::Manifest("registration failed".into()))
+        });
+        let message = result.unwrap_err().to_string();
+        assert!(message.contains("registration failed"), "{message}");
+        assert!(message.contains("rollback failed"), "{message}");
+        assert!(!skill_md.exists(), "our own file is removed");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("theirs.txt")).unwrap(),
+            "theirs"
         );
     }
 }
