@@ -312,7 +312,14 @@ cargo run -- --help
 - 레지스트리 manifest에는 아직 `install_mode = "copy"`가 명시돼 있다. 그래서 Windows에서는 `my-skills.local.toml`로 link를 지정한다(runbook 4.2).
 - hook은 PATH의 `my-skills`를 먼저 찾는다. Python 0.4.x가 앞에 있으면 hook이 잘못 동작한다(runbook 3.5, 4.1). 맥 전환(G)에도 같은 주의가 필요하다.
 - `dev`에는 Python 테스트 모음이 없다. Windows에서는 `cargo test --all-targets`로 검사한다. CLI 테스트의 사용자 경로 격리는 §7 L (5)를 참고한다.
-- 2026-11-23 점검 기준 진행 상황: 준비 절, 1단계, 2단계의 테스트까지 끝났다. `cargo build --release`와 3단계 이후는 아직 하지 않았다.
+- 2026-11-23: H 완료. runbook 1~5단계를 모두 진행했고 결과는 스펙 §12에 있다.
+
+### 맥에서 이어갈 때 (G)
+
+**`docs/2026-11-23-skill-drive-macos-runbook.md`를 그대로 넘긴다.** Windows 판과 같은 구조이고, Windows에서 확인한 결과를 반영했다.
+G는 아직 미룬 상태이고, 맥의 실제 스킬 폴더와 공유 레지스트리, 전역 안내를 바꾸므로 runbook의 승인 지점(계획, dry-run, diff)마다 사용자 승인이 필요하다(§7 G).
+- agy 1.5.14는 Windows junction을 발견하지 못했다. 맥의 symlink는 이전 기록(agy 1.2.16)으로만 확인됐으므로 지금 버전으로 다시 확인한다(runbook 3.3).
+- 레지스트리 manifest 기본값을 link로 바꾸는 변경(runbook 5단계)은 push하면 Windows PC에도 간다. Windows PC는 기기별 설정(`my-skills.local.toml`)이 우선이라 동작이 바뀌지 않는다.
 
 ---
 
