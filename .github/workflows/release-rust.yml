@@ -44,7 +44,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          version=$(awk '/^\[package\]$/ { package=1; next }
+          version=$(awk '/^\[package\][[:space:]]*$/ { package=1; next }
             /^\[/ { package=0 }
             package && /^version[[:space:]]*=/ { split($0, fields, "\""); print fields[2]; exit }' Cargo.toml)
           if [[ -z "$version" || "$RELEASE_TAG" != "v$version" ]]; then
