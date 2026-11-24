@@ -4,6 +4,7 @@ use std::process::Command;
 use std::{env, fs};
 
 use my_skills::Error;
+use my_skills::drive::hosts;
 use my_skills::drive::link::LinkKind;
 use my_skills::drive::state::{State, default_state_path};
 use my_skills::platform::data::skill_data_path;
@@ -60,6 +61,7 @@ fn manifest_merges_main_local_and_cli_by_key() {
         assert_eq!(base.skills_root, "base-skills");
         assert_eq!(base.defaults.install_mode, InstallMode::Copy);
         assert_eq!(base.targets["claude"].path, root.join("home/base-target"));
+        assert!(base.targets["codex"].enabled);
 
         fs::write(root.join(LOCAL_MANIFEST_FILE), LOCAL).unwrap();
         let local = load_manifest(root, &CliOverrides::default()).unwrap();
@@ -96,7 +98,6 @@ fn manifest_merges_main_local_and_cli_by_key() {
         assert!(local.targets["custom"].enabled);
         assert!(!local.targets["agy"].enabled);
         assert!(local.targets["codex"].enabled);
-        assert!(local.targets["hermes"].enabled);
         assert_eq!(
             local.skills.keys().map(String::as_str).collect::<Vec<_>>(),
             ["alpha", "beta", "zeta"]
@@ -137,15 +138,7 @@ fn manifest_merges_main_local_and_cli_by_key() {
                 .keys()
                 .map(String::as_str)
                 .collect::<Vec<_>>(),
-            [
-                "agy",
-                "claude",
-                "cli-only",
-                "codex",
-                "custom",
-                "hermes",
-                "local-only"
-            ]
+            ["agy", "claude", "cli-only", "codex", "custom", "local-only"]
         );
     });
 }
@@ -410,7 +403,7 @@ fn manifest_parses_overlays_and_validates_target_install_mode() {
 fn manifest_requires_a_path_for_unknown_targets() {
     with_temp_home("manifest_requires_a_path_for_unknown_targets", |root| {
         let main = root.join(MANIFEST_FILE);
-        for value in ["", "path = ''", "path = false"] {
+        for value in ["", "enabled = true", "path = ''", "path = false"] {
             fs::write(&main, format!("[targets.unknown]\n{value}\n")).unwrap();
             assert_eq!(
                 load_manifest(root, &CliOverrides::default())
@@ -427,6 +420,85 @@ fn manifest_requires_a_path_for_unknown_targets() {
         assert_eq!(manifest.targets["unknown"].path, root.join("home/target"));
         assert!(manifest.targets["unknown"].enabled);
     });
+}
+
+#[test]
+fn manifest_drops_disabled_pathless_targets_and_validates_legacy_skills() {
+    with_temp_home(
+        "manifest_drops_disabled_pathless_targets_and_validates_legacy_skills",
+        |root| {
+            fs::write(
+                root.join(MANIFEST_FILE),
+                "[skills.alpha]\nhosts = ['hermes', 'codex']\n",
+            )
+            .unwrap();
+            fs::write(
+                root.join(LOCAL_MANIFEST_FILE),
+                "[targets.hermes]\nenabled = false\n[targets.custom]\nenabled = false\n",
+            )
+            .unwrap();
+            let skill_dir = root.join("skills/alpha");
+            fs::create_dir_all(&skill_dir).unwrap();
+            fs::write(
+                skill_dir.join("SKILL.md"),
+                "---\nname: alpha\ndescription: Demo skill alpha.\n---\nBody.\n",
+            )
+            .unwrap();
+
+            let manifest = load_manifest(root, &CliOverrides::default()).unwrap();
+            assert_eq!(
+                manifest
+                    .targets
+                    .keys()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+                ["agy", "claude", "codex"]
+            );
+            assert_eq!(manifest.skills["alpha"].hosts, ["hermes", "codex"]);
+
+            let output = Command::new(assert_cmd::cargo::cargo_bin!("my-skills"))
+                .args(["validate", "alpha"])
+                .env("MY_SKILLS_ROOT", root)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            assert!(String::from_utf8_lossy(&output.stdout).contains("[OK] alpha"));
+        },
+    );
+}
+
+#[test]
+fn manifest_keeps_hermes_with_an_explicit_path_as_a_custom_target() {
+    with_temp_home(
+        "manifest_keeps_hermes_with_an_explicit_path_as_a_custom_target",
+        |root| {
+            fs::write(
+                root.join(MANIFEST_FILE),
+                "[targets.hermes]\npath = '~/legacy-target'\n",
+            )
+            .unwrap();
+            assert!(hosts::get_host("hermes").is_none());
+            let cli = CliOverrides::default();
+            let manifest = load_manifest(root, &cli).unwrap();
+            assert!(manifest.targets["hermes"].enabled);
+            assert_eq!(
+                manifest.targets["hermes"].path,
+                root.join("home/legacy-target")
+            );
+
+            fs::write(
+                root.join(LOCAL_MANIFEST_FILE),
+                "[targets.hermes]\nenabled = false\n",
+            )
+            .unwrap();
+            let manifest = load_manifest(root, &cli).unwrap();
+            assert!(!manifest.targets["hermes"].enabled);
+            assert_eq!(
+                manifest.targets["hermes"].path,
+                root.join("home/legacy-target")
+            );
+        },
+    );
 }
 
 #[test]

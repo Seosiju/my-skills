@@ -134,10 +134,6 @@ The project-scope path is `.agents/skills`.
 
 **Versions checked:** Global-path discovery was verified on macOS with Antigravity CLI **1.2.16** and **1.5.15** (both folders and symlinks worked), and on Windows with **1.5.14** (folders worked; junctions were not discovered).
 
-## Hermes
-
-Hermes (`~/.hermes/skills`) is still supported, and disabled by default for new registries. To enable it, set `enabled = true` under `[targets.hermes]` in `my-skills.toml` (or `my-skills.local.toml`) and include `"hermes"` in each skill's `hosts` list.
-
 ## Included starter skills
 
 - `cli-inventory` — Scans the CLI tools installed on this machine and saves a machine-local inventory you can read back quickly.

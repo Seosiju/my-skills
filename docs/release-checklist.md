@@ -34,13 +34,15 @@ and isolate config, state, and data directories from your own.
 cargo run -- doctor --no-update-check
 cargo run -- skills --json
 cargo run -- bootstrap --dry-run
-cargo run -- install my-skills --host hermes --dry-run
+cargo run -- install my-skills --host codex --dry-run
 cargo run -- install my-skills --host agy --dry-run
 ```
 
 Verify a manifest without `targets.agy` keeps AGY disabled and leaves it out of
 default `--host all` plans. New registries explicitly disable AGY while seeded
-skills support it. Keep the Hermes regression checks.
+skills support it. Verify an old manifest that still has `[targets.hermes]`
+loads: with a `path` it is a custom target, and a disabled one without a path
+is ignored.
 
 On macOS, Antigravity CLI 1.2.16 discovered regular folders and symlinks at
 `~/.gemini/config/skills` with the non-interactive command

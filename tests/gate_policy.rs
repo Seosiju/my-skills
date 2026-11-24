@@ -17,7 +17,7 @@ fn registry(audit_table: &str) -> tempfile::TempDir {
     .unwrap();
     let hosts = tmp.path().join("hosts");
     let mut toml = format!("schema_version = 1\n{audit_table}\n");
-    for host in ["claude", "codex", "agy", "hermes"] {
+    for host in ["claude", "codex", "agy", "custom"] {
         toml.push_str(&format!(
             "\n[targets.{host}]\nenabled = false\npath = '{}'\n",
             hosts.join(host).display()

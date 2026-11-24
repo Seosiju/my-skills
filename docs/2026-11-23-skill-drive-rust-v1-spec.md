@@ -22,7 +22,7 @@
 | **CLI** | 설치되어 `PATH`에서 실행되는 `my-skills` 실행 파일 |
 | **registry** | 사용자의 스킬 원본 저장소 (private git 저장소) |
 | **canonical** | registry의 `skills/<name>/`. 스킬의 유일한 원본 |
-| **host** | 스킬을 읽는 에이전트. Claude Code(`claude`), Codex(`codex`), Antigravity CLI(`agy`), Hermes(`hermes`, 비활성) |
+| **host** | 스킬을 읽는 에이전트. Claude Code(`claude`), Codex(`codex`), Antigravity CLI(`agy`). Hermes(`hermes`)는 처음에 비활성 host였고, v1.0.2 뒤에 지원을 뺐다(기존 기록과 설치본은 보존) |
 | **host directory** | host가 스킬을 발견하는 폴더. 예: `~/.claude/skills` |
 | **연결(connection)** | host directory 안의 `<name>` 항목. canonical을 보이게 하는 수단 |
 | **link 연결** | canonical을 가리키는 디렉터리 링크. macOS/Linux는 symlink, Windows는 junction(실패 시 symlink) |
@@ -69,7 +69,7 @@
 - 여러 사용자의 동시 편집, 충돌 자동 병합. 사용자는 한 명이다.
 - git을 대체하는 동기화 엔진. 기기 간 반영은 git으로 한다.
 - 스킬 마켓플레이스·공개 배포. `npx skills` 같은 공개 스킬 CLI의 역할이다.
-- Hermes 재활성화. host 정의는 유지하되 기본 비활성이다.
+- Hermes 재활성화. 처음에는 host 정의를 유지하고 기본 비활성으로 두었고, v1.0.2 뒤에 host 정의를 뺐다.
 - unmanaged 스킬(gstack, 앱 동봉 스킬 등)의 관리.
 - 자동 pull 스케줄러. 4단계에서 별도 스펙으로 다룬다.
 
