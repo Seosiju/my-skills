@@ -9,6 +9,25 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ### Added
 
+- `my-skills new <NAME> [--group G] [--host H]... [--description TEXT] [--dry-run] [--json]`
+  creates `skills/<NAME>/SKILL.md` and registers `[skills.<NAME>]` with
+  `enabled = false` under `my-skills.toml.edit-lock` (without touching state).
+  Checks skill/group names, description length (`<= 1024`), active-root write
+  policy, existing `skills/<NAME>` entries (including files or broken links),
+  base/local manifest collisions, and `--host` targets before writing, and
+  rolls back only the newly created directory and `SKILL.md` if registration
+  fails. Reports `invalid_name`, `already_exists`, `unknown_host`,
+  `inactive_registry`, `usage`, or `config` on exit `2` (`0` on success).
+- `post-commit` managed Git hook: `hooks install`, `hooks uninstall`,
+  `hooks status`, and `doctor` now manage five hooks (`post-commit` second,
+  after `pre-commit`). After a commit passes `pre-commit`, `post-commit` runs
+  `sync --yes --quiet` for committed changes (`my-skills.toml` triggers a full
+  sync; otherwise only committed registered skills sync), skipping uncommitted
+  `my-skills.toml` changes, dirty skill directories (with a warning, also
+  excluded from full sync), in-progress `rebase`/`merge`/`cherry-pick`, and
+  linked worktrees, and always exiting `0`. **Upgrade note:** re-run
+  `my-skills hooks install` on every machine (`hooks status` reports
+  `post-commit` as `missing` until installed).
 - `my-skills resolve <TARGET> [--json]` maps a registered skill name, canonical
   path, or configured host path (including disabled hosts, subdirectories, and
   nested files) to its canonical directory or file without hashing or updating
@@ -38,10 +57,12 @@ are the release source of truth while PyPI publishing remains undecided.
   second and waits up to 30 seconds (`MY_SKILLS_STATE_LOCK_TIMEOUT_MS`
   overrides the wait for tests, capped at 30 seconds). A timeout prints
   `error: state is busy: <lock_path>`, exits `2` (`state_busy` in JSON), and
-  leaves state and hosts unchanged; a busy `post-merge`, `post-rewrite`, or
-  `post-checkout` hook prints that diagnostic plus
+  leaves state and hosts unchanged; a busy `post-commit`, `post-merge`,
+  `post-rewrite`, or `post-checkout` hook prints that diagnostic plus
   `warning: <hook> could not sync the registry` and exits `0`. Readers stay
-  unlocked.
+  unlocked. Writers also re-check implicit active-root caching under a separate
+  `root.lock` after acquiring `state.json.lock` so a concurrent `set-root` is
+  preserved with a stderr note.
 
 ### Changed
 
@@ -60,15 +81,25 @@ are the release source of truth while PyPI publishing remains undecided.
   `allowed-tools` / `allowed_tools` keep their single dedicated warning without
   a duplicate generic warning, and any other unsupported fields emit one
   combined warning per skill listing all affected hosts.
-- Staged copy checks: copy creation, refresh, link fallback, and
-  `convert --to copy` build one private check snapshot per copied skill for
-  validation, audit, and both recorded hashes, then stage from that snapshot
-  onto the destination volume. If the canonical skill is edited after the
-  snapshot check, the originally checked bytes are installed and the copy is
-  left `STALE`.
-- Real `convert --to copy` now runs validation and the registry audit gate on
-  the copy snapshot before replacing a link.
-- Committed updates, conversions, and removals print a
+- Staged copy checks and late-edit protection: copy creation, refresh, link
+  fallback, and `convert --to copy` build one private check snapshot per
+  copied skill for validation, audit, and both recorded hashes, then stage from
+  that snapshot onto the destination volume. `install`, `sync`, and
+  `convert --to copy` previews also validate and audit planned copies from that
+  filtered snapshot view. If the canonical skill is edited after the snapshot
+  check, the originally checked bytes are installed and the copy is left
+  `STALE`; if the installed copy is edited before an update or conversion
+  replaces it, `my-skills` returns `CONFLICT` (exit `1`) and leaves the host
+  edit intact.
+- Batch planning detects physical destination aliases across hosts: compatible
+  aliased copy targets share one physical write and record every host (and
+  reconcile an unrecorded alias when a clean managed peer proves ownership),
+  while incompatible aliases block the batch before writing.
+- Real and `--dry-run` `convert --to copy` now run validation and the registry
+  audit gate on the copy snapshot before replacing a link.
+- `post-commit`, `post-merge`, `post-rewrite`, and `post-checkout` hooks are
+  now no-ops inside linked Git worktrees (`git worktree add`).
+- Committed updates, conversions, removals, `share`, and `import` print a
   `warning: cleanup could not remove <path>: <error>` line to stderr and still
   succeed when post-commit backup cleanup fails (distinct from rollback
   failures).
@@ -78,6 +109,8 @@ are the release source of truth while PyPI publishing remains undecided.
 - `share` from a discovered working directory now records the active root only
   after adoption succeeds, leaving the root cache untouched when `share` fails
   or the state lock is busy.
+- Explicit `set-root` now propagates `root.lock` and cache-write errors (exit
+  `2`) instead of claiming success when the active root could not be saved.
 
 ## [1.2.0] - 2026-11-24
 

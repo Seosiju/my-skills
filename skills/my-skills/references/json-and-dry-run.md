@@ -10,9 +10,18 @@ When a `--json` command hits a usage or configuration error, read the
 ```
 
 Codes are `usage`, `inactive_registry`, `unknown_skill`, `unknown_group`,
-`unknown_host`, `state_busy` (writer lock timed out after 30s), and `config`.
-`hint` is a string or `null`. A blocked validation, audit, or dry-run plan uses
-its normal report shape.
+`unknown_host`, `already_exists`, `invalid_name`, `state_busy` (writer lock
+timed out after 30s), and `config`. `hint` is a string or `null`. A blocked
+validation, audit, or dry-run plan uses its normal report shape.
+
+## Creating skills (`new --json`)
+
+`my-skills new <name> [--group <group>] [--host <host>] [--description <text>] [--dry-run] [--json]`
+creates `skills/<name>/SKILL.md` and registers it disabled (`enabled = false`).
+JSON returns `skill`, `enabled`, `group`, `hosts`, `canonical_dir`,
+`canonical_path`, `created`, `next`, and `registry` (plus `dry_run: true` only
+with `--dry-run`). Exit `2` emits `invalid_name`, `already_exists`,
+`unknown_host`, `inactive_registry`, `usage`, or `config`.
 
 ## Resolving names and paths (`resolve`)
 

@@ -87,17 +87,18 @@ Install the public Rust `my-skills` CLI using the release installer for your
 platform. See the [tool repo README](https://github.com/Seosiju/my-skills/tree/main#install-the-cli).
 Run `my-skills --version` to check the installation.
 
-Return to this registry. Edit canonical skills under `skills/<name>/SKILL.md`
-(run `my-skills resolve <path>` to find the canonical file from a host copy or
-path), then preview (`--dry-run` or `--dry-run --json` for agents) and apply.
-Add `--yes` after reviewing a plan for multiple hosts.
+Return to this registry. Create a draft with `my-skills new <name>` or edit
+canonical skills under `skills/<name>/SKILL.md` (run `my-skills resolve <path>`
+to find the canonical file from a host copy or path), then preview (`--dry-run`
+or `--dry-run --json` for agents) and apply. Add `--yes` after reviewing a plan
+for multiple hosts.
 
 ```bash
 my-skills skills
+my-skills new my-skill
 my-skills install --dry-run
 my-skills install
-my-skills sync <skill> --host <host> --dry-run
-my-skills sync <skill> --host <host>
+my-skills hooks install   # validate on commit and auto-sync copies after commit
 ```
 
 After adding or changing skills, start a new host session if needed (Claude Code

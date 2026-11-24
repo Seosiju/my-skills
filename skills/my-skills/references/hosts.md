@@ -17,8 +17,10 @@ in `my-skills.toml` or `my-skills.local.toml`. Precedence for new connections:
 Existing connections keep their recorded mode until converted with `convert`.
 Copy installs, refreshes, fallbacks, and `convert --to copy` validate, audit,
 and stage from one check snapshot per skill (so a canonical edit after checking
-leaves the installed copy `STALE`), and real `convert --to copy` enforces the
-same validation and audit gates before replacing a link.
+leaves the installed copy `STALE`), and updates/conversions re-hash the host
+copy right before replacing it so a late host edit returns `CONFLICT` instead of
+being overwritten. Both real and `--dry-run` `convert --to copy` enforce the
+validation and audit gates before replacing a link.
 
 ## Quick host diagnostics
 

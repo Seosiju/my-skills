@@ -66,10 +66,14 @@ drafts under `skills/`; exit `1` flags `foreign`, `unmanaged`, `ambiguous`, or
 - Pass several skill names or repeat `--group <group>` with `install`, `sync`,
   `uninstall`, `enable`, `disable`, `audit`, or `validate`.
 - Inspect drift or conflicts with `my-skills diff <skill> --host <host> --patch`.
+- **New skill:** `my-skills new <name> [--group <group>] [--host <host>]`
+  creates a disabled draft in `skills/<name>/SKILL.md` and registers it under
+  `my-skills.toml.edit-lock` (edit → `my-skills enable <name>` → validate/commit).
 - **Editing loop:** edit canonical `skills/<name>/...`, validate
-  (`my-skills validate <skill> --json`), and commit (`pre-commit` checks staged
-  changes) and push in a Git registry; for copy hosts or a non-Git registry,
-  preview and sync the changed skill (`my-skills sync <skill> --host <host>`).
+  (`my-skills validate <skill> --json`), then commit (`pre-commit` validates;
+  `post-commit` refreshes copy hosts automatically) and push in a Git registry
+  — zero extra `my-skills` calls after committing. In a non-Git registry, run
+  `my-skills sync <skill> --host <host>` after previewing with `--dry-run --json`.
 - **Session reload:** after adding or changing skills, start a new host session
   if needed — Claude Code picks up skills on restart, Codex detects changes
   automatically (restart if needed), and Antigravity CLI requires a new

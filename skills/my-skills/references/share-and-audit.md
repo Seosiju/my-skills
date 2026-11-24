@@ -25,8 +25,21 @@ audit risk. `--force` only answers "may overwrite?"; it does not bypass audit.
 
 ## Create or import a skill
 
-For a new skill, write it in a temporary directory first, then import it into
-the registry:
+Create a new draft directly in the registry with `my-skills new`:
+
+```bash
+my-skills new <name> --group <group> --host <host>
+```
+
+`new` creates `skills/<name>/SKILL.md` and registers it disabled (`enabled = false`)
+under `my-skills.toml.edit-lock`. Edit the draft, then enable and preview/commit it:
+
+```bash
+my-skills enable <name>
+my-skills sync <name> --host <host> --dry-run --json
+```
+
+To bring in an existing external skill folder instead, use `import`:
 
 ```bash
 my-skills import /path/to/skill
