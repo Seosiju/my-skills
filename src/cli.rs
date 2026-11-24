@@ -459,7 +459,11 @@ pub struct DiffArgs {
 pub struct ResolveArgs {
     /// A registered skill name, or a path to a skill directory or any file
     /// inside one: canonical (skills/<name>/...) or a host connection such as
-    /// ~/.claude/skills/<name>/references/setup.md
+    /// ~/.claude/skills/<name>/references/setup.md. TARGET is a path when it
+    /// is absolute, starts with '.' or '~', or contains a path separator;
+    /// otherwise it is a skill name. Exit 0 resolved (including an
+    /// unregistered draft under skills/), 1 unresolved or unsafe path,
+    /// 2 unknown skill name.
     pub target: String,
     /// Machine-readable output
     #[arg(long)]
