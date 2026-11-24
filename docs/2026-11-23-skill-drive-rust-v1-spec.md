@@ -452,12 +452,32 @@ skills/                    빌드 시 바이너리에 포함하는 시드 원본
 
 ## 11. macOS 실기기 체크리스트 (3단계)
 
-- [ ] `my-skills doctor`: Registry가 사용자 레지스트리를 가리킴, link 생성 가능, hooks 설치됨
-- [ ] `my-skills convert --to link --host all --dry-run`: 대상이 활성 host의 기존 copy 연결 전체이고 막힌 항목이 없음
-- [ ] 전환 뒤 `my-skills status`: 세 host 모두 FRESH (link), 비활성 host(hermes) 기록 보존
-- [ ] canonical에서 SKILL.md 한 줄을 수정했을 때 sync 없이 Claude, Codex, agy에 반영됨 (agy는 `/skills`로 확인)
-- [ ] 검증에 실패하는 SKILL.md를 커밋하면 pre-commit이 막음
-- [ ] 다른 기기에서 새 스킬을 push한 뒤 pull하면 post-merge가 연결을 만듦
+- [x] `my-skills doctor`: Registry가 사용자 레지스트리를 가리킴, link 생성 가능, hooks 설치됨
+- [x] `my-skills convert --to link --host all --dry-run`: 대상이 활성 host의 기존 copy 연결 전체이고 막힌 항목이 없음
+- [x] 전환 뒤 `my-skills status`: 세 host 모두 FRESH (link), 비활성 host(hermes) 기록 보존
+- [x] canonical에서 SKILL.md 한 줄을 수정했을 때 sync 없이 Claude, Codex, agy에 반영됨 (agy는 `/skills`로 확인)
+- [x] 검증에 실패하는 SKILL.md를 커밋하면 pre-commit이 막음 (runbook 3.5의 시험용 저장소. 실제 레지스트리 커밋은 pre-commit을 통과)
+- [ ] 다른 기기에서 새 스킬을 push한 뒤 pull하면 post-merge가 연결을 만듦 (runbook 6.2는 사용자 결정으로 보류. 같은 기기의 시험용 저장소에서는 3.5로 확인)
+
+**맥 실기기 (2026-11-24, macOS 26.6.2, Rust 1.100.0):**
+
+| 항목 | 결과 |
+|---|---|
+| 검증한 커밋 | `c4d0df1` (2단계 빌드. 설치는 `cargo install --locked --root ~/.local/opt/my-skills --path .`) |
+| cargo test | 통과 224개 / 실패 0개 |
+| 기존 Python 0.4.x, 기존 state.json | 있음(0.4.1, `~/.local/bin`), 있음(모든 기록이 copy) |
+| Rust toolchain (2단계) | rustup stable 1.100.0을 `rustup run stable cargo`로 사용. Homebrew 1.96은 그대로 둠 |
+| 세 에이전트 버전 | Claude Code 2.1.325 / codex-cli 0.171.0 / agy 1.5.15 |
+| Link capability | symlink |
+| Claude Code, Codex, agy 발견 (3.3) | 예 / 예(symlink 경로로 `SKILL.md`를 읽음) / 예(`/skills` 목록, `num_turns 0`). 복사본 비교는 필요 없었음. agy는 link |
+| pre-commit, post-checkout, post-merge (3.5) | 예 / 예(연결과 해제) / 예 |
+| 처음 잡힌 my-skills, hook이 찾은 my-skills | 처음: Python 판(0.4.1). 설치 후: Rust 판. PATH 변경함: `~/.zprofile`, `~/.zshrc`, `~/.bash_profile`가 각각 Python 판 폴더를 PATH에 넣으므로 세 파일 끝에 `~/.local/opt/my-skills/bin`을 앞에 두는 한 줄을 넣음. 새 zsh(login, interactive), bash, `sh -c` 모두 Rust 판 |
+| 공백이 든 경로 | 정상(`skill drive probe`) |
+| 전환 (4단계) | 활성 host의 copy 연결 전체를 convert. bootstrap에서 새 연결 없음. 건너뛴 host 없음, BLOCK 없음, hermes 기록은 백업과 같음 |
+| link 바로 반영 (4.5), 전환 뒤 발견 (4.6) | claude, codex, agy 모두 예 / 모두 예 |
+| 공유 레지스트리 변경 (5단계) | manifest `[defaults] install_mode = "link"`. 고친 문서: `AGENTS.md`, `README.md`, `instructions/global.md`, `skills/my-skills/SKILL.md`. 이 맥의 전역 안내(Claude, Codex, agy)는 수정 완료 기준 문단만 고침(원본은 비공개 작업 폴더에 백업). 레지스트리 push 완료 |
+| 두 기기 확인 (6단계) | 6.1은 Windows에서 진행 예정. 6.2는 보류(사용자 결정) |
+| 기타 | (a) 이미 열려 있던 터미널과 에이전트 세션은 예전 PATH를 쓴다. 그 세션에서 레지스트리 git 작업을 하면 hook이 Python 판을 찾아 실패하므로 새 세션을 연다. (b) runbook 5.2의 `grep`은 영어 단어만 찾아 한국어 문서의 동기화, 복사 표현을 놓친다. 파일을 직접 읽어 고쳤다. (c) 레지스트리의 `my-skills` 스킬은 seed와 일부러 다른 정책 문구가 있어 seed로 덮지 않고, Rust v1과 link에 맞지 않는 사실만 고쳤다 |
 
 ## 12. Windows 작업 지시서 (Windows PC에서 실행)
 
