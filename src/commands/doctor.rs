@@ -26,8 +26,8 @@ struct Report {
     python: &'static str,
     registry: Registry,
     skills: Option<Skills>,
-    state_path: PathBuf,
-    data_root: PathBuf,
+    state_path: String,
+    data_root: String,
     hosts: Vec<HostStatus>,
     manifest: ManifestHealth,
     link_capability: LinkCapability,
@@ -40,10 +40,20 @@ struct Report {
 
 #[derive(Default, Serialize)]
 struct Registry {
+    #[serde(serialize_with = "serialize_registry_path")]
     path: Option<PathBuf>,
     source: Option<&'static str>,
     error: Option<String>,
     warning: Option<String>,
+}
+
+fn serialize_registry_path<S: serde::Serializer>(
+    path: &Option<PathBuf>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    path.as_deref()
+        .map(paths::display_path)
+        .serialize(serializer)
 }
 
 #[derive(Serialize)]
@@ -59,7 +69,7 @@ struct HostStatus {
     executable: Option<&'static str>,
     enabled: bool,
     writable: bool,
-    path: PathBuf,
+    path: String,
 }
 
 #[derive(Serialize)]
@@ -160,8 +170,8 @@ impl Report {
             python: PYTHON,
             registry,
             skills,
-            state_path: state::default_state_path(),
-            data_root: paths::data_root(),
+            state_path: paths::display_path(&state::default_state_path()),
+            data_root: paths::display_path(&paths::data_root()),
             hosts,
             manifest: manifest_health,
             link_capability: LinkCapability::probe(),
@@ -198,8 +208,8 @@ impl Report {
                 skills.registered, skills.enabled
             );
         }
-        println!("State:    {}", self.state_path.display());
-        println!("Data:     {}", self.data_root.display());
+        println!("State:    {}", self.state_path);
+        println!("Data:     {}", self.data_root);
         println!("\nHosts:");
         for host in &self.hosts {
             let detected = host
@@ -210,7 +220,7 @@ impl Report {
                 host.display_name,
                 python_bool(host.enabled),
                 python_bool(host.writable),
-                host.path.display()
+                host.path
             );
         }
         match &self.manifest {
@@ -252,7 +262,12 @@ fn registry() -> (Registry, ManifestHealth, Option<Manifest>) {
             return (Registry::default(), ManifestHealth::NotChecked, None);
         }
         Err(error) => {
-            let error = error.to_string();
+            let mut error = display_error(&error);
+            if let Some(path) =
+                std::env::var_os("MY_SKILLS_ROOT").filter(|_| error.starts_with("MY_SKILLS_ROOT="))
+            {
+                error = display_path_in_message(error, Path::new(&path));
+            }
             return (
                 Registry {
                     error: Some(error.clone()),
@@ -272,7 +287,8 @@ fn registry() -> (Registry, ManifestHealth, Option<Manifest>) {
                 paths::display_path(&active)
             )
         });
-    let manifest = manifest::load_manifest(&resolution.root, &Default::default());
+    let manifest = manifest::load_manifest(&resolution.root, &Default::default())
+        .map_err(|error| display_path_in_message(display_error(&error), &resolution.root));
     let registry = Registry {
         path: Some(resolution.root),
         source: Some(resolution.source.label()),
@@ -281,13 +297,25 @@ fn registry() -> (Registry, ManifestHealth, Option<Manifest>) {
     };
     match manifest {
         Ok(manifest) => (registry, ManifestHealth::Valid, Some(manifest)),
-        Err(error) => (
-            registry,
-            ManifestHealth::Invalid {
-                error: error.to_string(),
-            },
-            None,
-        ),
+        Err(error) => (registry, ManifestHealth::Invalid { error }, None),
+    }
+}
+
+fn display_error(error: &crate::Error) -> String {
+    match error {
+        crate::Error::Io { path, source } => format!("{}: {source}", paths::display_path(path)),
+        _ => error.to_string(),
+    }
+}
+
+// Some diagnostics from manifest and state loading already embed the path.
+fn display_path_in_message(message: String, path: &Path) -> String {
+    let original = path.to_string_lossy();
+    let display = paths::display_path(path);
+    if original.is_empty() || original == display {
+        message
+    } else {
+        message.replace(original.as_ref(), &display)
     }
 }
 
@@ -308,7 +336,7 @@ impl HostStatus {
                 .find(|name| hooks::command_on_path(name)),
             enabled: target.map_or(host.default_enabled, |target| target.enabled),
             writable: writable(&path),
-            path,
+            path: paths::display_path(&path),
         }
     }
 }
@@ -346,7 +374,11 @@ impl LinkCapability {
             },
             Err(error) => Self {
                 kind: "copy fallback",
-                reason: Some(error.to_string()),
+                reason: Some(
+                    error
+                        .downcast_ref::<crate::Error>()
+                        .map_or_else(|| error.to_string(), display_error),
+                ),
             },
         }
     }
@@ -602,7 +634,10 @@ impl Connections {
         let state = match State::load(None) {
             Ok(state) => Some(state),
             Err(error) => {
-                report.warnings.push(error.to_string());
+                report.warnings.push(display_path_in_message(
+                    display_error(&error),
+                    &state::default_state_path(),
+                ));
                 None
             }
         };
@@ -628,9 +663,12 @@ impl Connections {
                         }
                         match plan::status_of(manifest, skill, &target.name, state) {
                             Ok(status) => *report.statuses.entry(status.label()).or_default() += 1,
-                            Err(error) => report
-                                .warnings
-                                .push(format!("{} / {}: {error}", skill.name, target.name)),
+                            Err(error) => report.warnings.push(format!(
+                                "{} / {}: {}",
+                                skill.name,
+                                target.name,
+                                display_error(&error)
+                            )),
                         }
                     }
                 }

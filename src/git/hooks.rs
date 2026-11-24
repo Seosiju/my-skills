@@ -29,8 +29,13 @@ impl<'a> Git<'a> {
         let git = Self { root };
         match git.text(&["rev-parse", "--is-inside-work-tree"]) {
             Ok(answer) if answer == "true" => Ok(git),
-            Ok(_) => anyhow::bail!("{} is not a Git worktree", root.display()),
-            Err(error) => anyhow::bail!("{} is not a Git worktree: {error}", root.display()),
+            Ok(_) => anyhow::bail!("{} is not a Git worktree", paths::display_path(root)),
+            Err(error) => {
+                anyhow::bail!(
+                    "{} is not a Git worktree: {error}",
+                    paths::display_path(root)
+                )
+            }
         }
     }
 
@@ -116,6 +121,7 @@ struct HookEntry {
 
 #[derive(Serialize)]
 pub(crate) struct HookStatus {
+    #[serde(serialize_with = "serialize_hook_path")]
     path: PathBuf,
     on_path: bool,
     entries: Vec<HookEntry>,
@@ -140,12 +146,18 @@ impl HookStatus {
     }
 }
 
+fn serialize_hook_path<S: serde::Serializer>(
+    path: &Path,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(&display_hook_path(path))
+}
+
 fn display_hook_path(path: &Path) -> String {
     let displayed = paths::display_path(path);
     #[cfg(windows)]
     {
-        let normalized = displayed.replace('/', "\\");
-        Path::new(&normalized)
+        Path::new(&displayed)
             .components()
             .collect::<PathBuf>()
             .display()
