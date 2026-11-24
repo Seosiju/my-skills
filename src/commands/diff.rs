@@ -9,7 +9,10 @@ use super::config_error;
 use crate::cli::DiffArgs;
 use crate::drive::diff::{self, FileChanges};
 use crate::drive::link::{self, EntryKind};
-use crate::drive::{plan, state::State};
+use crate::drive::{
+    plan::{self, Status},
+    state::State,
+};
 use crate::platform::paths::display_path;
 use crate::registry::manifest::{CliOverrides, InstallMode, Manifest, Skill, select_names};
 use crate::registry::root::{self, RegistryMeta};
@@ -35,6 +38,7 @@ struct HostDiff<'a> {
     patch: Option<String>,
     /// Null for any entry that is not a link.
     link_matches: Option<bool>,
+    link_target: Option<String>,
 }
 
 pub fn run(args: &DiffArgs) -> ExitCode {
@@ -78,10 +82,15 @@ fn compare<'a>(
     };
     for target in manifest.targets.values() {
         let host = target.name.as_str();
-        if !target.enabled || selected.is_some_and(|name| name != host) {
-            continue;
-        }
-        if !plan::wants(manifest, skill, host) && state.get(&skill.name, host).is_none() {
+        let include = match selected {
+            Some(name) => host == name,
+            None => {
+                target.enabled
+                    && (plan::wants(manifest, skill, host)
+                        || state.get(&skill.name, host).is_some())
+            }
+        };
+        if !include {
             continue;
         }
         let (row, different) = compare_host(manifest, skill, host, &state, args.patch)?;
@@ -98,44 +107,56 @@ fn compare_host<'a>(
     state: &State,
     include_patch: bool,
 ) -> Result<(HostDiff<'a>, bool)> {
-    let status = plan::status_of(manifest, skill, host, state)?;
     let record = state.get(&skill.name, host);
     let source = manifest.skill_dir(&skill.name);
-    let dest = plan::destination(manifest, host, &skill.name)?;
-    let owner = record
-        .filter(|_| status == plan::Status::Foreign)
+    let configured_dest = plan::destination(manifest, host, &skill.name)?;
+    let dest = record.map_or(configured_dest.as_path(), |r| Path::new(&r.destination));
+    let kind = link::entry_kind(dest)?;
+    let foreign = record.filter(|r| !r.belongs_to(&manifest.skills_dir()));
+    let supported = skill.hosts.is_empty() || skill.hosts.iter().any(|name| name == host);
+    let status = match record {
+        _ if foreign.is_some() => Status::Foreign,
+        None if kind == EntryKind::Missing => Status::Missing,
+        None => Status::Unmanaged,
+        Some(_) if !supported => Status::Unsupported,
+        Some(record) if dest != configured_dest => {
+            diff::recorded_status(&source, dest, kind, record)?
+        }
+        Some(_) => plan::status_of(manifest, skill, host, state)?,
+    };
+    let owner = foreign
         .and_then(|record| Path::new(&record.source).parent())
         .map(display_path);
     let mut row = HostDiff {
         host,
         status: status.label(),
         mode: record.map(|record| record.mode),
-        destination: display_path(&dest),
+        destination: display_path(dest),
         owner,
         files: FileChanges::default(),
         patch: None,
         link_matches: None,
+        link_target: None,
     };
-    // Status tracks history since the last sync. The comparison uses the
-    // current files and detects a recorded connection replaced by another type.
-    let different = match link::entry_kind(&dest)? {
+    // Status tracks history since the last sync. Compare the live files and
+    // entry type, with foreign ownership itself counting as a difference.
+    let different = match kind {
         EntryKind::Link(_) => {
             row.mode = Some(InstallMode::Link);
-            let matches = link::is_managed_link(&dest, &source);
+            row.link_target = Some(display_path(&link::link_target(dest)?));
+            let matches = link::is_managed_link(dest, &source);
             row.link_matches = Some(matches);
-            !matches || !source.is_dir() || status == plan::Status::Drifted
+            !matches || !source.is_dir()
         }
         EntryKind::Dir => {
             row.mode = Some(InstallMode::Copy);
-            (row.files, row.patch) = diff::compare(&source, &dest, include_patch)?;
-            !source.is_dir()
-                || !row.files.is_empty()
-                || (status == plan::Status::Drifted
-                    && record.is_some_and(|record| record.mode == InstallMode::Link))
+            (row.files, row.patch) = diff::compare(&source, dest, include_patch)?;
+            !source.is_dir() || !row.files.is_empty()
         }
         EntryKind::Missing | EntryKind::File => true,
     };
-    Ok((row, different))
+    let mode_changed = record.is_some_and(|r| row.mode != Some(r.mode));
+    Ok((row, different || mode_changed || status == Status::Foreign))
 }
 
 impl Report<'_> {
@@ -156,6 +177,9 @@ impl Report<'_> {
             );
             if let Some(owner) = &row.owner {
                 println!("    owner: {owner}");
+            }
+            if let Some(target) = &row.link_target {
+                println!("    link target: {target}");
             }
             match row.link_matches {
                 Some(true) => println!("    link points to the canonical skill"),
