@@ -7,6 +7,8 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-24
+
 ### Added
 
 - `sync --dry-run --json` for machine-readable sync previews (`sync --json`
