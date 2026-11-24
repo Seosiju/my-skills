@@ -12,6 +12,10 @@ pub enum Error {
     #[error("{0}")]
     State(String),
 
+    /// A plan item could not persist its install record.
+    #[error(transparent)]
+    StateSave(Box<Error>),
+
     /// A link could not be created, read, or removed safely (spec §6.1).
     #[error("{0}")]
     Link(String),

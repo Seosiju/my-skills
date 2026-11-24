@@ -98,7 +98,6 @@ impl Drive {
             assert!(!item.action.is_block(), "unexpected block: {item:?}");
             apply::apply(item, &mut state, None).unwrap();
         }
-        state.save().unwrap();
         items
     }
 
@@ -298,7 +297,6 @@ fn disabled_target_installs_are_never_touched() {
     assert_eq!(item.action, Action::Create);
     item.mode = InstallMode::Copy;
     apply::apply(&item, &mut state, None).unwrap();
-    state.save().unwrap();
 
     drive.write_manifest(false, false, "link");
     let items = drive.sync(true);
@@ -365,7 +363,6 @@ fn copy_mode_install_then_convert_to_link() {
         let outcome = apply::apply(item, &mut state, None).unwrap();
         assert!(matches!(outcome, Outcome::Converted(Connection::Link(_))));
     }
-    state.save().unwrap();
     assert_eq!(drive.status("alpha", "claude"), Status::Fresh);
     assert!(
         drive
