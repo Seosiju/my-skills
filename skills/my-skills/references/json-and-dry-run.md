@@ -1,4 +1,30 @@
-# Dry-Run JSON, Exit Codes, And Multi-Host Rules
+# JSON Results, Dry Runs, And Multi-Host Rules
+
+## Errors
+
+When a `--json` command hits a usage or configuration error, read the
+`error` object on stdout and expect exit `2`. The human diagnostic is on stderr.
+
+```json
+{"error":{"code":"unknown_host","message":"unknown host: example","hint":null}}
+```
+
+Codes are `usage`, `inactive_registry`, `unknown_skill`, `unknown_group`,
+`unknown_host`, and `config`. `hint` is a string or `null`. A blocked validation,
+audit, or dry-run plan uses its normal report shape.
+
+## Validation
+
+Use `my-skills validate <skill> --json` or
+`my-skills validate --group <group> --json` before applying a skill. The
+result has `registry: {path, source}`, overall `ok`, and `skills` entries with
+`skill`, `ok`, `errors`, and `warnings`. Exit `0` means the checks passed, `1`
+means a check failed, and `2` means a usage or configuration error.
+
+The pre-commit gate applies standard validation, the security floor, host
+limits, and the manifest audit policy. An over-limit description fails.
+`--host <host>` narrows host checks to that host. A bare `validate` scans all
+skill directories, including unregistered ones.
 
 ## Dry-run JSON fields and exit codes
 
@@ -11,7 +37,8 @@ my-skills sync <skill> --host <host> --dry-run --json
 
 Read these fields from the plain UTF-8 JSON response:
 
-- `registry`: `{path, source}` showing which registry was resolved.
+- `registry` gives `{path, source}`. The source is `flag` for `--root`,
+  `env` for `MY_SKILLS_ROOT`, `cwd` for discovery, or `cache` for the saved root.
 - `actions`: planned connection changes (for `sync`, review removals as well as
   new and updated connections).
 - `validation`: per-skill and per-host validation checks.
@@ -32,6 +59,15 @@ Exit-code rules:
 - `sync --json` requires `--dry-run`.
 - `sync --check` takes precedence over `--dry-run` and cannot be combined with
   `--json`.
+
+## Comparing installed content
+
+Use `my-skills diff <skill> --host <host> --patch --json` for drift or conflict.
+It reads the canonical and installed entries, lists file changes, and reports
+link target agreement. `different` describes live differences, while `status`
+tracks the install record. Identical edits on both sides can show `CONFLICT`
+with no live differences. Exit `0` means a match, `1` a difference or missing
+entry, and `2` an error.
 
 ## Host scope and `--yes` confirmation
 

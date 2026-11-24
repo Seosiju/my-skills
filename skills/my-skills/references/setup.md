@@ -31,17 +31,25 @@ in git (public or private).
 
 ## When there is no registry yet
 
-If a command fails with `my-skills.toml not found`, no registry has been created
-on this machine. Do not point at a CLI clone — create a registry:
+If a command fails with `my-skills.toml not found`, the CLI could not locate a
+registry. If you already have one, use its folder for a single command:
+
+```bash
+my-skills --root /path/to/registry doctor --quick
+```
+
+`--root` takes precedence over `MY_SKILLS_ROOT`, the current directory or parent
+manifest, and the saved active root. The command never saves the override, and
+doctor shows source `flag`. A folder without `my-skills.toml` gives exit `2`.
+
+Create a registry if you need one:
 
 ```bash
 my-skills init-registry
 ```
 
-As a temporary override, `export MY_SKILLS_ROOT=/path/to/registry` if one
-already exists elsewhere (for example on another machine you cloned, or when
-running a one-off command against a second registry without switching the active
-root).
+Pass the registry path as the argument to `init-registry` to create it, or to
+`set-root` to save it as active. Both commands reject `--root`.
 
 ## New machine bootstrap and Git hooks
 

@@ -19,13 +19,13 @@ in Git (public or private).
 
 ## Which registry am I operating on?
 
-Before changing skills, run `my-skills doctor` and check `Registry:` (or
+Before changing skills, run `my-skills doctor --quick` and check `Registry:` (or
 `registry: {path, source}` in `--json` outputs). Switch only when the user
 explicitly asks to make a registry active:
 
 ```bash
 my-skills set-root /path/to/registry
-MY_SKILLS_ROOT=/path/to/registry my-skills <cmd>   # one-command override
+my-skills --root /path/to/registry <cmd>   # one-command override, never saved
 ```
 
 Do not point at a clone of the `my-skills` CLI project — its `my-skills.toml`
@@ -34,7 +34,7 @@ commands, `sync --check`, and `--dry-run` never save or change the active root.
 When another registry is active, read-only commands run against a cwd registry
 with a stderr note, while real writes (including `bootstrap` and
 `hooks install`/`uninstall`) refuse with exit `2` until you run from the active
-registry, switch with `set-root`, or pass `MY_SKILLS_ROOT`.
+registry, switch with `set-root`, or select one for the command with `--root`.
 
 ## Everyday commands
 
@@ -47,8 +47,9 @@ registry, switch with `set-root`, or pass `MY_SKILLS_ROOT`.
   then validate (`my-skills enable <skill>`, `my-skills disable <skill>`,
   `my-skills validate <skill>`). A later `sync` prunes disabled connections
   (preview removals with `sync --dry-run`).
-- **Full command surface:** run `my-skills --help` (covers `status`, `validate`,
-  `import`, `data-path`, `uninstall`, `doctor`, and more).
+- Pass several skill names or repeat `--group <group>` with `install`, `sync`, `uninstall`, `enable`, `disable`, `audit`, or `validate`.
+- Inspect drift or conflicts with `my-skills diff <skill> --host <host> --patch`.
+- Run `my-skills --help` for the full command list.
 
 ## Safe write loop (install and sync)
 
@@ -92,9 +93,9 @@ Read a reference only when the task needs it:
 - [references/setup.md](references/setup.md) — First-time CLI/registry setup,
   `my-skills.toml not found`, `init-registry` flags, `bootstrap`, and Git hooks.
 - [references/json-and-dry-run.md](references/json-and-dry-run.md) — Dry-run
-  JSON fields, exit codes, `sync --check`, and multi-host `--yes` rules.
+  and validation JSON, error codes, `sync --check`, and multi-host rules.
 - [references/share-and-audit.md](references/share-and-audit.md) — Sharing
   host-local skills (`share`), creating/importing skills (`import`), and
-  security/bundle audits (`audit`, `--with-status`).
+  security and bundle audits (`audit`, `--with-governance`).
 - [references/hosts.md](references/hosts.md) — `install_mode` (`link` vs `copy`)
-  precedence, `convert`, and Antigravity CLI (`agy`) opt-in and Windows notes.
+  precedence, `doctor --quick`, `convert`, and Antigravity CLI (`agy`) notes.
