@@ -176,8 +176,15 @@ fn note_cache_change(root: &Path) {
 }
 
 fn write_root_cache(root: &Path, observed: Option<&CacheSnapshot>) -> bool {
+    try_write_root_cache(root, observed).unwrap_or(false)
+}
+
+/// Like `write_root_cache`, but reports lock and write failures. Implicit
+/// caching is best effort; an explicit `set-root` must not claim success
+/// when nothing was saved.
+fn try_write_root_cache(root: &Path, observed: Option<&CacheSnapshot>) -> io::Result<bool> {
     if explicit_root().is_some() {
-        return false;
+        return Ok(false);
     }
     let cache = root_cache_path();
     let parent = cache.parent().expect("root cache has a parent");
@@ -203,7 +210,7 @@ fn write_root_cache(root: &Path, observed: Option<&CacheSnapshot>) -> bool {
         temp.persist(&cache).map_err(|err| err.error)?;
         Ok(true)
     };
-    write().unwrap_or(false)
+    write()
 }
 
 fn cache_contents(path: &Path) -> io::Result<Option<Vec<u8>>> {
@@ -245,7 +252,7 @@ pub fn cache_repo_root(root: &Path) -> Result<PathBuf> {
             root.display()
         )));
     }
-    write_root_cache(&resolved, None);
+    try_write_root_cache(&resolved, None).map_err(|err| Error::io(root_cache_path(), err))?;
     Ok(resolved)
 }
 
