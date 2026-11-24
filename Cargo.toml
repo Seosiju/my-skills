@@ -27,6 +27,7 @@ thiserror = "2"
 # scalars (yes/no/on/off) parse as strings: streams D/E handle parity.
 yaml-rust2 = "0.13"
 sha2 = "0.10"
+similar = "2"
 walkdir = "2"
 toml = "0.8"
 dirs = "6"
