@@ -84,9 +84,9 @@ pub enum Command {
     Install(InstallArgs),
     /// Plan sharing host-local skills into canonical
     Share(ShareArgs),
-    /// Enable a registered skill in the manifest
+    /// Enable registered skills in the manifest
     Enable(SkillNameArgs),
-    /// Disable a registered skill in the manifest
+    /// Disable registered skills in the manifest
     Disable(SkillNameArgs),
     /// Show connection status per skill and host
     Status(StatusArgs),
@@ -144,8 +144,8 @@ pub struct DoctorArgs {
     /// Skip the network check for a newer my-skills release
     #[arg(long)]
     pub no_update_check: bool,
-    /// Fast local check: skip the update check, registry git status, full
-    /// validation, and the link probe
+    /// Fast local check: skip the update check, registry git and hook status,
+    /// full validation, and the link probe
     #[arg(long)]
     pub quick: bool,
     /// Machine-readable output (v1)
@@ -313,7 +313,8 @@ pub struct SkillsArgs {
     /// Only skills in this manifest group (repeatable)
     #[arg(long = "group", value_name = "GROUP")]
     pub groups: Vec<String>,
-    /// Compact rows: name, enabled, hosts, group, and status only
+    /// With --json: compact rows (name, enabled, hosts, group, status, plus
+    /// error and governance when present); the table is unchanged
     #[arg(long)]
     pub brief: bool,
     /// Add governance details: audit status, profile, threshold, and hash, plus
@@ -432,7 +433,8 @@ pub struct ConvertArgs {
 pub struct DiffArgs {
     /// Registered skill to compare
     pub skill: String,
-    /// Compare only on this host (default: every enabled host with a connection)
+    /// Compare only this host, even if it is disabled (default: every enabled
+    /// host where the skill is wanted or has a recorded connection)
     #[arg(long)]
     pub host: Option<String>,
     /// Also print a unified diff for changed text files
