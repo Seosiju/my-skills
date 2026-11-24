@@ -34,4 +34,5 @@ discovery can still cache the current directory, so check `my-skills doctor`
 before doing real registry work.
 
 Supported hosts are Claude Code, Codex, Hermes, and Antigravity CLI (`agy`).
-Hermes and Antigravity CLI are disabled by default in new registries.
+Hermes and Antigravity CLI are disabled by default in new registries. Do not
+document unsupported hosts as supported.
