@@ -74,7 +74,7 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         }
     }
 
-    let shared = match plan::group_destinations(&mut items) {
+    let shared = match plan::group_destinations(&manifest, &state, &mut items) {
         Ok(shared) => shared,
         Err(err) => return config_error(err),
     };
@@ -288,7 +288,7 @@ fn sync_manifest_with_resolution(
         return exit(drift);
     }
 
-    let shared = match plan::group_destinations(&mut items) {
+    let shared = match plan::group_destinations(manifest, &state, &mut items) {
         Ok(shared) => shared,
         Err(err) => return config_error(err),
     };
@@ -448,13 +448,20 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
             }
         }
     }
+    // Removing an entry that an unselected host also records would break it.
+    // A missing host directory cannot share anything, so grouping is skipped.
+    let shared = plan::group_destinations(&manifest, &state, &mut items).unwrap_or_default();
     if args.dry_run {
         print_write_refusal(resolution.write_refusal().as_deref());
         println!("Dry run — planned actions (nothing written):");
         print_plan(&items);
         super::print_would_cache_root(&resolution);
         print_confirmation_hint(&hosts, hosts.len() > 1 && !args.yes);
-        return ExitCode::SUCCESS;
+        return exit(shared.incompatible);
+    }
+    if shared.incompatible {
+        print_plan_results_noop(&items);
+        return ExitCode::from(1);
     }
     if !confirm_multi_host_write(&hosts, args.yes) {
         return ExitCode::from(2);
@@ -532,7 +539,7 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
         Ok(items) => items,
         Err(e) => return config_error(e),
     };
-    let shared = match plan::group_destinations(&mut items) {
+    let shared = match plan::group_destinations(&manifest, &state, &mut items) {
         Ok(shared) => shared,
         Err(err) => return config_error(err),
     };

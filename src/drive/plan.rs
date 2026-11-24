@@ -55,6 +55,8 @@ pub enum Action {
     BlockDrift,
     BlockForeign,
     Conflict,
+    /// An unselected connection shares this entry and would be invalidated.
+    SharedDestination,
     SkipUnsupported,
     NotManaged,
 }
@@ -71,6 +73,7 @@ impl Action {
             Action::BlockDrift => "BLOCK_DRIFT",
             Action::BlockForeign => "BLOCK_FOREIGN",
             Action::Conflict => "CONFLICT",
+            Action::SharedDestination => "SHARED_DESTINATION",
             Action::SkipUnsupported => "SKIP_UNSUPPORTED",
             Action::NotManaged => "NOT_MANAGED",
         }
@@ -79,7 +82,11 @@ impl Action {
     pub fn is_block(self) -> bool {
         matches!(
             self,
-            Action::BlockConflict | Action::BlockDrift | Action::BlockForeign | Action::Conflict
+            Action::BlockConflict
+                | Action::BlockDrift
+                | Action::BlockForeign
+                | Action::Conflict
+                | Action::SharedDestination
         )
     }
 
@@ -244,7 +251,7 @@ fn copy_status(
 
 /// Locate the host entry without following the final link. Different live
 /// connections may point to the same source and still have distinct entries.
-fn physical_destination(path: &Path) -> Result<PathBuf> {
+pub(crate) fn physical_destination(path: &Path) -> Result<PathBuf> {
     for ancestor in path
         .ancestors()
         .skip(1)
@@ -276,7 +283,11 @@ pub(crate) struct SharedDestinations {
     pub(crate) incompatible: bool,
 }
 
-pub(crate) fn group_destinations(items: &mut [PlanItem]) -> Result<SharedDestinations> {
+pub(crate) fn group_destinations(
+    manifest: &Manifest,
+    state: &State,
+    items: &mut [PlanItem],
+) -> Result<SharedDestinations> {
     let mut indices: BTreeMap<PathBuf, Vec<usize>> = BTreeMap::new();
     for (index, item) in items.iter().enumerate() {
         if !matches!(item.action, Action::SkipUnsupported | Action::NotManaged) {
@@ -295,6 +306,18 @@ pub(crate) fn group_destinations(items: &mut [PlanItem]) -> Result<SharedDestina
         });
         let same_action = group.iter().all(|&idx| items[idx].action == first.action);
         if same_action && first.action == Action::Remove {
+            continue;
+        }
+        // One peer is pruned while the others keep (or refresh) the shared
+        // entry: apply drops only the pruned peer's record.
+        let keeps = |item: &PlanItem| matches!(item.action, Action::Noop | Action::Update);
+        if same_items
+            && group.iter().any(|&idx| items[idx].action == Action::Remove)
+            && group.iter().any(|&idx| keeps(&items[idx]))
+            && group
+                .iter()
+                .all(|&idx| items[idx].action == Action::Remove || keeps(&items[idx]))
+        {
             continue;
         }
         if same_items
@@ -350,7 +373,69 @@ pub(crate) fn group_destinations(items: &mut [PlanItem]) -> Result<SharedDestina
             }
         }
     }
+    guard_unselected_peers(manifest, state, items, &mut result)?;
     Ok(result)
+}
+
+/// A connection recorded in state but absent from this plan may share a
+/// destination with a planned write. Removing, converting, or refreshing that
+/// entry would leave the peer's record describing something that is gone, so
+/// block those writes before anything changes.
+fn guard_unselected_peers(
+    manifest: &Manifest,
+    state: &State,
+    items: &mut [PlanItem],
+    result: &mut SharedDestinations,
+) -> Result<()> {
+    let skills_dir = manifest.skills_dir();
+    let peers: Vec<(&InstallRecord, PathBuf)> = state
+        .records()
+        .filter(|record| {
+            record.belongs_to(&skills_dir)
+                && !items
+                    .iter()
+                    .any(|item| item.skill == record.skill && item.host == record.host)
+        })
+        .filter_map(|record| {
+            let physical = physical_destination(Path::new(&record.destination)).ok()?;
+            Some((record, physical))
+        })
+        .collect();
+    if peers.is_empty() {
+        return Ok(());
+    }
+    for item in items.iter_mut() {
+        if !matches!(
+            item.action,
+            Action::Remove | Action::Update | Action::Convert
+        ) {
+            continue;
+        }
+        // Nothing to invalidate when the entry is already gone.
+        if item.action == Action::Remove
+            && link::entry_kind(&item.destination)? == EntryKind::Missing
+        {
+            continue;
+        }
+        let Ok(physical) = physical_destination(&item.destination) else {
+            continue;
+        };
+        let Some((peer, _)) = peers.iter().find(|(_, other)| *other == physical) else {
+            continue;
+        };
+        let remedy = if manifest.targets.get(&peer.host).is_some_and(|t| t.enabled) {
+            "select every host that shares it (omit --host) or handle that host first"
+        } else {
+            "enable that host and include it, or uninstall it first"
+        };
+        item.reason = format!(
+            "destination is shared with {} -> {}, which this command does not include; {remedy}",
+            peer.skill, peer.host
+        );
+        item.action = Action::SharedDestination;
+        result.incompatible = true;
+    }
+    Ok(())
 }
 
 /// Plan connecting one skill to one host. An existing record keeps its own
