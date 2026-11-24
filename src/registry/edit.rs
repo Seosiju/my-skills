@@ -118,18 +118,45 @@ pub(crate) fn prepare_import(
 ) -> Result<(ManifestEdit, bool)> {
     let mut enabled = enable;
     let edit = prepare(path, |lines| {
-        if let Some((start, end)) = skill_section(lines, name) {
-            if !enable {
-                enabled = current;
-                return Ok(false);
-            }
-            set_key(lines, start + 1, end, "enabled", "enabled = true".into());
-        } else {
-            register(lines, name, enable, hosts)?;
-        }
-        Ok(true)
+        apply_import_edit(lines, name, enable, current, hosts, &mut enabled)
     })?;
     Ok((edit, enabled))
+}
+
+/// Validate the import manifest edit in memory without acquiring an edit lock
+/// or touching the filesystem (`import --dry-run`).
+pub(crate) fn preview_import(
+    path: &Path,
+    name: &str,
+    enable: bool,
+    current: bool,
+    hosts: &[String],
+) -> Result<bool> {
+    let mut enabled = enable;
+    let _ = compute_edit(path, |lines| {
+        apply_import_edit(lines, name, enable, current, hosts, &mut enabled)
+    })?;
+    Ok(enabled)
+}
+
+fn apply_import_edit(
+    lines: &mut Vec<String>,
+    name: &str,
+    enable: bool,
+    current: bool,
+    hosts: &[String],
+    enabled: &mut bool,
+) -> Result<bool> {
+    if let Some((start, end)) = skill_section(lines, name) {
+        if !enable {
+            *enabled = current;
+            return Ok(false);
+        }
+        set_key(lines, start + 1, end, "enabled", "enabled = true".into());
+    } else {
+        register(lines, name, enable, hosts)?;
+    }
+    Ok(true)
 }
 
 pub(crate) fn prepare_registration(
@@ -187,6 +214,19 @@ fn prepare(
     edit: impl FnOnce(&mut Vec<String>) -> Result<bool>,
 ) -> Result<ManifestEdit> {
     let lock = EditLock::acquire(path)?;
+    let (before, after) = compute_edit(path, edit)?;
+    Ok(ManifestEdit {
+        path: path.into(),
+        before,
+        after,
+        _lock: lock,
+    })
+}
+
+fn compute_edit(
+    path: &Path,
+    edit: impl FnOnce(&mut Vec<String>) -> Result<bool>,
+) -> Result<(String, String)> {
     let before = read(path)?;
     let mut lines = prep_lines(&before);
     let after = if edit(&mut lines)? {
@@ -200,12 +240,7 @@ fn prepare(
     } else {
         before.clone()
     };
-    Ok(ManifestEdit {
-        path: path.into(),
-        before,
-        after,
-        _lock: lock,
-    })
+    Ok((before, after))
 }
 
 fn read(path: &Path) -> Result<String> {

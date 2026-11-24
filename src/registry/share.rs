@@ -294,26 +294,36 @@ pub(crate) fn import(
     dry_run: bool,
     on_audit_skip: impl FnOnce(),
 ) -> Operation<ImportOutcome> {
-    let snapshot = Snapshot::new(manifest, source)?;
-    let validation = compose_validation(&snapshot.source);
+    let snapshot = if dry_run {
+        Snapshot::check_only(manifest, source)?;
+        None
+    } else {
+        Some(Snapshot::new(manifest, source)?)
+    };
+    let inspect_source = snapshot.as_ref().map_or(source, |s| s.source.as_path());
+    let validation = compose_validation(inspect_source);
     if !validation.ok() {
         return Err(Failure::Validation(validation.errors));
     }
     let policy = audit::policy_from_settings(&manifest.audit)?;
-    let gate = audit::audit_skills(std::slice::from_ref(&snapshot.source), &policy, skip_audit)?;
+    let gate = audit::audit_skills(
+        std::slice::from_ref(&inspect_source.to_path_buf()),
+        &policy,
+        skip_audit,
+    )?;
     if gate.blocked() {
         return Err(Failure::Audit(gate));
     }
     if gate.skipped {
         on_audit_skip();
     }
-    let meta = metadata(&snapshot.source).map_err(Failure::Blocked)?;
+    let meta = metadata(inspect_source).map_err(Failure::Blocked)?;
     let name = field(&meta, "name")
         .expect("name checked by validation")
         .python_string();
     let canonical = manifest.skill_dir(&name);
     let old = Canonical::read(&canonical)?;
-    let hash = hash_directory(&snapshot.source)?;
+    let hash = hash_directory(inspect_source)?;
     let status = old.status(&hash);
     if status == "different" && !force {
         return Err(Failure::Blocked(format!(
@@ -331,18 +341,25 @@ pub(crate) fn import(
         .skills
         .get(&name)
         .is_some_and(|skill| skill.enabled);
-    let (edit, enabled) = edit::prepare_import(
-        &manifest.root.join(MANIFEST_FILE),
-        &name,
-        enable,
-        current,
-        &enabled_hosts(manifest),
-    )?;
-    // A dry run stops before anything persistent is written. The temporary
-    // staging copy and edit lock are released when they drop.
-    if !dry_run {
+    let enabled = if let Some(snapshot) = snapshot {
+        let (edit, enabled) = edit::prepare_import(
+            &manifest.root.join(MANIFEST_FILE),
+            &name,
+            enable,
+            current,
+            &enabled_hosts(manifest),
+        )?;
         snapshot.publish(manifest, &canonical, &old, &hash, &edit, || Ok(()))?;
-    }
+        enabled
+    } else {
+        edit::preview_import(
+            &manifest.root.join(MANIFEST_FILE),
+            &name,
+            enable,
+            current,
+            &enabled_hosts(manifest),
+        )?
+    };
     Ok(ImportOutcome {
         name,
         canonical,
@@ -626,7 +643,7 @@ struct Snapshot {
 }
 
 impl Snapshot {
-    fn new(manifest: &Manifest, source: &Path) -> Operation<Self> {
+    fn check_only(manifest: &Manifest, source: &Path) -> Operation<(Dir, PathBuf)> {
         let dir = open_source(source)?;
         let resolved_source = physical_path(source)?.0;
         let data = physical_path(&paths::data_root())?.0;
@@ -648,6 +665,11 @@ impl Snapshot {
                 "source contains the registry staging directory".into(),
             ));
         }
+        Ok((dir, stage_parent))
+    }
+
+    fn new(manifest: &Manifest, source: &Path) -> Operation<Self> {
+        let (dir, stage_parent) = Self::check_only(manifest, source)?;
         let temp = Builder::new()
             .prefix(".my-skills-")
             .tempdir_in(&stage_parent)

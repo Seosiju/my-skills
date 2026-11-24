@@ -39,6 +39,14 @@ pub struct RootResolution {
     pub cached: Option<PathBuf>,
 }
 
+impl RootResolution {
+    /// True when a real (non-dry-run) command would record `self.root` as the
+    /// active registry because no valid cache exists yet.
+    pub fn would_cache(&self) -> bool {
+        self.source == RootSource::Cwd && self.cached.is_none()
+    }
+}
+
 pub fn root_cache_path() -> PathBuf {
     paths::config_home().join("my-skills").join("root")
 }
@@ -165,10 +173,20 @@ pub fn resolve_root(start: Option<&Path>, write_cache: bool) -> Result<RootResol
     )))
 }
 
+/// Resolve the registry root and load its manifest. Pass `write_cache = false`
+/// for `--dry-run` paths so nothing is written to the config home.
+pub fn load_manifest_resolved(
+    cli: &CliOverrides,
+    write_cache: bool,
+) -> Result<(Manifest, RootResolution)> {
+    let resolution = resolve_root(None, write_cache)?;
+    let manifest = manifest::load_manifest(&resolution.root, cli)?;
+    Ok((manifest, resolution))
+}
+
 /// v0.4.1 `load_manifest_from_cwd`.
 pub fn load_manifest_from_cwd(cli: &CliOverrides) -> Result<Manifest> {
-    let resolution = resolve_root(None, true)?;
-    manifest::load_manifest(&resolution.root, cli)
+    load_manifest_resolved(cli, true).map(|(manifest, _)| manifest)
 }
 
 /// `None` or `"all"` means every enabled target; otherwise one known host.

@@ -42,8 +42,18 @@ impl Env {
         self.tmp.path().join("registry")
     }
 
+    fn root_cache(&self) -> PathBuf {
+        self.tmp.path().join("config/my-skills/root")
+    }
+
     fn manifest(&self) -> String {
         fs::read_to_string(self.root().join("my-skills.toml")).unwrap()
+    }
+
+    fn cmd_in_registry_without_env(&self) -> Command {
+        let mut cmd = self.cmd();
+        cmd.current_dir(self.root()).env_remove("MY_SKILLS_ROOT");
+        cmd
     }
 
     fn cmd(&self) -> Command {
@@ -193,4 +203,181 @@ fn share_dry_run_is_a_plan() {
         listing(&env.root().join("skills")),
         vec!["alpha".to_string()]
     );
+}
+
+#[test]
+fn dry_run_from_cwd_without_env_or_cache_leaves_config_home_empty() {
+    let env = Env::new();
+    env.git(&["init", "-q"]);
+    let incoming = env.tmp.path().join("incoming/beta");
+    fs::create_dir_all(&incoming).unwrap();
+    fs::write(
+        incoming.join("SKILL.md"),
+        "---\nname: beta\ndescription: Incoming skill.\n---\n\nBody.\n",
+    )
+    .unwrap();
+
+    let before_manifest = env.manifest();
+    let expected_display = paths::display_path(&env.root().canonicalize().unwrap());
+    let expected_preview = format!("would remember {expected_display} as the active registry");
+    let incoming_str = incoming.display().to_string();
+
+    let manifest_dry_runs: &[&[&str]] = &[
+        &["install", "--dry-run"],
+        &["sync", "--dry-run"],
+        &["uninstall", "alpha", "--dry-run"],
+        &["convert", "--to", "copy", "--dry-run"],
+        &["enable", "alpha", "--dry-run"],
+        &["disable", "alpha", "--dry-run"],
+        &["import", &incoming_str, "--dry-run"],
+        &["share", "--from", "claude", "--dry-run"],
+    ];
+
+    for args in manifest_dry_runs {
+        let out = env
+            .cmd_in_registry_without_env()
+            .args(*args)
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            out.status.success(),
+            "args={args:?} failed:\nstdout={stdout}\nstderr={stderr}"
+        );
+        assert!(
+            stdout.contains(&expected_preview),
+            "args={args:?} missing preview `{expected_preview}` in:\n{stdout}"
+        );
+        assert!(
+            !stdout.contains(r"\\?\"),
+            "args={args:?} printed verbatim prefix:\n{stdout}"
+        );
+        assert!(
+            !env.root_cache().exists(),
+            "args={args:?} wrote root cache at {}",
+            env.root_cache().display()
+        );
+        assert!(
+            !env.tmp.path().join("config").exists(),
+            "args={args:?} created config directory"
+        );
+    }
+
+    for args in [
+        &["install", "--dry-run", "--json"][..],
+        &["share", "--from", "claude", "--dry-run", "--json"][..],
+    ] {
+        let out = env
+            .cmd_in_registry_without_env()
+            .args(args)
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success(),
+            "args={args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_str::<serde_json::Value>(&stdout)
+            .unwrap_or_else(|e| panic!("args={args:?} emitted invalid JSON ({e}):\n{stdout}"));
+        assert!(!env.root_cache().exists(), "args={args:?} wrote root cache");
+    }
+
+    for args in [
+        &["bootstrap", "--dry-run"][..],
+        &["set-root", "--dry-run"][..],
+        &["hooks", "install", "--dry-run"][..],
+        &["hooks", "uninstall", "--dry-run"][..],
+    ] {
+        env.cmd_in_registry_without_env()
+            .args(args)
+            .assert()
+            .success();
+        assert!(!env.root_cache().exists(), "args={args:?} wrote root cache");
+    }
+
+    assert_eq!(env.manifest(), before_manifest);
+    assert!(!env.tmp.path().join("config").exists());
+    assert!(!env.tmp.path().join("state").exists());
+    assert!(!env.tmp.path().join("hosts").exists());
+}
+
+#[test]
+fn dry_run_does_not_preview_or_repoint_when_cache_already_exists() {
+    let env = Env::new();
+    let other = env.tmp.path().join("other-registry");
+    fs::create_dir_all(&other).unwrap();
+    fs::write(other.join("my-skills.toml"), "schema_version = 1\n").unwrap();
+    let other_canonical = other.canonicalize().unwrap();
+    fs::create_dir_all(env.root_cache().parent().unwrap()).unwrap();
+    fs::write(env.root_cache(), format!("{}\n", other_canonical.display())).unwrap();
+
+    let out = env
+        .cmd_in_registry_without_env()
+        .args(["install", "--dry-run"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !stdout.contains("would remember"),
+        "should not preview caching when a cache already exists:\n{stdout}"
+    );
+    let cached = fs::read_to_string(env.root_cache()).unwrap();
+    assert_eq!(cached.trim(), other_canonical.display().to_string());
+}
+
+#[test]
+fn real_command_from_cwd_writes_root_cache_and_never_repoints_existing_cache() {
+    let env = Env::new();
+    let expected_root = env.root().canonicalize().unwrap();
+
+    env.cmd_in_registry_without_env()
+        .args(["install", "alpha", "--host", "claude"])
+        .assert()
+        .success();
+    let cached = fs::read_to_string(env.root_cache()).unwrap();
+    assert_eq!(cached.trim(), expected_root.display().to_string());
+
+    let other = env.tmp.path().join("other-registry");
+    fs::create_dir_all(&other).unwrap();
+    fs::write(other.join("my-skills.toml"), "schema_version = 1\n").unwrap();
+
+    env.cmd()
+        .current_dir(&other)
+        .env_remove("MY_SKILLS_ROOT")
+        .arg("status")
+        .assert()
+        .success()
+        .stderr(contains("note: using ./my-skills.toml for this command"));
+    let cached_after = fs::read_to_string(env.root_cache()).unwrap();
+    assert_eq!(cached_after.trim(), expected_root.display().to_string());
+}
+
+#[test]
+fn import_dry_run_writes_no_lock_or_cache_even_when_edit_lock_exists() {
+    let env = Env::new();
+    let incoming = env.tmp.path().join("incoming/beta");
+    fs::create_dir_all(&incoming).unwrap();
+    fs::write(
+        incoming.join("SKILL.md"),
+        "---\nname: beta\ndescription: Incoming skill.\n---\n\nBody.\n",
+    )
+    .unwrap();
+    let lock = env.root().join("my-skills.toml.edit-lock");
+    fs::write(&lock, "other writer\n").unwrap();
+
+    env.cmd_in_registry_without_env()
+        .args(["import", &incoming.display().to_string(), "--dry-run"])
+        .assert()
+        .success()
+        .stdout(contains("would import to"));
+    assert_eq!(fs::read_to_string(&lock).unwrap(), "other writer\n");
+    assert!(!env.root_cache().exists());
+    assert!(!env.tmp.path().join("config").exists());
 }
