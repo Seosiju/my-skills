@@ -32,11 +32,14 @@ use crate::registry::root::{self, confirm_multi_host_write, resolve_hosts};
 // ---------------------------------------------------------------- install
 
 pub fn install(args: &InstallArgs) -> ExitCode {
+    if args.json && !args.dry_run {
+        return config_error("install --json requires --dry-run");
+    }
     let cli = CliOverrides {
         install_mode: args.mode.map(Into::into),
         ..CliOverrides::default()
     };
-    let (manifest, resolution) = match root::load_manifest_resolved(&cli, !args.dry_run) {
+    let (manifest, resolution) = match load_connect_manifest(&cli, !args.dry_run) {
         Ok(loaded) => loaded,
         Err(e) => return config_error(e),
     };
@@ -49,8 +52,8 @@ pub fn install(args: &InstallArgs) -> ExitCode {
         Ok(selection) => selection,
         Err(e) => return config_error(e),
     };
-    if args.json && !args.dry_run {
-        return config_error("install --json requires --dry-run");
+    if let Err(error) = remember_write_root(Some(&resolution), !args.dry_run) {
+        return config_error(error);
     }
     let validation = validate_selected(&manifest, &skills, &hosts);
     let allow = is_builtin_seed_default_install(args, &manifest, &skills, &hosts);
@@ -68,6 +71,9 @@ pub fn install(args: &InstallArgs) -> ExitCode {
                 needs_yes,
             }
             .print(args.json);
+            if !args.json {
+                print_confirmation_hint(&hosts, needs_yes);
+            }
         }
         return ExitCode::from(1);
     }
@@ -104,6 +110,7 @@ pub fn install(args: &InstallArgs) -> ExitCode {
             println!("Dry run — planned actions (nothing written):");
             print_plan(&items);
             super::print_would_cache_root(&resolution);
+            print_confirmation_hint(&hosts, needs_yes);
         }
         return ExitCode::SUCCESS;
     }
@@ -150,21 +157,21 @@ fn is_builtin_seed_default_install(
 // ---------------------------------------------------------------- sync
 
 pub fn sync(args: &SyncArgs) -> ExitCode {
+    if args.json && args.check {
+        return config_error("sync --json is not supported with --check; use --dry-run --json");
+    }
     if args.json && !args.dry_run {
         return config_error("sync --json requires --dry-run");
     }
-    let (manifest, resolution) = match root::load_manifest_resolved(
-        &CliOverrides::default(),
-        !args.dry_run && !args.check,
-    ) {
-        Ok(loaded) => loaded,
-        Err(e) => return config_error(e),
-    };
+    let (manifest, resolution) =
+        match load_connect_manifest(&CliOverrides::default(), !args.dry_run && !args.check) {
+            Ok(loaded) => loaded,
+            Err(e) => return config_error(e),
+        };
     sync_manifest_with_resolution(&manifest, args, Some(&resolution))
 }
 
-/// Sync against an already loaded manifest (also used by bootstrap and the
-/// git hooks).
+/// Sync against an already loaded manifest.
 pub fn sync_manifest(manifest: &Manifest, args: &SyncArgs) -> ExitCode {
     sync_manifest_with_resolution(manifest, args, None)
 }
@@ -188,6 +195,9 @@ fn sync_manifest_with_resolution(
         },
         None => manifest.skills.values().cloned().collect(),
     };
+    if let Err(error) = remember_write_root(resolution, !args.dry_run && !args.check) {
+        return config_error(error);
+    }
     let scoped: Vec<Skill> = scoped
         .into_iter()
         .map(|mut s| {
@@ -214,7 +224,7 @@ fn sync_manifest_with_resolution(
         Err(e) => return config_error(e),
     };
 
-    if args.check && !args.json {
+    if args.check {
         // Status of every wanted pair (v0.4.1 output), plus what a real sync
         // would prune (D3). Any planned write or block is drift (spec §6.4).
         let mut drift = items
@@ -283,23 +293,27 @@ fn sync_manifest_with_resolution(
     };
 
     if args.dry_run {
+        let needs_yes = writes && hosts.len() > 1 && !args.yes;
         DryRun {
             items: &items,
             validation: &validation,
             audit: gate.as_ref(),
             resolution,
-            needs_yes: writes && hosts.len() > 1 && !args.yes,
+            needs_yes,
         }
         .print(args.json);
         if !args.json {
             println!("Dry run — planned actions (nothing written):");
             print_plan(&items);
-            if let Some(gate) = gate.as_ref().filter(|gate| gate.blocked()) {
+            if args.skip_audit {
+                println!("WARN: audit skipped by explicit --skip-audit");
+            } else if let Some(gate) = gate.as_ref().filter(|gate| gate.blocked()) {
                 println!("{}", format_gate(gate, "AUDIT WOULD BLOCK"));
             }
             if let Some(resolution) = resolution {
                 super::print_would_cache_root(resolution);
             }
+            print_confirmation_hint(&hosts, needs_yes);
         }
         return exit(invalid);
     }
@@ -325,18 +339,21 @@ fn print_plan_results_noop(items: &[PlanItem]) {
 // ---------------------------------------------------------------- uninstall
 
 pub fn uninstall(args: &UninstallArgs) -> ExitCode {
-    let (manifest, resolution) =
-        match root::load_manifest_resolved(&CliOverrides::default(), !args.dry_run) {
-            Ok(loaded) => loaded,
-            Err(e) => return config_error(e),
-        };
     let Some(skill) = args.skill.as_deref() else {
         return config_error("uninstall requires a skill name");
     };
+    let (manifest, resolution) =
+        match load_connect_manifest(&CliOverrides::default(), !args.dry_run) {
+            Ok(loaded) => loaded,
+            Err(e) => return config_error(e),
+        };
     let hosts = match resolve_hosts(&manifest, args.host.as_deref()) {
         Ok(h) => h,
         Err(e) => return config_error(e),
     };
+    if let Err(error) = remember_write_root(Some(&resolution), !args.dry_run) {
+        return config_error(error);
+    }
     let mut state = match State::load(None) {
         Ok(s) => s,
         Err(e) => return config_error(e),
@@ -349,9 +366,11 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
         }
     }
     if args.dry_run {
+        print_write_refusal(resolution.write_refusal().as_deref());
         println!("Dry run — planned actions (nothing written):");
         print_plan(&items);
         super::print_would_cache_root(&resolution);
+        print_confirmation_hint(&hosts, hosts.len() > 1 && !args.yes);
         return ExitCode::SUCCESS;
     }
     if !confirm_multi_host_write(&hosts, args.yes) {
@@ -395,7 +414,7 @@ pub fn uninstall(args: &UninstallArgs) -> ExitCode {
 
 pub fn convert(args: &ConvertArgs) -> ExitCode {
     let (manifest, resolution) =
-        match root::load_manifest_resolved(&CliOverrides::default(), !args.dry_run) {
+        match load_connect_manifest(&CliOverrides::default(), !args.dry_run) {
             Ok(loaded) => loaded,
             Err(e) => return config_error(e),
         };
@@ -410,6 +429,9 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
         Ok(selection) => selection,
         Err(e) => return config_error(e),
     };
+    if let Err(error) = remember_write_root(Some(&resolution), !args.dry_run) {
+        return config_error(error);
+    }
     let mut state = match State::load(None) {
         Ok(s) => s,
         Err(e) => return config_error(e),
@@ -423,10 +445,12 @@ pub fn convert(args: &ConvertArgs) -> ExitCode {
         Err(e) => return config_error(e),
     };
     if args.dry_run {
+        print_write_refusal(resolution.write_refusal().as_deref());
         println!("Dry run — planned actions (nothing written):");
         print_plan(&items);
         print_skipped_convert_hosts(&skipped_hosts);
         super::print_would_cache_root(&resolution);
+        print_confirmation_hint(&active_hosts, active_hosts.len() > 1 && !args.yes);
         return ExitCode::SUCCESS;
     }
     if !confirm_multi_host_write(&active_hosts, args.yes) {
@@ -449,11 +473,13 @@ fn print_skipped_convert_hosts(skipped: &[(String, InstallMode)]) {
 // ---------------------------------------------------------------- bootstrap
 
 pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
-    // Connecting skills is a real write: refuse a non-active cwd registry and
-    // record a first-ever registry, like install and sync.
     let writes = !args.dry_run && !args.skip_skill_install;
-    let root = match root::resolve_root(None, writes) {
-        Ok(r) => r.root,
+    let resolution = match if writes {
+        resolve_write_root()
+    } else {
+        root::resolve_root(None, false)
+    } {
+        Ok(resolution) => resolution,
         Err(e) => return config_error(e),
     };
     let mut preview = vec!["my-skills".to_string(), "sync".into()];
@@ -485,7 +511,7 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
             install_mode: args.mode.map(Into::into),
             ..CliOverrides::default()
         };
-        let manifest = match load_manifest(&root, &cli) {
+        let manifest = match load_manifest(&resolution.root, &cli) {
             Ok(m) => m,
             Err(e) => return config_error(e),
         };
@@ -495,7 +521,7 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
             yes: true,
             ..SyncArgs::default()
         };
-        let code = sync_manifest(&manifest, &sync_args);
+        let code = sync_manifest_with_resolution(&manifest, &sync_args, Some(&resolution));
         if code != ExitCode::SUCCESS {
             return code;
         }
@@ -508,6 +534,38 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
 }
 
 // ---------------------------------------------------------------- shared
+
+fn load_connect_manifest(
+    cli: &CliOverrides,
+    writes: bool,
+) -> crate::Result<(Manifest, root::RootResolution)> {
+    if !writes {
+        return root::load_manifest_resolved(cli, false);
+    }
+    let resolution = resolve_write_root()?;
+    let manifest = load_manifest(&resolution.root, cli)?;
+    Ok((manifest, resolution))
+}
+
+fn resolve_write_root() -> crate::Result<root::RootResolution> {
+    let resolution = root::resolve_root(None, false)?;
+    if let Some(message) = resolution.write_refusal() {
+        return Err(Error::Manifest(message));
+    }
+    Ok(resolution)
+}
+
+// Resolve with the write guard up front, then remember the registry after
+// manifest-dependent argument checks have passed.
+fn remember_write_root(
+    resolution: Option<&root::RootResolution>,
+    writes: bool,
+) -> crate::Result<()> {
+    if let Some(resolution) = resolution.filter(|resolution| writes && resolution.would_cache()) {
+        root::resolve_root(Some(&resolution.root), true)?;
+    }
+    Ok(())
+}
 
 #[derive(Serialize)]
 struct ValidationCheck<'a> {
@@ -729,6 +787,21 @@ fn print_plan(items: &[PlanItem]) {
     }
 }
 
+fn print_write_refusal(message: Option<&str>) {
+    if let Some(message) = message {
+        println!("BLOCKED: {message}");
+    }
+}
+
+fn print_confirmation_hint(hosts: &[String], needs_yes: bool) {
+    if needs_yes {
+        println!(
+            "Re-run with --yes to apply: this command writes to multiple hosts ({}).",
+            hosts.join(", ")
+        );
+    }
+}
+
 struct DryRun<'a> {
     items: &'a [PlanItem],
     validation: &'a [ValidationCheck<'a>],
@@ -739,6 +812,9 @@ struct DryRun<'a> {
 
 impl DryRun<'_> {
     fn print(&self, json: bool) {
+        let refusal = self
+            .resolution
+            .and_then(root::RootResolution::write_refusal);
         let validation = self.validation.iter().filter(|check| !check.ok);
         let audit = self
             .audit
@@ -752,18 +828,26 @@ impl DryRun<'_> {
             plan.clone().count(),
         );
         let count = validation_count + audit_count + plan_count;
+        let blocked = count != 0 || refusal.is_some();
 
         if json {
-            let mut reasons: Vec<_> = validation
-                .map(|check| {
-                    json!({
-                        "skill": check.skill,
-                        "host": check.host,
-                        "kind": "validation",
-                        "message": check.errors.join("\n"),
-                    })
+            let mut reasons = Vec::new();
+            if let Some(message) = refusal {
+                reasons.push(json!({
+                    "skill": null,
+                    "host": null,
+                    "kind": "inactive_registry",
+                    "message": message,
+                }));
+            }
+            reasons.extend(validation.map(|check| {
+                json!({
+                    "skill": check.skill,
+                    "host": check.host,
+                    "kind": "validation",
+                    "message": check.errors.join("\n"),
                 })
-                .collect();
+            }));
             reasons.extend(audit.map(|result| json!({
                 "skill": result.skill,
                 "host": null,
@@ -788,7 +872,7 @@ impl DryRun<'_> {
             }
             let audit_not_run = AuditGateResult {
                 results: Vec::new(),
-                skipped: true,
+                skipped: false,
             };
             let payload = json!({
                 "actions": self.items.iter().map(|item| json!({
@@ -803,8 +887,8 @@ impl DryRun<'_> {
                 "audit": gate_json(self.audit.unwrap_or(&audit_not_run)),
                 "registry": self.resolution.map(root::RootResolution::meta),
                 "dry_run": true,
-                "blocked": count != 0,
-                "applicable": count == 0 && !self.needs_yes,
+                "blocked": blocked,
+                "applicable": !blocked && !self.needs_yes,
                 "block_reasons": reasons,
                 "validation": self.validation,
             });
@@ -812,10 +896,13 @@ impl DryRun<'_> {
                 "{}",
                 serde_json::to_string_pretty(&payload).expect("JSON values always serialize")
             );
-        } else if count != 0 {
-            println!(
-                "BLOCKED: {count} item(s) would be refused (validation {validation_count}, audit {audit_count}, plan {plan_count})"
-            );
+        } else {
+            print_write_refusal(refusal.as_deref());
+            if count != 0 {
+                println!(
+                    "BLOCKED: {count} item(s) would be refused (validation {validation_count}, audit {audit_count}, plan {plan_count})"
+                );
+            }
         }
         print_validation(self.validation, json);
     }
