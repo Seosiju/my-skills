@@ -60,14 +60,26 @@ Exit-code rules:
 - `sync --check` takes precedence over `--dry-run` and cannot be combined with
   `--json`.
 
+## Compact catalog results
+
+Use `my-skills skills --json --brief` for compact rows. A row keeps `error`
+when skill metadata is missing or invalid. Add `--with-governance` to put
+`audit` and `provenance` under `governance` in each brief row.
+
 ## Comparing installed content
 
 Use `my-skills diff <skill> --host <host> --patch --json` for drift or conflict.
-It reads the canonical and installed entries, lists file changes, and reports
-link target agreement. `different` describes live differences, while `status`
-tracks the install record. Identical edits on both sides can show `CONFLICT`
-with no live differences. Exit `0` means a match, `1` a difference or missing
-entry, and `2` an error.
+An explicit host is checked even if it is disabled or the manifest does not
+want the connection. Diff uses the install record's destination if one exists.
+With no record, an existing entry is `UNMANAGED` and an absent entry is
+`MISSING`.
+
+Diff lists live file changes or reports `link_target` (the target's display
+path) and `link_matches` (whether the link points to the canonical skill).
+Both link fields are `null` for other entries. A `FOREIGN` entry counts as
+different even if the live content matches. Identical edits to an owned copy
+and its canonical skill can show `CONFLICT` with no live differences. Exit
+`0` means a match, `1` a difference or missing entry, and `2` an error.
 
 ## Host scope and `--yes` confirmation
 

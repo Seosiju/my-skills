@@ -23,8 +23,10 @@ Target release 1.2.0.
   preserves managed orphans. `enable` and `disable` apply each selection in
   one atomic manifest edit.
 - `skills --json` adds `canonical_path` and `group`. Repeatable `--group`
-  filters the catalog. `--brief` returns compact JSON rows, reducing stdout
-  from 4,098 to 1,978 bytes (51.7%) in a synthetic ten-skill registry.
+  filters the catalog. `--brief` returns compact JSON rows and retains `error`
+  when present. With `--with-governance` it nests `audit` and `provenance`
+  under `governance`. In a synthetic ten-skill registry, `--brief` reduced
+  stdout from 4,098 to 1,978 bytes (51.7%).
 - `validate --host <HOST>` checks that host's constraints. `validate --json`
   reports `registry`, overall `ok`, and per-skill `ok`, `errors`, and `warnings`.
 - Usage and configuration errors with `--json` emit an `error` object on
@@ -36,14 +38,17 @@ Target release 1.2.0.
   Git and hook diagnostics, full validation, and the link probe.
   `MY_SKILLS_NO_UPDATE_CHECK=1` skips only the update lookup.
 - `diff <SKILL>` compares live host content with the canonical skill without
-  writing. It lists added, removed, and modified files or checks a link's
-  target. `--patch` adds unified diffs for changed UTF-8 text files up to
-  1 MiB. Exit `0` means a match, `1` means a difference or missing entry, and
-  `2` means an error. JSON returns `{registry, skill, different, hosts}`.
-  Each host has `host`, `status`, `mode`, `destination`, `owner`, `files`
-  (`{added, removed, modified}`), `patch`, and `link_matches`. Status tracks
-  changes against install records, so identical edits on both sides can show
-  `CONFLICT` with no live file differences.
+  writing. An explicit `--host` checks that target even when it is disabled
+  or the manifest does not want the connection. Diff uses the install record's
+  destination when available and lists file changes or shows the link target.
+  `--patch` adds unified diffs for changed UTF-8 text files up to 1 MiB.
+  Exit `0` means a match, `1` means a difference or missing entry, and `2`
+  means an error. A `FOREIGN` entry counts as different even if its content
+  matches. JSON returns `{registry, skill, different, hosts}`, with host fields
+  `host`, `status`, `mode`, `destination`, `owner`, `files`
+  (`{added, removed, modified}`), `patch`, `link_target`, and `link_matches`.
+  Status tracks changes against install records, so identical edits on both
+  sides can show `CONFLICT` with no live file differences.
 
 ### Changed
 
