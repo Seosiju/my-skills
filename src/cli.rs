@@ -293,7 +293,7 @@ pub struct SkillNameArgs {
 
 #[derive(Debug, Args)]
 pub struct StatusArgs {
-    /// Only these skills (default: every enabled skill)
+    /// Only these skills (default: every registered skill)
     pub skills: Vec<String>,
     /// Also show every skill in this manifest group (repeatable)
     #[arg(long = "group", value_name = "GROUP")]
