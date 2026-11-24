@@ -191,13 +191,17 @@ fn inspect(path: &Path, name: &'static str) -> io::Result<HookEntry> {
     })
 }
 
+fn inspect_hook_error(file: &Path, error: io::Error) -> crate::Error {
+    crate::Error::io(PathBuf::from(display_hook_path(file)), error)
+}
+
 pub(crate) fn status(git: &Git<'_>) -> anyhow::Result<HookStatus> {
     let path = git.path("hooks")?;
     let entries = NAMES
         .into_iter()
         .map(|name| {
             let file = path.join(name);
-            inspect(&file, name).map_err(|error| crate::Error::io(file, error))
+            inspect(&file, name).map_err(|error| inspect_hook_error(&file, error))
         })
         .collect::<Result<_, _>>()?;
     Ok(HookStatus {
@@ -583,5 +587,82 @@ mod tests {
                 "/Users/example/my-agent-skills/.git/hooks/pre-commit"
             );
         }
+    }
+
+    #[test]
+    fn inspect_hook_error_normalizes_path_separators() {
+        #[cfg(windows)]
+        {
+            let err = inspect_hook_error(
+                Path::new(r"C:/Users/example/my-agent-skills/.git/hooks\pre-commit"),
+                io::Error::new(io::ErrorKind::PermissionDenied, "access denied"),
+            );
+            assert_eq!(
+                err.to_string(),
+                r"C:\Users\example\my-agent-skills\.git\hooks\pre-commit: access denied"
+            );
+        }
+        #[cfg(not(windows))]
+        {
+            let err = inspect_hook_error(
+                Path::new("/Users/example/my-agent-skills/.git/hooks/pre-commit"),
+                io::Error::new(io::ErrorKind::PermissionDenied, "access denied"),
+            );
+            assert_eq!(
+                err.to_string(),
+                "/Users/example/my-agent-skills/.git/hooks/pre-commit: access denied"
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn status_io_error_displays_clean_windows_hook_path() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        fs::create_dir(&repo).unwrap();
+        let init = Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&repo)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", tmp.path().join("gitconfig"))
+            .status()
+            .unwrap();
+        assert!(init.success());
+
+        let hook = repo.join(".git").join("hooks").join("pre-commit");
+        fs::create_dir_all(hook.parent().unwrap()).unwrap();
+        fs::write(&hook, "#!/bin/sh\n").unwrap();
+
+        // Hold the hook file exclusively so `inspect`'s `File::open` fails with an I/O error.
+        let _lock = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .share_mode(0)
+            .open(&hook)
+            .unwrap();
+
+        let git = Git::discover(&repo).unwrap();
+        let message = status(&git)
+            .err()
+            .expect("locked hook should fail status")
+            .to_string();
+        let (path_part, _) = message
+            .split_once(": ")
+            .expect("error message should include '<path>: <source>'");
+        assert!(
+            !path_part.contains('/'),
+            "status I/O error path mixes forward slashes on Windows: {message}"
+        );
+        assert!(
+            !path_part.contains(r"\\?\"),
+            "status I/O error path contains verbatim prefix: {message}"
+        );
+        assert!(
+            path_part.ends_with(r"\.git\hooks\pre-commit"),
+            "unexpected hook error path: {message}"
+        );
     }
 }
