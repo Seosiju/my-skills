@@ -44,18 +44,6 @@ pub const CODEX: HostConfig = HostConfig {
     default_enabled: true,
 };
 
-pub const HERMES: HostConfig = HostConfig {
-    name: "hermes",
-    display_name: "Hermes",
-    detect_commands: &["hermes"],
-    default_user_path: "~/.hermes/skills",
-    default_project_path: ".hermes/skills",
-    reload_hint: "Hermes reloads skills on restart; the agent may also edit them.",
-    description_max_chars: 768,
-    frontmatter_keep_fields: KEEP_FIELDS,
-    default_enabled: true,
-};
-
 pub const AGY: HostConfig = HostConfig {
     name: "agy",
     display_name: "Antigravity CLI",
@@ -68,8 +56,7 @@ pub const AGY: HostConfig = HostConfig {
     default_enabled: false,
 };
 
-/// Registration order matches v0.4.1.
-pub const ALL: [&HostConfig; 4] = [&CLAUDE, &CODEX, &HERMES, &AGY];
+pub const ALL: [&HostConfig; 3] = [&CLAUDE, &CODEX, &AGY];
 
 pub fn get_host(name: &str) -> Option<&'static HostConfig> {
     ALL.iter().copied().find(|h| h.name == name)

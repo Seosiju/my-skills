@@ -56,7 +56,6 @@ jobs:
               "$userHome\.claude\skills"
               "$userHome\.agents\skills"
               "$userHome\.gemini\config\skills"
-              "$userHome\.hermes"
               "$userHome\.config\my-skills"
               "$userHome\.local\state\my-skills"
               "$userHome\.local\share\my-skills"
