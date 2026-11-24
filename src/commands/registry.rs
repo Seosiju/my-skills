@@ -15,6 +15,7 @@ use crate::registry::share::{self, Failure};
 use crate::{Error, Result, registry::root};
 
 pub fn init_registry(args: &InitRegistryArgs) -> ExitCode {
+    let cache = root::CacheSnapshot::observe();
     let target = match seeds::registry_target(args.path.as_deref()) {
         Ok(target) => target,
         Err(err) => return super::config_error(err),
@@ -46,6 +47,11 @@ pub fn init_registry(args: &InitRegistryArgs) -> ExitCode {
     if let Err(err) = scaffold.create(&target, with_defaults) {
         return super::config_error(err);
     }
+    let created = match root::validate_repo_root(&target) {
+        Ok(path) => path,
+        Err(err) => return super::config_error(err),
+    };
+    cache.remember(&created);
     if !args.no_git {
         seeds::init_git(&target, with_defaults);
     }
@@ -150,7 +156,7 @@ pub fn share(args: &ShareArgs) -> ExitCode {
         return super::config_error(refusal);
     }
     match share::share(
-        &resolution.root,
+        &resolution,
         &args.from_host,
         skill,
         args.enable,
@@ -158,9 +164,6 @@ pub fn share(args: &ShareArgs) -> ExitCode {
         args.skip_audit,
     ) {
         Ok(result) => {
-            if resolution.would_cache() {
-                let _ = root::cache_repo_root(&resolution.root);
-            }
             if args.force {
                 println!("WARN: force overwrite allowed for existing canonical skill");
             }
@@ -175,6 +178,9 @@ pub fn share(args: &ShareArgs) -> ExitCode {
             );
             println!("adopted: {name} -> {}", args.from_host);
             print_hint(&name, args.enable);
+            if let Some(warning) = result.cleanup_warning {
+                eprintln!("warning: {warning}");
+            }
             ExitCode::SUCCESS
         }
         Err(Failure::Config(err)) => super::config_error(err),
@@ -251,9 +257,8 @@ fn set_enabled(args: &SkillNameArgs, enabled: bool) -> ExitCode {
         let path = manifest.root.join(MANIFEST_FILE);
         share::ensure_outside_hosts(&path, share::target_paths(&manifest))?;
         let edit = edit::prepare_enabled(&path, &names, enabled)?;
-        if resolution.would_cache() {
-            root::resolve_root(None, true)?;
-        }
+        resolution.recheck_write()?;
+        resolution.remember();
         edit.commit()?;
         for name in &names {
             println!("{label}: {name}");
@@ -312,6 +317,9 @@ pub fn import(args: &ImportArgs) -> ExitCode {
             println!("registered: {name} ({})", enabled_label(result.enabled));
             if !result.identical {
                 print_hint(&name, args.enable);
+            }
+            if let Some(warning) = result.cleanup_warning {
+                eprintln!("warning: {warning}");
             }
             ExitCode::SUCCESS
         }
