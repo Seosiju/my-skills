@@ -57,11 +57,16 @@ skill is safe to install:
 ```bash
 my-skills audit <skill> --json
 my-skills audit --all --json
-my-skills skills --json --with-status
+my-skills skills --json --with-governance
 ```
 
-Use `audit --all --json` before applying multiple skills so bundle-level and
-cross-skill findings are visible.
+Pass multiple names or `--group <group>` to audit a selected bundle. Use
+`audit --all --json` for the full registry. Bundle reports include cross-skill
+findings.
+
+`--with-governance` adds audit and provenance details to the skill catalog.
+`--with-status` is the old name and remains an alias. In `skills --json --brief`,
+those details appear under `governance`.
 
 If audit returns `blocked: true`, stop and show the finding. Do not install,
 sync, share, or import that skill. The only bypass is `--skip-audit`, and that

@@ -16,6 +16,19 @@ in `my-skills.toml` or `my-skills.local.toml`. Precedence for new connections:
 
 Existing connections keep their recorded mode until converted with `convert`.
 
+## Quick host diagnostics
+
+Run `my-skills doctor --quick --json` to see the registry, host settings, and
+connection counts. Quick mode skips the update lookup, Git and hook diagnostics,
+full validation, and the link probe.
+
+Each `hosts` row reports `configured_mode` (`link` or `copy` for new
+connections, or `null` when the manifest is unavailable). The `connections`
+counts cover records owned by the displayed registry. A copy fallback is
+included in both the `copy` and `fallback` counts. For full local diagnostics
+without the update lookup, use `--no-update-check` or
+`MY_SKILLS_NO_UPDATE_CHECK=1`.
+
 ## Antigravity CLI (agy)
 
 AGY is a supported, opt-in host. Set `enabled = true` under `[targets.agy]` and
