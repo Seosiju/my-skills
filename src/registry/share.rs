@@ -295,35 +295,29 @@ pub(crate) fn import(
     on_audit_skip: impl FnOnce(),
 ) -> Operation<ImportOutcome> {
     let snapshot = if dry_run {
-        Snapshot::check_only(manifest, source)?;
-        None
+        Snapshot::new_dry_run(manifest, source)?
     } else {
-        Some(Snapshot::new(manifest, source)?)
+        Snapshot::new(manifest, source)?
     };
-    let inspect_source = snapshot.as_ref().map_or(source, |s| s.source.as_path());
-    let validation = compose_validation(inspect_source);
+    let validation = compose_validation(&snapshot.source);
     if !validation.ok() {
         return Err(Failure::Validation(validation.errors));
     }
     let policy = audit::policy_from_settings(&manifest.audit)?;
-    let gate = audit::audit_skills(
-        std::slice::from_ref(&inspect_source.to_path_buf()),
-        &policy,
-        skip_audit,
-    )?;
+    let gate = audit::audit_skills(std::slice::from_ref(&snapshot.source), &policy, skip_audit)?;
     if gate.blocked() {
         return Err(Failure::Audit(gate));
     }
     if gate.skipped {
         on_audit_skip();
     }
-    let meta = metadata(inspect_source).map_err(Failure::Blocked)?;
+    let meta = metadata(&snapshot.source).map_err(Failure::Blocked)?;
     let name = field(&meta, "name")
         .expect("name checked by validation")
         .python_string();
     let canonical = manifest.skill_dir(&name);
     let old = Canonical::read(&canonical)?;
-    let hash = hash_directory(inspect_source)?;
+    let hash = hash_directory(&snapshot.source)?;
     let status = old.status(&hash);
     if status == "different" && !force {
         return Err(Failure::Blocked(format!(
@@ -341,7 +335,15 @@ pub(crate) fn import(
         .skills
         .get(&name)
         .is_some_and(|skill| skill.enabled);
-    let enabled = if let Some(snapshot) = snapshot {
+    let enabled = if dry_run {
+        edit::preview_import(
+            &manifest.root.join(MANIFEST_FILE),
+            &name,
+            enable,
+            current,
+            &enabled_hosts(manifest),
+        )?
+    } else {
         let (edit, enabled) = edit::prepare_import(
             &manifest.root.join(MANIFEST_FILE),
             &name,
@@ -351,14 +353,6 @@ pub(crate) fn import(
         )?;
         snapshot.publish(manifest, &canonical, &old, &hash, &edit, || Ok(()))?;
         enabled
-    } else {
-        edit::preview_import(
-            &manifest.root.join(MANIFEST_FILE),
-            &name,
-            enable,
-            current,
-            &enabled_hosts(manifest),
-        )?
     };
     Ok(ImportOutcome {
         name,
@@ -669,11 +663,26 @@ impl Snapshot {
     }
 
     fn new(manifest: &Manifest, source: &Path) -> Operation<Self> {
+        Self::stage(manifest, source, false)
+    }
+
+    fn new_dry_run(manifest: &Manifest, source: &Path) -> Operation<Self> {
+        Self::stage(manifest, source, true)
+    }
+
+    fn stage(manifest: &Manifest, source: &Path, outside_registry: bool) -> Operation<Self> {
         let (dir, stage_parent) = Self::check_only(manifest, source)?;
-        let temp = Builder::new()
-            .prefix(".my-skills-")
-            .tempdir_in(&stage_parent)
-            .map_err(|err| Error::io(&stage_parent, err))?;
+        let temp = if outside_registry {
+            Builder::new()
+                .prefix(".my-skills-")
+                .tempdir()
+                .map_err(|err| Error::io(std::env::temp_dir(), err))?
+        } else {
+            Builder::new()
+                .prefix(".my-skills-")
+                .tempdir_in(&stage_parent)
+                .map_err(|err| Error::io(&stage_parent, err))?
+        };
         let copied = temp
             .path()
             .join("snapshot")

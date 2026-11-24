@@ -246,14 +246,6 @@ fn dry_run_from_cwd_without_env_or_cache_leaves_config_home_empty() {
             "args={args:?} failed:\nstdout={stdout}\nstderr={stderr}"
         );
         assert!(
-            stdout.contains(&expected_preview),
-            "args={args:?} missing preview `{expected_preview}` in:\n{stdout}"
-        );
-        assert!(
-            !stdout.contains(r"\\?\"),
-            "args={args:?} printed verbatim prefix:\n{stdout}"
-        );
-        assert!(
             !env.root_cache().exists(),
             "args={args:?} wrote root cache at {}",
             env.root_cache().display()
@@ -261,6 +253,14 @@ fn dry_run_from_cwd_without_env_or_cache_leaves_config_home_empty() {
         assert!(
             !env.tmp.path().join("config").exists(),
             "args={args:?} created config directory"
+        );
+        assert!(
+            stdout.contains(&expected_preview),
+            "args={args:?} missing preview `{expected_preview}` in:\n{stdout}"
+        );
+        assert!(
+            !stdout.contains(r"\\?\"),
+            "args={args:?} printed verbatim prefix:\n{stdout}"
         );
     }
 
@@ -311,7 +311,8 @@ fn dry_run_does_not_preview_or_repoint_when_cache_already_exists() {
     fs::write(other.join("my-skills.toml"), "schema_version = 1\n").unwrap();
     let other_canonical = other.canonicalize().unwrap();
     fs::create_dir_all(env.root_cache().parent().unwrap()).unwrap();
-    fs::write(env.root_cache(), format!("{}\n", other_canonical.display())).unwrap();
+    let before_bytes = format!("{}\n", other_canonical.display()).into_bytes();
+    fs::write(env.root_cache(), &before_bytes).unwrap();
 
     let out = env
         .cmd_in_registry_without_env()
@@ -319,17 +320,44 @@ fn dry_run_does_not_preview_or_repoint_when_cache_already_exists() {
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
     assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
+        stderr.contains("note: using ./my-skills.toml for this command; active registry is"),
+        "expected current-directory registry note on stderr:\n{stderr}"
     );
     assert!(
         !stdout.contains("would remember"),
         "should not preview caching when a cache already exists:\n{stdout}"
     );
-    let cached = fs::read_to_string(env.root_cache()).unwrap();
-    assert_eq!(cached.trim(), other_canonical.display().to_string());
+    assert_eq!(fs::read(env.root_cache()).unwrap(), before_bytes);
+
+    let json_out = env
+        .cmd_in_registry_without_env()
+        .args([
+            "install",
+            "alpha",
+            "--host",
+            "claude",
+            "--dry-run",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    let json_stdout = String::from_utf8_lossy(&json_out.stdout);
+    let json_stderr = String::from_utf8_lossy(&json_out.stderr);
+    assert!(json_out.status.success(), "{json_stderr}");
+    assert!(
+        json_stderr.contains("note: using ./my-skills.toml for this command; active registry is"),
+        "expected current-directory registry note on stderr for --json:\n{json_stderr}"
+    );
+    let parsed: serde_json::Value = serde_json::from_str(&json_stdout)
+        .unwrap_or_else(|e| panic!("invalid JSON stdout ({e}):\n{json_stdout}"));
+    let actions = parsed["actions"].as_array().unwrap();
+    assert_eq!(actions.len(), 1, "{parsed}");
+    assert_eq!(actions[0]["skill"], "alpha");
+    assert_eq!(actions[0]["host"], "claude");
+    assert_eq!(fs::read(env.root_cache()).unwrap(), before_bytes);
 }
 
 #[test]
@@ -380,4 +408,92 @@ fn import_dry_run_writes_no_lock_or_cache_even_when_edit_lock_exists() {
     assert_eq!(fs::read_to_string(&lock).unwrap(), "other writer\n");
     assert!(!env.root_cache().exists());
     assert!(!env.tmp.path().join("config").exists());
+}
+
+#[test]
+fn import_dry_run_rejects_escaping_supporting_reference_like_real_import() {
+    let env = Env::new();
+    let incoming = env.tmp.path().join("incoming/beta");
+    fs::create_dir_all(incoming.join("sub")).unwrap();
+    fs::write(env.tmp.path().join("incoming/notes.txt"), "outside\n").unwrap();
+    fs::write(
+        incoming.join("SKILL.md"),
+        "---\nname: beta\ndescription: Escaping reference test.\n---\n\nSee [Notes](sub/../../notes.txt).\n",
+    )
+    .unwrap();
+
+    let expected_error = "referenced supporting file not found: sub/../../notes.txt";
+    let before_manifest = env.manifest();
+    let before_registry = listing(&env.root());
+    let before_skills = listing(&env.root().join("skills"));
+
+    env.cmd_in_registry_without_env()
+        .args(["import", &incoming.display().to_string(), "--dry-run"])
+        .assert()
+        .code(1)
+        .stdout(contains(expected_error));
+    assert!(!env.root_cache().exists());
+    assert!(!env.tmp.path().join("config").exists());
+    assert_eq!(env.manifest(), before_manifest);
+    assert_eq!(listing(&env.root()), before_registry);
+    assert_eq!(listing(&env.root().join("skills")), before_skills);
+
+    env.cmd()
+        .args(["import", &incoming.display().to_string()])
+        .assert()
+        .code(1)
+        .stdout(contains(expected_error));
+    assert_eq!(env.manifest(), before_manifest);
+    assert_eq!(listing(&env.root().join("skills")), before_skills);
+}
+
+#[cfg(windows)]
+#[test]
+fn import_dry_run_fails_on_locked_git_file_like_real_import() {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    let env = Env::new();
+    let incoming = env.tmp.path().join("incoming/beta");
+    fs::create_dir_all(incoming.join(".git")).unwrap();
+    fs::write(
+        incoming.join("SKILL.md"),
+        "---\nname: beta\ndescription: Locked git file test.\n---\n\nBody.\n",
+    )
+    .unwrap();
+    let locked_path = incoming.join(".git/copy-me.txt");
+    fs::write(&locked_path, "locked\n").unwrap();
+
+    let _held = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .share_mode(0)
+        .open(&locked_path)
+        .unwrap();
+
+    let before_manifest = env.manifest();
+    let before_registry = listing(&env.root());
+    let before_skills = listing(&env.root().join("skills"));
+
+    let dry = env
+        .cmd_in_registry_without_env()
+        .args(["import", &incoming.display().to_string(), "--dry-run"])
+        .output()
+        .unwrap();
+    let dry_stderr = String::from_utf8_lossy(&dry.stderr);
+    assert_eq!(dry.status.code(), Some(2), "stderr={dry_stderr}");
+    assert!(dry_stderr.contains("copy-me.txt"), "stderr={dry_stderr}");
+    assert!(!env.root_cache().exists());
+    assert!(!env.tmp.path().join("config").exists());
+    assert_eq!(env.manifest(), before_manifest);
+    assert_eq!(listing(&env.root()), before_registry);
+    assert_eq!(listing(&env.root().join("skills")), before_skills);
+
+    let real = env
+        .cmd()
+        .args(["import", &incoming.display().to_string()])
+        .output()
+        .unwrap();
+    let real_stderr = String::from_utf8_lossy(&real.stderr);
+    assert_eq!(real.status.code(), Some(2), "stderr={real_stderr}");
+    assert!(real_stderr.contains("copy-me.txt"), "stderr={real_stderr}");
 }
