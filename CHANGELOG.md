@@ -7,7 +7,7 @@ are the release source of truth while PyPI publishing remains undecided.
 
 ## [Unreleased]
 
-Target release 1.2.0.
+## [1.2.0] - 2026-11-24
 
 ### Added
 
