@@ -377,6 +377,10 @@ pub struct SyncArgs {
     /// Print only changes and problems; for git hooks (v1)
     #[arg(long)]
     pub quiet: bool,
+    /// Internal (not a flag): skills a git hook leaves untouched, neither
+    /// connected nor pruned, because their files have uncommitted changes
+    #[arg(skip)]
+    pub exclude: Vec<String>,
 }
 
 #[derive(Debug, Args)]

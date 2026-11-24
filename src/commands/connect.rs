@@ -222,6 +222,7 @@ fn sync_manifest_with_resolution(
     };
     let scoped: Vec<Skill> = scoped
         .into_iter()
+        .filter(|skill| !args.exclude.contains(&skill.name))
         .cloned()
         .map(|mut s| {
             if args.all {
