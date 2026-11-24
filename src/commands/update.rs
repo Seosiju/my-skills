@@ -4,6 +4,7 @@ use std::cmp::Ordering;
 use std::process::ExitCode;
 
 use crate::cli::{Channel, UpdateArgs};
+use crate::platform::paths;
 use crate::update::{CURRENT_VERSION, UpdateDownload, latest_release};
 
 pub fn run(args: &UpdateArgs) -> ExitCode {
@@ -53,7 +54,10 @@ pub fn run(args: &UpdateArgs) -> ExitCode {
     if args.dry_run {
         println!("Would download: {}", download.checksums_url);
         println!("Would download: {}", download.archive_url);
-        println!("Would replace:  {}", download.executable.display());
+        println!(
+            "Would replace:  {}",
+            paths::display_path(&download.executable)
+        );
         return ExitCode::SUCCESS;
     }
 

@@ -259,11 +259,11 @@ fn foreign_wanted_copy_is_visible_and_every_connection_plan_blocks_it() {
     assert_eq!(fs::read(b.join("my-skills.toml")).unwrap(), b_manifest);
     assert_eq!(fs::read(b.join("skills/alpha/SKILL.md")).unwrap(), b_skill);
 
-    // Uninstall's CLI reporting for this new action is wired in connect.rs.
     with_root(&fixture, &b)
         .args(["uninstall", "alpha", "--yes"])
-        .output()
-        .unwrap();
+        .assert()
+        .code(1)
+        .stdout(contains(&reason));
     assert_eq!(fs::read(&installed).unwrap(), before_install);
     assert_eq!(fs::read(fixture.state()).unwrap(), before_state);
 
@@ -309,4 +309,236 @@ fn sync_leaves_foreign_link_orphans_intact() {
         .success();
     assert_eq!(link::link_target(&connection).unwrap(), before_target);
     assert_eq!(fs::read(fixture.state()).unwrap(), before_state);
+}
+
+fn init_git(fixture: &Fixture, root: &Path) {
+    assert!(
+        fixture
+            .process("git")
+            .current_dir(root)
+            .args(["init", "-q"])
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+
+#[test]
+fn hook_previews_leave_the_cache_empty_and_first_write_records_the_cwd() {
+    let fixture = Fixture::new();
+    let root = &fixture.registry;
+    write_registry(root, &fixture.host("claude"), "copy", None);
+    init_git(&fixture, root);
+    let config = fixture.root.join("config/my-skills");
+
+    for args in [
+        &["hooks", "status"][..],
+        &["hooks", "install", "--dry-run"],
+        &["hooks", "uninstall", "--dry-run"],
+    ] {
+        from_cwd(&fixture, root).args(args).assert().success();
+        assert!(!config.exists(), "{args:?} created the config directory");
+    }
+    assert!(!root.join(".git/hooks/pre-commit").exists());
+
+    from_cwd(&fixture, root)
+        .args(["hooks", "install"])
+        .assert()
+        .success();
+    assert!(root.join(".git/hooks/pre-commit").is_file());
+    assert_eq!(
+        fs::read_to_string(config.join("root")).unwrap().trim(),
+        root.canonicalize().unwrap().to_str().unwrap(),
+    );
+}
+
+#[test]
+fn hook_writes_require_an_explicit_override_in_the_inactive_cwd() {
+    let fixture = Fixture::new();
+    let active = &fixture.registry;
+    let other = fixture.root.join("registry-b");
+    let host = fixture.host("claude");
+    write_registry(active, &host, "copy", None);
+    write_registry(&other, &host, "copy", None);
+    init_git(&fixture, &other);
+    from_cwd(&fixture, active)
+        .arg("set-root")
+        .assert()
+        .success();
+    let cache = fixture.root.join("config/my-skills/root");
+    let before_cache = fs::read(&cache).unwrap();
+    let hook = other.join(".git/hooks/pre-commit");
+
+    let install = from_cwd(&fixture, &other)
+        .args(["hooks", "install"])
+        .output()
+        .unwrap();
+    let installed_by_cwd = hook.exists();
+
+    with_root(&fixture, &other)
+        .args(["hooks", "install"])
+        .assert()
+        .success();
+    let before_hook = fs::read(&hook).unwrap();
+    let uninstall = from_cwd(&fixture, &other)
+        .args(["hooks", "uninstall"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        [install.status.code(), uninstall.status.code()],
+        [Some(2), Some(2)]
+    );
+    for output in [install, uninstall] {
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("refusing to write to cwd registry")
+        );
+    }
+    assert!(!installed_by_cwd);
+    assert_eq!(fs::read(&hook).unwrap(), before_hook);
+    assert_eq!(fs::read(cache).unwrap(), before_cache);
+}
+
+#[test]
+fn sync_check_ignores_a_foreign_record_for_an_unsupported_host() {
+    let fixture = Fixture::new();
+    let a = &fixture.registry;
+    let b = fixture.root.join("registry-b");
+    let claude = fixture.host("claude");
+    let codex = serde_json::to_string(&fixture.host("codex")).unwrap();
+    write_registry(a, &claude, "copy", Some(("split-host", true)));
+    write_registry(&b, &claude, "copy", Some(("split-host", true)));
+    let manifest = b.join("my-skills.toml");
+    let text = fs::read_to_string(&manifest).unwrap().replace(
+        "[targets.codex]\nenabled = false",
+        &format!("[targets.codex]\nenabled = true\npath = {codex}"),
+    );
+    fs::write(manifest, format!("{text}hosts = [\"codex\"]\n")).unwrap();
+    with_root(&fixture, a)
+        .args(["install", "--yes"])
+        .assert()
+        .success();
+    let claude_skill = claude.join("split-host/SKILL.md");
+    let before = fs::read(&claude_skill).unwrap();
+
+    with_root(&fixture, &b)
+        .args(["sync", "split-host", "--yes"])
+        .assert()
+        .success();
+    with_root(&fixture, &b)
+        .args(["sync", "split-host", "--check"])
+        .assert()
+        .success()
+        .stdout(contains("claude   UNSUPPORTED"))
+        .stdout(contains("codex    FRESH"));
+    assert_eq!(fs::read(claude_skill).unwrap(), before);
+}
+
+#[test]
+fn share_previews_skip_foreign_host_copies() {
+    let fixture = Fixture::new();
+    let a = &fixture.registry;
+    let b = fixture.root.join("registry-b");
+    let host = fixture.host("claude");
+    write_registry(a, &host, "copy", Some(("alpha", true)));
+    write_registry(&b, &host, "copy", None);
+    with_root(&fixture, a)
+        .args(["install", "--yes"])
+        .assert()
+        .success();
+    let source = display_path(&a.join("skills/alpha").canonicalize().unwrap());
+    let reason = format!("connection belongs to another registry ({source})");
+    with_root(&fixture, &b)
+        .args(["share", "alpha", "--from", "claude", "--enable"])
+        .assert()
+        .code(1)
+        .stdout(contains(&reason));
+    let before_state = fs::read(fixture.state()).unwrap();
+
+    for mode in ["--plan", "--dry-run"] {
+        let plan = json_output(
+            with_root(&fixture, &b).args(["share", "--from", "claude", mode, "--json"]),
+        );
+        let candidate = &plan["candidates"][0];
+        assert_eq!(candidate["name"], "alpha");
+        assert_eq!(candidate["recommended"], "skip", "{candidate}");
+        assert_eq!(candidate["choices"], json!(["skip"]));
+        assert!(candidate["risks"].as_array().unwrap().contains(&json!({
+            "severity": "error", "message": reason,
+        })));
+    }
+    assert_eq!(fs::read(fixture.state()).unwrap(), before_state);
+    assert!(!b.join("skills/alpha").exists());
+}
+
+#[cfg(windows)]
+#[test]
+fn invalid_manifest_diagnostic_uses_the_display_path() {
+    let fixture = Fixture::new();
+    let path = fixture.registry.join("my-skills.toml");
+    fs::write(&path, "[invalid").unwrap();
+    assert!(path.to_str().unwrap().starts_with(r"\\?\"));
+
+    with_root(&fixture, &fixture.registry)
+        .arg("skills")
+        .assert()
+        .code(2)
+        .stderr(contains(format!(
+            "invalid TOML in {}:",
+            display_path(&path)
+        )));
+}
+
+#[cfg(windows)]
+#[test]
+fn data_path_prints_native_separators_and_points_to_the_directory() {
+    let fixture = Fixture::new();
+    let data_home = fixture.root.join("data");
+    let mixed_home = display_path(&data_home).replace('\\', "/");
+    let expected = data_home.join("my-skills/data/alpha");
+
+    for home in [data_home.to_str().unwrap(), &mixed_home] {
+        let actual = fixture
+            .command()
+            .env("LOCALAPPDATA", home)
+            .args(["data-path", "alpha", "--create"])
+            .assert()
+            .success();
+        let output = std::str::from_utf8(&actual.get_output().stdout)
+            .unwrap()
+            .trim_end();
+        assert_eq!(output, display_path(&expected));
+        assert_eq!(
+            Path::new(output).canonicalize().unwrap(),
+            expected.canonicalize().unwrap()
+        );
+    }
+}
+
+#[test]
+fn unknown_manifest_skills_and_missing_share_arguments_leave_the_cache_empty() {
+    let mut wrote_cache = Vec::new();
+    for (args, error) in [
+        (&["enable", "unknown"][..], "unknown skill: unknown"),
+        (&["disable", "unknown"], "unknown skill: unknown"),
+        (
+            &["share", "--from", "claude", "--enable"],
+            "share requires a skill name",
+        ),
+    ] {
+        let fixture = Fixture::new();
+        let root = &fixture.registry;
+        write_registry(root, &fixture.host("claude"), "copy", None);
+        from_cwd(&fixture, root)
+            .args(args)
+            .assert()
+            .code(2)
+            .stderr(contains(error));
+        if fixture.root.join("config/my-skills").exists() {
+            wrote_cache.push(args);
+        }
+    }
+    assert!(
+        wrote_cache.is_empty(),
+        "created the config directory: {wrote_cache:?}"
+    );
 }

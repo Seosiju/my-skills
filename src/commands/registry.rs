@@ -9,7 +9,7 @@ use crate::cli::*;
 use crate::drive::state::State;
 use crate::registry::catalog::{self, display_path, json_output};
 use crate::registry::edit;
-use crate::registry::manifest::{CliOverrides, MANIFEST_FILE, Manifest};
+use crate::registry::manifest::{self, CliOverrides, MANIFEST_FILE, Manifest};
 use crate::registry::seeds::{self, Scaffold};
 use crate::registry::share::{self, Failure};
 use crate::{Error, Result, registry::root};
@@ -125,13 +125,6 @@ pub fn share(args: &ShareArgs) -> ExitCode {
         Ok(state) => state,
         Err(err) => return super::config_error(err),
     };
-    if let Some(record) = state
-        .get(skill, &args.from_host)
-        .filter(|record| !record.belongs_to(&manifest.skills_dir()))
-    {
-        println!("[BLOCKED] {skill}: {}", record.foreign_reason());
-        return ExitCode::from(1);
-    }
     match share::share(
         &manifest,
         &mut state,
@@ -204,11 +197,23 @@ fn set_enabled(name: &str, enabled: bool, dry_run: bool) -> ExitCode {
         super::print_would_cache_root(&resolution);
         return ExitCode::SUCCESS;
     }
-    let result = load_resolved(true).and_then(|(manifest, _)| {
+    let result = (|| {
+        let resolution = root::resolve_root(None, false)?;
+        if let Some(refusal) = resolution.write_refusal() {
+            return Err(Error::Manifest(refusal));
+        }
+        let manifest = manifest::load_manifest(&resolution.root, &CliOverrides::default())?;
+        if !manifest.skills.contains_key(name) {
+            return Err(Error::Manifest(format!("unknown skill: {name}")));
+        }
         let path = manifest.root.join(MANIFEST_FILE);
         share::ensure_outside_hosts(&path, share::target_paths(&manifest))?;
-        edit::set_skill_enabled(&path, name, enabled)
-    });
+        let edit = edit::prepare_enabled(&path, name, enabled)?;
+        if resolution.would_cache() {
+            root::resolve_root(None, true)?;
+        }
+        edit.commit()
+    })();
     if let Err(err) = result {
         return super::config_error(err);
     }

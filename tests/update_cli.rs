@@ -81,7 +81,7 @@ fn update_dry_run_prints_main_channel_downloads_and_writes_nothing() {
         .stdout(format!(
             "Current: my-skills {CURRENT}\nChannel: main\nLatest:  v1.2.0-rc.10\n\
              Would download: {checksums}\nWould download: {archive}\nWould replace:  {}\n",
-            fixture.exe.canonicalize().unwrap().display()
+            my_skills::platform::paths::display_path(&fixture.exe.canonicalize().unwrap())
         ))
         .stderr("");
     assert_eq!(fs::read(&fixture.exe).unwrap(), before);
