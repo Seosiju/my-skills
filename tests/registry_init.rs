@@ -258,6 +258,10 @@ fn init_registry_seed_copy_does_not_copy_private_source_files() {
         "my-jira/SKILL.md",
         "my-jira/config.example.json",
         "my-skills/SKILL.md",
+        "my-skills/references/hosts.md",
+        "my-skills/references/json-and-dry-run.md",
+        "my-skills/references/setup.md",
+        "my-skills/references/share-and-audit.md",
     ];
     let tool_repo = Path::new(env!("CARGO_MANIFEST_DIR"));
     for file in seed_files {
