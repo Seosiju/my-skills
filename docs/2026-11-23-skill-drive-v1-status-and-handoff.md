@@ -22,7 +22,7 @@
 | Rust v1 구현 | 19개 명령 모두 연결됨 |
 | 테스트 | Rust 221개 통과(Windows, wave4 병합 `a348cff`). 맥은 224개 통과(`72aaf89`, rustup stable 1.100. 개수 차이는 OS별 `cfg` 테스트). Python 테스트 모음은 §7 D에서 지웠다 |
 | CI (`dev`) | Rust 검사와 테스트를 Ubuntu, macOS, Windows에서 실행. 최신 결과는 §9 명령으로 확인 |
-| 릴리스 | Rust [v1.1.0](https://github.com/Seosiju/my-skills/releases/tag/v1.1.0)이 GitHub Latest다(2026-11-24, 에이전트 사용성 P0: 활성 레지스트리 밖 쓰기 거부, 다른 레지스트리 연결 보호, dry-run 판정과 UTF-8 JSON). [v1.0.3](https://github.com/Seosiju/my-skills/releases/tag/v1.0.3)은 Hermes host 제거, [v1.0.2](https://github.com/Seosiju/my-skills/releases/tag/v1.0.2)는 스킬에 글꼴·이미지 허용, [v1.0.1](https://github.com/Seosiju/my-skills/releases/tag/v1.0.1)은 설치 롤백과 dry-run 수정, [v1.0.0](https://github.com/Seosiju/my-skills/releases/tag/v1.0.0)은 첫 안정판, [v1.0.0-alpha.1](https://github.com/Seosiju/my-skills/releases/tag/v1.0.0-alpha.1)은 프리릴리스다. 모든 릴리스가 네 대상의 바이너리와 `SHA256SUMS`를 제공한다. |
+| 릴리스 | Rust [v1.2.0](https://github.com/Seosiju/my-skills/releases/tag/v1.2.0)이 GitHub Latest다(2026-11-25, 에이전트 사용성 P1: `--root`, 스킬 여러 개와 `--group`, `validate --json`, `--json` 오류, doctor `--quick`, `diff`). [v1.1.0](https://github.com/Seosiju/my-skills/releases/tag/v1.1.0)은 에이전트 사용성 P0(활성 레지스트리 밖 쓰기 거부, 다른 레지스트리 연결 보호, dry-run 판정과 UTF-8 JSON), [v1.0.3](https://github.com/Seosiju/my-skills/releases/tag/v1.0.3)은 Hermes host 제거, [v1.0.2](https://github.com/Seosiju/my-skills/releases/tag/v1.0.2)는 스킬에 글꼴·이미지 허용, [v1.0.1](https://github.com/Seosiju/my-skills/releases/tag/v1.0.1)은 설치 롤백과 dry-run 수정, [v1.0.0](https://github.com/Seosiju/my-skills/releases/tag/v1.0.0)은 첫 안정판, [v1.0.0-alpha.1](https://github.com/Seosiju/my-skills/releases/tag/v1.0.0-alpha.1)은 프리릴리스다. 모든 릴리스가 네 대상의 바이너리와 `SHA256SUMS`를 제공한다. |
 | `main` | Rust v1.0.0을 병합한 `28f1a0a`에 `v1.0.0` 태그를 달았다. `main`은 `dev`에 다시 병합했다(`054ec27`). |
 | **실제 사용자 환경** | **맥(2026-11-24 G, v1.0.1)**: G에서 my-skills 전용 폴더에 설치하고 그 `bin`만 PATH 앞에 둔 상태에서, 같은 날 릴리스 `v1.0.0`을 거쳐 `install.sh`로 `v1.0.1` 릴리스 binary로 교체했다(Python 0.4.1은 `uv tool`에서 제거됨 확인). 기기별 `my-skills.local.toml`로 기본 link, 세 host 모두 symlink로 FRESH(`sync --check` 0), 레지스트리 hook 4종 재설치 및 PATH 없는 `post-merge` 실행(0) 확인. 결과 표는 스펙 §11. **Windows PC(2026-11-23 H, 2026-11-24 v1.0.3)**: 릴리스 `v1.0.0`을 `install.ps1 -AddToPath`로 설치(`%LOCALAPPDATA%\Programs\my-skills\bin`). 같은 날 `my-skills update`로 `v1.0.1`, `v1.0.2`, `v1.0.3`으로 올렸다. 직접 빌드한 binary(`cargo uninstall`)와 Python 0.4.1(`uv tool uninstall`)은 지웠다, 기기별 `my-skills.local.toml`로 기본 link와 agy copy를 지정, 모든 연결 FRESH(claude·codex는 link, agy는 copy), 레지스트리 hook 4종 설치, 2026-11-24에 맥이 push한 레지스트리 변경을 post-merge로 받음(G 6.1). hook은 새 binary 경로로 다시 설치했고, 전역 안내(Claude, Codex, agy)에 레지스트리의 my-skills 절을 넣었다. 레지스트리 manifest 기본값은 G 5단계에서 `install_mode = "link"`로 바꿨다(두 기기 모두 기기별 설정이 우선이라 동작은 같음) |
 | 감사 세션의 사전 점검 | 빌드한 v1 binary를 실제 레지스트리에 읽기 전용으로 실행: 모든 연결이 FRESH였고, `convert --to link --host all --dry-run`은 막힌 항목 없이 활성 host의 copy 연결 전체를 CONVERT로 계획했다. 비활성 host(hermes) 기록은 대상에서 빠졌다 |
@@ -117,6 +117,10 @@ P1(§7 M)을 마쳤다.
 - agy 블라인드 검토에서 7건(High 2)이 나왔다. 수정한 뒤 재검토를 통과했다.
 - update 조회 캐시는 만들지 않기로 했다. `--quick`과 환경 변수로 충분하고, 새 쓰기 경로가 생기지 않는다.
 - 테스트 319개 통과(Windows). 실제 사용자 상태는 작업 전후로 같다.
+- 릴리스 준비 커밋을 push할 때 테스트 하나가 실패한 것을 확인하지 않고 push했다(통합 담당의 실수). 원인은 `tests/update_cli.rs`의 main 채널 fixture가 `v1.2.0-rc`를 쓰고 있어, 패키지가 1.2.0이 되자 "설치본이 더 최신"으로 판정된 것이다. 다른 update 테스트처럼 `NEXT`의 prerelease를 쓰도록 고쳤다(`305631d`).
+- GitHub macOS runner가 job을 시작하지 못하고 두 번 취소돼서, 실패한 job만 다시 실행해 통과시켰다.
+- 이후 절차는 v1.1.0과 같다: `main`(`da0ebcb`) CI, 태그 전 패키지 확인, `v1.2.0` 게시, 게시 뒤 설치와 update 확인.
+- 이 PC를 1.2.0으로 올렸고 연결 49개가 모두 FRESH다. 레지스트리의 my-skills 스킬도 본문 105줄과 references로 나누고 P1 안내를 넣었다(레지스트리 `8cff004`).
 
 ---
 
