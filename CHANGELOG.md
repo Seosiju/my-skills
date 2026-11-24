@@ -52,11 +52,12 @@ are the release source of truth while PyPI publishing remains undecided.
   and usage errors) never write the active-registry cache. Only the first real
   write from a registry — including `bootstrap` (unless `--dry-run` or
   `--skip-skill-install`) and `hooks install`/`uninstall` — records it.
-- Text dry-runs (`install`/`sync --dry-run`) print a top-line `BLOCKED:`
-  summary whenever items or an inactive cwd registry would refuse the real run,
-  and end with `Re-run with --yes to apply: ...` when multi-host confirmation
-  is required. With `--json`, validation warnings stay in JSON instead of being
-  printed to stderr.
+- Text dry-runs (`install`, `sync`, `uninstall`, and `convert` with
+  `--dry-run`) print a top-line `BLOCKED:` summary whenever items or an
+  inactive cwd registry would refuse the real run, and end with
+  `Re-run with --yes to apply: ...` when multi-host confirmation is required.
+  With `--json`, validation warnings stay in JSON instead of being printed to
+  stderr.
 - JSON output (`skills --json`, `share --plan|--dry-run --json`, and dry-run
   JSON) now emits plain UTF-8 instead of `\uXXXX` escapes (roughly 45% smaller
   for non-ASCII descriptions). Audit `result_hash` fingerprints are unchanged.
@@ -66,9 +67,10 @@ are the release source of truth while PyPI publishing remains undecided.
 - `sync` no longer prunes or overwrites copy or link connections installed by
   another registry on the same machine, and `sync --check` no longer treats
   `FOREIGN` records on hosts a skill does not target as drift.
-- `audit.skipped` in dry-run JSON is now `true` only when `--skip-audit` is
-  passed (or `[audit] enabled = false`), and `sync --dry-run --skip-audit`
-  prints the skipped-audit warning in text output.
+- `audit.skipped` in dry-run JSON is now `true` only when an audit gate runs
+  with `--skip-audit` (or `[audit] enabled = false`), not when no writes
+  required auditing or validation stopped early; `sync --dry-run --skip-audit`
+  now prints the skipped-audit warning in text output.
 - Windows paths in JSON and CLI output (`doctor`, `skills`, `share`, `audit`,
   `install`/`sync --dry-run`, `hooks`, stderr notes, manifest errors,
   `data-path`, and `update --dry-run`) strip the `\\?\` verbatim prefix and use
