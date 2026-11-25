@@ -48,7 +48,7 @@ AGY_SKILLS_TIMEOUT_S = 90
 TASK_TIMEOUT_S = 600
 
 TASK_EDIT_PROMPT = (
-    "내 스킬 hubcheck-alpha 설명 끝에 '주간 보고 형식도 지원한다'는 내용 한 줄 추가해줘"
+    "내 스킬 hubcheck-alpha 설명(description) 끝에 '주간 보고 형식도 지원한다'는 내용 한 줄 추가해줘"
 )
 TASK_NEW_PROMPT = (
     "CSV 열 이름 정리해 주는 새 스킬 hubcheck-gamma 만들어줘. claude랑 codex에서만 쓸 거야"
@@ -135,17 +135,12 @@ def prepend_path(env: dict[str, str], folder: Path) -> None:
 
 def is_reparse_or_link(path: Path) -> bool:
     try:
-        if path.is_symlink():
-            return True
-    except OSError:
-        pass
-    isjunction = getattr(os.path, "isjunction", None)
-    if isjunction is not None:
-        try:
-            return bool(isjunction(path))
-        except OSError:
-            return False
-    return False
+        info = path.lstat()
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    return stat.S_ISLNK(info.st_mode) or bool(
+        getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
+    )
 
 
 def readlink_safe(path: Path) -> str:
@@ -209,13 +204,16 @@ def make_sandbox_dir(prefix: str = "msb-") -> Path:
 
 def _handle_remove_readonly(func: Any, path: str, _exc: Any) -> None:
     try:
-        os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+        if not is_reparse_or_link(Path(path)):
+            os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
         func(path)
     except OSError:
         pass
 
 
 def safe_rmtree(path: Path) -> bool:
+    if path.parent != Path(tempfile.gettempdir()).resolve() or not path.name.startswith("msb-"):
+        raise ValueError(f"샌드박스 밖 삭제 경로: {path}")
     if not path.exists() and not is_reparse_or_link(path):
         return True
     _unlink_links_in_tree(path)
@@ -227,10 +225,10 @@ def safe_rmtree(path: Path) -> bool:
                 shutil.rmtree(path, onerror=_handle_remove_readonly)
         except OSError:
             pass
-        if not path.exists():
+        if not path.exists() and not is_reparse_or_link(path):
             return True
         time.sleep(0.5 * (attempt + 1))
-    return not path.exists()
+    return not path.exists() and not is_reparse_or_link(path)
 
 
 def sha256_file(path: Path) -> str:
@@ -383,23 +381,18 @@ def read_agy_model() -> str | None:
 
 
 def make_real_env() -> dict[str, str]:
-    env = dict(os.environ)
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith("GIT_")}
     env_pop(env, "MY_SKILLS_ROOT")
     env_set(env, "MY_SKILLS_NO_UPDATE_CHECK", "1")
+    env_set(env, "GIT_OPTIONAL_LOCKS", "0")
     strip_herdr(env)
     return env
 
 
 def default_root_cache_path() -> Path:
     xdg = os.environ.get("XDG_CONFIG_HOME")
-    base = Path(xdg) if xdg else (Path.home() / ".config")
+    base = Path(xdg) if xdg else (Path(os.environ.get("HOME") or Path.home()) / ".config")
     return base / "my-skills" / "root"
-
-
-def default_state_path() -> Path:
-    xdg = os.environ.get("XDG_STATE_HOME")
-    base = Path(xdg) if xdg else (Path.home() / ".local" / "state")
-    return base / "my-skills" / "state.json"
 
 
 def discover_real_env(my_skills_bin: Path, neutral_dir: Path) -> dict[str, Any]:
@@ -418,25 +411,23 @@ def discover_real_env(my_skills_bin: Path, neutral_dir: Path) -> dict[str, Any]:
         "codex": Path.home() / ".agents" / "skills",
         "agy": Path.home() / ".gemini" / "config" / "skills",
     }
-    for h in data.get("hosts", []):
+    for h in data["hosts"]:
         name = h.get("name")
         if name in ALL_AGENTS:
             hosts_info[name] = {
-                "enabled": bool(h.get("enabled", False)),
+                "enabled": h["enabled"],
                 "path": Path(h["path"]) if h.get("path") else defaults[name],
                 "configured_mode": h.get("configured_mode"),
             }
-    for name, default_path in defaults.items():
-        if name not in hosts_info:
-            hosts_info[name] = {"enabled": False, "path": default_path, "configured_mode": None}
-
     return {
         "version": data.get("version", "unknown"),
         "registry_path": Path(reg_path_str),
-        "registry_source": (data.get("registry") or {}).get("source"),
-        "state_path": Path(data["state_path"]) if data.get("state_path") else default_state_path(),
+        "state_path": Path(data["state_path"]),
+        "data_root": Path(data["data_root"]),
+        "enabled_count": data["skills"]["enabled"],
         "root_cache_path": default_root_cache_path(),
         "hosts": hosts_info,
+        "default_hosts": defaults,
     }
 
 
@@ -459,9 +450,11 @@ def take_real_snapshot(real_env: dict[str, Any]) -> dict[str, Any]:
     git_env = make_real_env()
     if (reg / ".git").exists():
         head_res = run_cmd(["git", "rev-parse", "HEAD"], cwd=reg, env=git_env, timeout=30)
-        status_res = run_cmd(["git", "status", "--porcelain=v1"], cwd=reg, env=git_env, timeout=30)
-        reg_head = head_res.stdout.strip() if head_res.returncode == 0 else f"<err:{head_res.returncode}>"
-        reg_status = status_res.stdout if status_res.returncode == 0 else f"<err:{status_res.returncode}>"
+        status_res = run_cmd(["git", "-c", "core.fsmonitor=false", "status", "--porcelain=v1", "-uall"],
+                             cwd=reg, env=git_env, timeout=30)
+        if head_res.returncode or status_res.returncode or head_res.timed_out or status_res.timed_out:
+            raise RuntimeError("실제 레지스트리 Git 스냅샷 실패")
+        reg_head, reg_status = head_res.stdout.strip(), status_res.stdout
     else:
         reg_head = "<non-git>"
         reg_status = "<non-git>"
@@ -472,8 +465,9 @@ def take_real_snapshot(real_env: dict[str, Any]) -> dict[str, Any]:
         "registry_head": reg_head,
         "registry_git_status": reg_status,
         "hosts": {
-            agent: snapshot_host_dir(real_env["hosts"][agent]["path"])
+            f"{agent} ({path})": snapshot_host_dir(path)
             for agent in ALL_AGENTS
+            for path in {real_env["hosts"][agent]["path"], real_env["default_hosts"][agent]}
         },
     }
 
@@ -483,8 +477,7 @@ def diff_snapshots(before: dict[str, Any], after: dict[str, Any]) -> list[str]:
     for key in ("state_json_sha256", "root_cache_sha256", "registry_head", "registry_git_status"):
         if before.get(key) != after.get(key):
             diffs.append(f"{key}: {before.get(key)!r} -> {after.get(key)!r}")
-    for agent in ALL_AGENTS:
-        b = before["hosts"].get(agent)
+    for agent, b in before["hosts"].items():
         a = after["hosts"].get(agent)
         if b != a:
             diffs.append(f"hosts.{agent}: 항목 변경 감지 (전 {len(b) if isinstance(b, list) else b}, 후 {len(a) if isinstance(a, list) else a})")
@@ -524,14 +517,22 @@ class Sandbox:
             "codex": self.proj / ".agents" / "skills",
             "agy": self.proj / ".agent" / "skills",
         }
-        self._init_layout()
+        try:
+            self._init_layout()
+        except BaseException:
+            self.cleanup()
+            raise
 
     def base_env(self) -> dict[str, str]:
-        env = dict(os.environ)
+        env = {k: v for k, v in os.environ.items() if not k.upper().startswith("GIT_")}
         env_set(env, "XDG_CONFIG_HOME", str(self.xdg_config))
         env_set(env, "XDG_STATE_HOME", str(self.xdg_state))
+        for key in ("XDG_DATA_HOME", "LOCALAPPDATA", "APPDATA"):
+            env_set(env, key, str(self.root / key.lower()))
         env_set(env, "MY_SKILLS_NO_UPDATE_CHECK", "1")
         env_set(env, "GIT_CONFIG_GLOBAL", str(self.gitconfig))
+        env_set(env, "GIT_CONFIG_NOSYSTEM", "1")
+        env_set(env, "GIT_ALLOW_PROTOCOL", "file")
         env_pop(env, "MY_SKILLS_ROOT")
         strip_herdr(env)
         prepend_path(env, self.my_skills_bin.parent)
@@ -580,27 +581,20 @@ class Sandbox:
         if real_gemini_md.is_file():
             shutil.copy2(real_gemini_md, self.fakehome / ".gemini" / "GEMINI.md")
 
-        # Write sandbox gitconfig: fallback user, include real ~/.gitconfig, redirect all remote pushes to blackhole.
-        real_gitconfig = real_home / ".gitconfig"
+        # Keep user hooks, templates and URL overrides out of sandbox Git.
         lines = [
             "[user]",
             "\tname = HubCheck",
             "\temail = hubcheck@example.invalid",
+            "[safe]",
+            f"\tdirectory = {self.registry.as_posix()}",
+            f"\tdirectory = {self.remote.as_posix()}",
+            f"\tdirectory = {self.proj.as_posix()}",
+            f'[url "{self.blackhole.as_posix()}/"]',
+            "\tpushInsteadOf = https://",
+            "\tpushInsteadOf = ssh://",
+            "\tpushInsteadOf = git@",
         ]
-        if real_gitconfig.is_file():
-            lines.extend(["[include]", f"\tpath = {real_gitconfig.as_posix()}"])
-        lines.extend(
-            [
-                "[safe]",
-                f"\tdirectory = {self.registry.as_posix()}",
-                f"\tdirectory = {self.remote.as_posix()}",
-                f"\tdirectory = {self.proj.as_posix()}",
-                f'[url "{self.blackhole.as_posix()}/"]',
-                "\tpushInsteadOf = https://",
-                "\tpushInsteadOf = ssh://",
-                "\tpushInsteadOf = git@",
-            ]
-        )
         self.gitconfig.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
         # Bare origin & blackhole repos.
@@ -706,8 +700,9 @@ class Sandbox:
         )
         return res.stdout.strip() if res.returncode == 0 else ""
 
-    def cleanup(self) -> bool:
-        return safe_rmtree(self.root)
+    def cleanup(self) -> None:
+        if not safe_rmtree(self.root):
+            raise RuntimeError(f"샌드박스 정리 실패: {self.root}")
 
 
 # ---------------------------------------------------------------------------
@@ -732,10 +727,10 @@ def parse_claude_stream(stdout: str) -> dict[str, Any]:
             continue
         ev_type = ev.get("type")
         if ev_type == "system" and ev.get("subtype") == "init":
-            init_seen = True
             skills = ev.get("skills")
-            if isinstance(skills, list):
-                init_skills = [str(s) for s in skills]
+            init_seen = isinstance(skills, list) and all(isinstance(s, str) for s in skills)
+            if init_seen:
+                init_skills = skills
         elif ev_type == "assistant":
             msg = ev.get("message") or {}
             content = msg.get("content")
@@ -779,6 +774,8 @@ def query_claude(
         "--verbose",
         "--no-session-persistence",
         "--strict-mcp-config",
+        "--tools",
+        "Skill",
         "--",
         prompt,
     ]
@@ -933,21 +930,14 @@ def query_agy_skills(
     log_name: str,
     timeout: int = AGY_SKILLS_TIMEOUT_S,
 ) -> tuple[CmdResult, dict[str, str]]:
-    last_res: CmdResult | None = None
     for attempt in range(4):
         res = run_cmd([*agent_cmd, "-p", "/skills"], cwd=cwd, env=env, stdin_text=None, timeout=timeout)
-        last_res = res
-        combined = f"{res.stdout}\n{res.stderr}".lower()
-        if res.returncode == 0 and parse_agy_skills(res.stdout):
-            save_log(log_dir, log_name, res, ext=".txt")
-            return res, parse_agy_skills(res.stdout)
-        if "database is locked" in combined and attempt < 3:
-            time.sleep(2 * (attempt + 1))
-            continue
-        break
-    assert last_res is not None
-    save_log(log_dir, log_name, last_res, ext=".txt")
-    return last_res, parse_agy_skills(last_res.stdout)
+        locked = "database is locked" in f"{res.stdout}\n{res.stderr}".lower()
+        if not locked or res.timed_out or attempt == 3:
+            break
+        time.sleep(2 * (attempt + 1))
+    save_log(log_dir, log_name, res, ext=".txt")
+    return res, {} if locked else parse_agy_skills(res.stdout)
 
 
 def run_agy_task(
@@ -969,23 +959,18 @@ def run_agy_task(
         cmd.extend(["--model", agy_model])
     cmd.extend(["-p", prompt])
 
-    last_res: CmdResult | None = None
-    for attempt in range(3):
-        res = run_cmd(cmd, cwd=sb.proj, env=sb.agy_env(), stdin_text=None, timeout=timeout)
-        last_res = res
-        combined = f"{res.stdout}\n{res.stderr}".lower()
-        if res.returncode != 0 and "database is locked" in combined and attempt < 2:
-            time.sleep(2 * (attempt + 1))
-            continue
-        break
-    assert last_res is not None
-    save_log(log_dir, log_name, last_res, ext=".jsonl")
-    return last_res
+    res = run_cmd(cmd, cwd=sb.proj, env=sb.agy_env(), stdin_text=None, timeout=timeout)
+    save_log(log_dir, log_name, res, ext=".jsonl")
+    return res
 
 
-def text_has_token(text: str, token: str) -> bool:
-    pattern = rf"(?<![A-Za-z0-9_-]){re.escape(token)}(?![A-Za-z0-9_-])"
-    return re.search(pattern, text) is not None
+def skill_lines(text: str) -> set[str]:
+    return {line.strip() for line in text.splitlines() if line.strip()}
+
+
+def skill_description(text: str, name: str) -> str:
+    return "\n".join(desc for line in text.splitlines() for key, _, desc in [line.partition(":")]
+                     if key.strip() == name)
 
 
 # ---------------------------------------------------------------------------
@@ -1013,16 +998,15 @@ def run_row1_real(
     )
     save_log(log_dir, "row1-validate", val_res, ext=".json")
     validate_issues: list[str] = []
-    if val_res.returncode != 0:
-        try:
-            val_data = json.loads(val_res.stdout)
-        except json.JSONDecodeError:
-            validate_issues.append(f"validate exit {val_res.returncode}")
-            val_data = {}
-    else:
+    try:
         val_data = json.loads(val_res.stdout)
-
-    for item in val_data.get("skills", []):
+        items = val_data["skills"]
+        if val_data["ok"] is not True or val_res.returncode or val_res.timed_out:
+            validate_issues.append(f"validate 실패 (exit {val_res.returncode})")
+    except (json.JSONDecodeError, TypeError, KeyError):
+        validate_issues.append(f"validate 응답 확인 실패 (exit {val_res.returncode})")
+        items = []
+    for item in items:
         sk = item.get("skill", "?")
         for err in item.get("errors", []):
             validate_issues.append(f"{sk} 오류: {err}")
@@ -1037,14 +1021,14 @@ def run_row1_real(
         timeout=60,
     )
     save_log(log_dir, "row1-skills", sk_res, ext=".json")
-    if sk_res.returncode != 0:
+    if sk_res.returncode != 0 or sk_res.timed_out:
         raise RuntimeError(f"my-skills skills --enabled --json 실패: {sk_res.stderr.strip()}")
-    sk_data = json.loads(sk_res.stdout)
+    skill_rows = json.loads(sk_res.stdout)["skills"]
+    if len(skill_rows) != real_env["enabled_count"] or any(r["enabled"] is not True for r in skill_rows):
+        raise RuntimeError("skills --enabled 결과가 doctor의 활성 스킬과 불일치")
 
     expected_by_agent: dict[str, list[str]] = {a: [] for a in ALL_AGENTS}
-    for row in sk_data.get("skills", []):
-        if not row.get("enabled"):
-            continue
+    for row in skill_rows:
         name = row["name"]
         hosts = row.get("hosts") or []
         for agent in ALL_AGENTS:
@@ -1063,10 +1047,13 @@ def run_row1_real(
             continue
         cmd = agent_cmds.get(agent)
         if not cmd:
-            results[agent] = CellResult("해당없음", note="CLI 미설치")
+            results[agent] = CellResult("실패", reason="CLI 미설치")
             continue
 
         expected = sorted(expected_by_agent[agent])
+        if not expected and not validate_issues:
+            results[agent] = CellResult("해당없음", note="대상 스킬 없음")
+            continue
         missing: list[str] = []
         extra_err = ""
 
@@ -1081,8 +1068,8 @@ def run_row1_real(
             )
             if res.timed_out:
                 extra_err = "시간 초과"
-            elif not parsed["init_seen"]:
-                extra_err = f"init 이벤트 없음 (exit {res.returncode})"
+            elif res.returncode or parsed["is_error"] or not parsed["init_seen"]:
+                extra_err = f"Claude init.skills 확인 실패 (exit {res.returncode})"
             else:
                 seen = set(parsed["init_skills"])
                 missing = [s for s in expected if s not in seen]
@@ -1105,11 +1092,12 @@ def run_row1_real(
                 if res.timed_out:
                     extra_err = "시간 초과"
                     continue
-                if res.returncode != 0 and not parsed["final_text"]:
+                if res.returncode or parsed["errors"] or not parsed["final_text"].strip():
                     extra_err = f"codex 실패 (exit {res.returncode})"
                     continue
                 extra_err = ""
-                missing = [s for s in expected if not text_has_token(parsed["final_text"], s)]
+                seen = skill_lines(parsed["final_text"])
+                missing = [s for s in expected if s not in seen]
                 if not missing:
                     break
 
@@ -1117,7 +1105,7 @@ def run_row1_real(
             res, skills_map = query_agy_skills(cmd, neutral_dir, env, log_dir, "row1-agy")
             if res.timed_out:
                 extra_err = "시간 초과"
-            elif res.returncode != 0 and not skills_map:
+            elif res.returncode or not skills_map:
                 extra_err = f"agy /skills 실패 (exit {res.returncode})"
             else:
                 missing = [s for s in expected if s not in skills_map]
@@ -1176,18 +1164,18 @@ def _check_agent_hubcheck_desc(
                 if attempt == 2:
                     return False, "시간 초과"
                 continue
-            if not parsed["init_seen"]:
-                return False, f"init 이벤트 없음 (exit {res.returncode})"
+            if res.returncode or parsed["is_error"] or not parsed["init_seen"]:
+                return False, f"Claude init.skills 확인 실패 (exit {res.returncode})"
             if skill_name not in parsed["init_skills"]:
                 return False, f"init.skills에 {skill_name} 없음"
-            txt = parsed["final_text"]
+            txt = skill_description(parsed["final_text"], skill_name)
             has_new = expected_token in txt
             has_old = bool(forbidden_token and forbidden_token in txt)
             if has_new and not has_old:
                 return True, ""
+            if has_old:
+                return False, f"이전 표식({forbidden_token})이 여전히 보임"
             if attempt == 2:
-                if has_old:
-                    return False, f"이전 표식({forbidden_token})이 여전히 보임"
                 return False, f"응답에 {expected_token} 없음"
         return False, "확인 실패"
 
@@ -1200,21 +1188,16 @@ def _check_agent_hubcheck_desc(
                 if attempt == 2:
                     return False, "시간 초과"
                 continue
-            if res.returncode != 0 and not parsed["final_text"]:
+            if res.returncode or parsed["errors"] or not parsed["final_text"].strip():
                 if attempt == 2:
                     return False, f"codex 실패 (exit {res.returncode})"
                 continue
-            txt = parsed["final_text"]
-            has_skill = text_has_token(txt, skill_name)
-            has_new = expected_token in txt
-            has_old = bool(forbidden_token and forbidden_token in txt)
-            if has_skill and has_new and not has_old:
+            txt = skill_description(parsed["final_text"], skill_name)
+            if forbidden_token and forbidden_token in txt:
+                return False, f"이전 표식({forbidden_token})이 여전히 보임"
+            if expected_token in txt:
                 return True, ""
             if attempt == 2:
-                if not has_skill:
-                    return False, f"{skill_name} 미발견"
-                if has_old:
-                    return False, f"이전 표식({forbidden_token})이 여전히 보임"
                 return False, f"응답에 {expected_token} 없음"
         return False, "확인 실패"
 
@@ -1222,7 +1205,7 @@ def _check_agent_hubcheck_desc(
         res, skills_map = query_agy_skills(cmd, sb.proj, sb.agy_env(), log_dir, f"{log_prefix}-agy")
         if res.timed_out:
             return False, "시간 초과"
-        if res.returncode != 0 and not skills_map:
+        if res.returncode or not skills_map:
             return False, f"agy /skills 실패 (exit {res.returncode})"
         if skill_name not in skills_map:
             return False, f"/skills에 {skill_name} 없음"
@@ -1251,8 +1234,10 @@ def _check_agent_skill_presence(
         )
         if res.timed_out:
             return False, "시간 초과"
-        if not parsed["init_seen"]:
-            return False, f"init 이벤트 없음 (exit {res.returncode})"
+        if res.returncode or parsed["is_error"] or not parsed["init_seen"]:
+            return False, f"Claude init.skills 확인 실패 (exit {res.returncode})"
+        if not should_exist and "hubcheck-beta" not in parsed["init_skills"]:
+            return False, "초기화 목록에 대조 스킬 hubcheck-beta 없음"
         present = skill_name in parsed["init_skills"]
         if present == should_exist:
             return True, ""
@@ -1271,11 +1256,18 @@ def _check_agent_skill_presence(
                 if attempt == 2:
                     return False, "시간 초과"
                 continue
-            if res.returncode != 0 and not parsed["final_text"]:
+            if res.returncode or parsed["errors"] or not parsed["final_text"].strip():
                 if attempt == 2:
                     return False, f"codex 실패 (exit {res.returncode})"
                 continue
-            present = text_has_token(parsed["final_text"], skill_name)
+            seen = skill_lines(parsed["final_text"])
+            present = skill_name in seen
+            if not should_exist and present:
+                return False, f"{skill_name}가 여전히 보임"
+            if not should_exist and "hubcheck-beta" not in seen:
+                if attempt == 2:
+                    return False, "응답에 대조 스킬 hubcheck-beta 없음"
+                continue
             if present == should_exist:
                 return True, ""
             if attempt == 2:
@@ -1286,8 +1278,10 @@ def _check_agent_skill_presence(
         res, skills_map = query_agy_skills(cmd, sb.proj, sb.agy_env(), log_dir, f"{log_prefix}-agy")
         if res.timed_out:
             return False, "시간 초과"
-        if res.returncode != 0 and not skills_map:
+        if res.returncode or not skills_map:
             return False, f"agy /skills 실패 (exit {res.returncode})"
+        if not should_exist and "hubcheck-beta" not in skills_map:
+            return False, "/skills에 대조 스킬 hubcheck-beta 없음"
         present = skill_name in skills_map
         if present == should_exist:
             return True, ""
@@ -1316,7 +1310,7 @@ def run_rows2_to_4_sandbox(
                 r[agent] = CellResult("해당없음", note="옵션 제외")
         elif not agent_cmds.get(agent):
             for r in (row2, row3, row4):
-                r[agent] = CellResult("해당없음", note="CLI 미설치")
+                r[agent] = CellResult("실패", reason="CLI 미설치")
         else:
             active_agents.append(agent)
 
@@ -1467,19 +1461,26 @@ def _check_common_task_state(
         try:
             rows = json.loads(st_res.stdout)
             for row in rows:
-                status_map[row["host"]] = row["status"]
-        except (json.JSONDecodeError, KeyError) as exc:
+                if row["skill"] == skill_name:
+                    status_map[row["host"]] = row["status"]
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
             failures.append(f"status JSON 파싱 실패 ({exc})")
     details["status"] = status_map
     bad_hosts = [f"{h}={st}" for h, st in sorted(status_map.items()) if st not in ("FRESH", "UNSUPPORTED")]
-    if bad_hosts:
+    if set(status_map) != set(ALL_AGENTS):
+        failures.append("status에 호스트 점검 결과 누락 또는 불일치")
+    elif bad_hosts:
         failures.append(f"status 미완료 ({', '.join(bad_hosts)})")
 
     # 2. Related changes committed
     after_head = sb.head_sha()
     details["base_head"] = base_head
     details["after_head"] = after_head
-    if after_head == base_head:
+    committed = sb.run_git(["diff", "--name-only", base_head, "HEAD", "--",
+                            f"skills/{skill_name}/SKILL.md", "my-skills.toml"]).stdout.splitlines()
+    if f"skills/{skill_name}/SKILL.md" not in committed or (
+        skill_name == "hubcheck-gamma" and "my-skills.toml" not in committed
+    ):
         failures.append("관련 변경이 커밋되지 않음")
 
     porcelain = sb.run_git(["status", "--porcelain=v1", "--", f"skills/{skill_name}", "my-skills.toml"]).stdout.strip()
@@ -1638,8 +1639,8 @@ def run_row5_tasks(
             continue
         cmd = agent_cmds.get(agent)
         if not cmd:
-            row5a[agent] = CellResult("해당없음", note="CLI 미설치")
-            row5b[agent] = CellResult("해당없음", note="CLI 미설치")
+            row5a[agent] = CellResult("실패", reason="CLI 미설치")
+            row5b[agent] = CellResult("실패", reason="CLI 미설치")
             continue
 
         # Task 5a: Edit existing skill (S1 sandbox)
@@ -1805,8 +1806,6 @@ def main(argv: list[str] | None = None) -> int:
         log_dir = out_path.parent / f"{out_path.stem}-logs"
     else:
         log_dir = Path(tempfile.gettempdir()) / f"hubcheck-logs-{stamp_slug}"
-    log_dir.mkdir(parents=True, exist_ok=True)
-
     neutral_dir = make_sandbox_dir(prefix="msb-neutral-")
     real_env: dict[str, Any] | None = None
     before_snap: dict[str, Any] | None = None
@@ -1818,7 +1817,13 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         real_env = discover_real_env(my_skills_bin, neutral_dir)
+        protected = [real_env["registry_path"], real_env["state_path"].parent,
+                     real_env["root_cache_path"].parent, real_env["data_root"].parent,
+                     *real_env["default_hosts"].values(), *(h["path"] for h in real_env["hosts"].values())]
+        if any(p and p.resolve().is_relative_to(root.resolve()) for p in (out_path, log_dir) for root in protected):
+            raise ValueError("실제 사용자 상태 아래에는 결과를 저장할 수 없습니다.")
         before_snap = take_real_snapshot(real_env)
+        log_dir.mkdir(parents=True)
 
         # Row 1: Real registry (read-only)
         print("[1/5] 실제 레지스트리 점검 중 (읽기 전용)...", file=sys.stderr, flush=True)
@@ -1864,10 +1869,14 @@ def main(argv: list[str] | None = None) -> int:
                 rows.append(("5a", "에이전트 과제: 스킬 수정 (`hubcheck-alpha`)", row5a))
                 rows.append(("5b", "에이전트 과제: 새 스킬 생성 (`hubcheck-gamma`)", row5b))
     finally:
-        safe_rmtree(neutral_dir)
+        neutral_cleaned = safe_rmtree(neutral_dir)
         if real_env is not None and before_snap is not None:
             after_snap = take_real_snapshot(real_env)
             snapshot_diffs = diff_snapshots(before_snap, after_snap)
+            if snapshot_diffs:
+                print("!!! 실제 상태 변경 감지 (자동 복구하지 않음) !!!", *snapshot_diffs, sep="\n", file=sys.stderr)
+        if not neutral_cleaned:
+            raise RuntimeError(f"샌드박스 정리 실패: {neutral_dir}")
 
     assert real_env is not None
     md = render_markdown(
@@ -1912,21 +1921,12 @@ def main(argv: list[str] | None = None) -> int:
     print(md, end="")
 
     if snapshot_diffs:
-        banner = (
-            "\n"
-            "============================================================\n"
-            "  !!! 실제 상태 변경 감지 (자동 복구하지 않음) !!!\n"
-            "============================================================\n"
-            + "\n".join(f"  - {d}" for d in snapshot_diffs)
-            + "\n"
-        )
-        print(banner, file=sys.stderr)
         return 2
 
     has_failure = any(
         cells[a].status == "실패" for _, _, cells in rows for a in ALL_AGENTS
     )
-    return 1 if has_failure else 0
+    return 1 if has_failure or row1_meta.get("validate_issues") else 0
 
 
 if __name__ == "__main__":
