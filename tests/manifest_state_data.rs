@@ -626,23 +626,18 @@ fn state_loads_v041_fixture_and_discards_audit_fields_on_save() {
             .all(|record| record.link_kind.is_none() && record.fallback_reason.is_none())
     );
     output.save().unwrap();
-    let mut legacy: Value = serde_json::from_slice(LEGACY_STATE).unwrap();
-    for record in legacy["installs"].as_array_mut().unwrap() {
-        let fields = record.as_object_mut().unwrap();
-        for name in [
-            "last_audit_at",
-            "last_audit_result_hash",
-            "audit_profile",
-            "audit_threshold",
-        ] {
-            assert!(
-                fields.remove(name).is_some(),
-                "legacy fixture is missing {name}"
-            );
-        }
-    }
-    let written: Value = serde_json::from_slice(&fs::read(&output_path).unwrap()).unwrap();
-    assert_eq!(written, legacy);
+    let legacy = std::str::from_utf8(LEGACY_STATE).unwrap();
+    // These four fields follow the last retained field in every fixture record.
+    let audit_fields = concat!(
+        ",\n",
+        "      \"last_audit_at\": \"2026-01-02T03:04:06Z\",\n",
+        "      \"last_audit_result_hash\": \"sha256:cccc\",\n",
+        "      \"audit_profile\": \"fixture\",\n",
+        "      \"audit_threshold\": \"high\"",
+    );
+    assert_eq!(legacy.matches(audit_fields).count(), 3);
+    let expected = legacy.replace(audit_fields, "");
+    assert_eq!(fs::read(&output_path).unwrap(), expected.as_bytes());
     assert_eq!(State::load(Some(&output_path)).unwrap(), output);
 }
 

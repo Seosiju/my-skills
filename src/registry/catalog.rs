@@ -59,6 +59,7 @@ pub(crate) fn rows(
     selected: Option<&[String]>,
     with_governance: bool,
 ) -> Result<Catalog> {
+    let skills_root = manifest.skills_dir();
     let mut skills = Vec::new();
     for skill in manifest.skills.values() {
         if enabled.is_some_and(|enabled| enabled != skill.enabled)
@@ -76,7 +77,7 @@ pub(crate) fn rows(
                 ))
             })
             .collect::<Result<_>>()?;
-        let directory = manifest.skill_dir(&skill.name);
+        let directory = skills_root.join(&skill.name);
         let (description, error) = match metadata(&directory) {
             Ok(meta) => (
                 field(&meta, "description").map_or_else(String::new, Node::python_string),
@@ -98,7 +99,7 @@ pub(crate) fn rows(
             description,
             path: display_path(&Path::new(&manifest.skills_root).join(&skill.name)),
             canonical_path: display_path(&directory),
-            governance: with_governance.then(|| governance(skill, state)),
+            governance: with_governance.then(|| governance(skill, state, &skills_root)),
             error,
         });
     }
@@ -171,8 +172,12 @@ fn supports(hosts: &[String], host: &str) -> bool {
     hosts.is_empty() || hosts.iter().any(|candidate| candidate == host)
 }
 
-fn governance(skill: &Skill, state: &State) -> Governance {
-    let records = || state.records().filter(|record| record.skill == skill.name);
+fn governance(skill: &Skill, state: &State, skills_root: &Path) -> Governance {
+    let records = || {
+        state
+            .records()
+            .filter(|record| record.skill == skill.name && record.belongs_to(skills_root))
+    };
     let record = records()
         .find(|record| record.source_type == "host")
         .or_else(|| records().next());

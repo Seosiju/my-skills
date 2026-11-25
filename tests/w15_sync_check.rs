@@ -179,7 +179,13 @@ fn converting_a_live_link_to_copy_checks_the_snapshot_before_replacing_it() {
         ])
         .assert()
         .code(1)
-        .stdout(contains("[BLOCKED] alpha: validation failed"));
+        .stdout(contains("[BLOCKED] alpha: validation failed"))
+        .stdout(contains("SKILL.md not found"));
+    assert_eq!(state, fs::read(fixture.state()).unwrap());
+    assert!(matches!(
+        link::entry_kind(&fixture.host("claude").join("alpha")).unwrap(),
+        EntryKind::Link(_)
+    ));
     fixture
         .command()
         .args([

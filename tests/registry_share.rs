@@ -141,6 +141,35 @@ fn share_apply_imports_registers_and_adopts_source() {
 }
 
 #[test]
+fn catalog_ignores_shared_provenance_from_another_registry() {
+    let source = Fixture::repo();
+    host_skill(&source, "example");
+    share(&source)
+        .args(["example", "--enable"])
+        .assert()
+        .success();
+
+    let local = Fixture::repo();
+    local.write_manifest("[skills.example]\n");
+    skill(
+        &local.registry.join("skills"),
+        "example",
+        "A locally authored skill.",
+        "# Local example\n",
+    );
+    let catalog = json(
+        local
+            .command()
+            .env("XDG_STATE_HOME", source.root.join("state"))
+            .args(["skills", "--with-governance", "--json"]),
+    );
+    assert_eq!(
+        catalog["skills"][0]["provenance"],
+        json!({"source_type": "canonical", "trust_tier": "local-authored"})
+    );
+}
+
+#[test]
 fn share_apply_imports_registers_adopts_source_and_syncs() {
     let fixture = Fixture::repo();
     host_skill(&fixture, "example");
