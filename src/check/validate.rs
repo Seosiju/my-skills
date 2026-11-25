@@ -7,7 +7,9 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
-use crate::check::frontmatter::{FrontmatterError, Mapping, Node, load_yaml, split_document};
+use crate::check::frontmatter::{
+    FrontmatterError, Mapping, Node, YamlDiagnostics, load_yaml, split_document,
+};
 use crate::drive::hosts::{HostConfig, MissingDescription};
 
 const MAX_NAME_LEN: usize = 64;
@@ -150,10 +152,10 @@ fn validate(path: &Path, hosts: &[&HostConfig]) -> ValidationResult {
         }
     };
 
-    let mut commented_fields = Vec::new();
-    match load_yaml(&yaml, Some(&mut commented_fields)) {
+    let mut diagnostics = YamlDiagnostics::default();
+    match load_yaml(&yaml, Some(&mut diagnostics)) {
         Ok(metadata) => {
-            for (field, value) in commented_fields {
+            for (field, value) in diagnostics.commented_fields {
                 const PREVIEW_LEN: usize = 48;
                 let mut chars = value.chars();
                 let mut preview: String = chars.by_ref().take(PREVIEW_LEN).collect();
@@ -164,7 +166,13 @@ fn validate(path: &Path, hosts: &[&HostConfig]) -> ValidationResult {
                     "A YAML comment cuts off '{field}'. Agents see {preview:?}. If you want the full value to appear, put it in quotes."
                 ));
             }
-            host_diagnostics(&metadata, &yaml, &readable_hosts, &mut result);
+            host_diagnostics(
+                &metadata,
+                &yaml,
+                diagnostics.plain_name.as_deref(),
+                &readable_hosts,
+                &mut result,
+            );
         }
         Err(error) => {
             warn_frontmatter(error, &mut result);
@@ -196,18 +204,18 @@ fn warn_frontmatter(error: FrontmatterError, result: &mut ValidationResult) {
 fn host_diagnostics(
     metadata: &Mapping,
     yaml: &str,
+    plain_name: Option<&str>,
     hosts: &[&HostConfig],
     result: &mut ValidationResult,
 ) {
-    let name = field_text(metadata, "name");
+    let name_node = get(metadata, "name");
+    let legacy_name = field_text(metadata, "name");
     let description_node = get(metadata, "description");
-    let is_collection = matches!(
-        description_node,
-        Some(Node::List(_) | Node::Map(_) | Node::Set(_) | Node::Pair(..))
-    );
+    let name_is_collection = is_yaml_collection(name_node);
+    let description_is_collection = is_yaml_collection(description_node);
     // Codex can quote a flow collection when a value contains a second
     // colon followed by whitespace. This may also happen via an alias.
-    let may_repair_collection = is_collection
+    let may_repair_collection = (name_is_collection || description_is_collection)
         && yaml
             .lines()
             .filter_map(|line| line.split_once(':'))
@@ -219,8 +227,29 @@ fn host_diagnostics(
     for host in hosts {
         let service = host.display_name;
         let display = &host.skill_display;
+        let rejects_as_text = |node: Option<&Node>| {
+            display.expects_text_name_and_description
+                && matches!(node, Some(Node::List(_) | Node::Map(_)))
+                && !may_repair_collection
+        };
+        let uncertain_name = display.expects_text_name_and_description && name_is_collection;
+        let name = if uncertain_name {
+            if rejects_as_text(name_node) {
+                result.warnings.push(format!(
+                    "{service} does not show this skill because its YAML name is a list or mapping. If you want it to appear, use a plain text name."
+                ));
+                continue;
+            }
+            result.warnings.push(format!(
+                "{service} may display the name differently or omit the skill when the YAML name is a list or mapping. If you want a predictable name, use a plain text name."
+            ));
+            None
+        } else if display.expects_text_name_and_description {
+            plain_name.or(legacy_name.as_deref())
+        } else {
+            legacy_name.as_deref()
+        };
         let yaml_name = name
-            .as_deref()
             .map(|name| display_text(host, name))
             .filter(|name| !name.is_empty());
         let folder = &result.skill;
@@ -231,6 +260,7 @@ fn host_diagnostics(
         };
         let length = shown.chars().count();
         if let Some(limit) = display.name_limit
+            && !uncertain_name
             && length > limit
         {
             let warning = if yaml_name.is_none() {
@@ -248,14 +278,12 @@ fn host_diagnostics(
 
         // Codex accepts plain scalars such as numbers and booleans as text.
         let description = description_node
-            .filter(|node| !is_collection && !matches!(node, Node::Null))
-            .filter(|node| display.expects_text_description || node.truthy())
+            .filter(|node| !description_is_collection && !matches!(node, Node::Null))
+            .filter(|node| display.expects_text_name_and_description || node.truthy())
             .map(Node::python_string)
             .filter(|text| !display.collapse_whitespace || !text.trim().is_empty());
-        if is_collection {
-            let rejects_type = display.expects_text_description
-                && matches!(description_node, Some(Node::List(_) | Node::Map(_)))
-                && !may_repair_collection;
+        if description_is_collection {
+            let rejects_type = rejects_as_text(description_node);
             let warning = if rejects_type {
                 format!(
                     "{service} does not show this skill because its YAML description is a list or mapping. If you want it to appear, use a plain text description."
@@ -277,7 +305,7 @@ fn host_diagnostics(
             continue;
         }
 
-        if let Some(name) = &name
+        if let Some(name) = name
             && (name != folder || shown != folder)
         {
             let source = if display.uses_folder_name || yaml_name.is_none() {
@@ -298,7 +326,7 @@ fn host_diagnostics(
             if let Some(warning) = description_warning(host, description, extra.as_deref()) {
                 result.warnings.push(warning);
             }
-        } else if !is_collection {
+        } else if !description_is_collection {
             let message = match display.missing_description {
                 MissingDescription::FirstBodyLine => "uses the first body line as the description",
                 MissingDescription::Blank => "shows an empty description",
@@ -324,6 +352,13 @@ fn host_diagnostics(
             ));
         }
     }
+}
+
+fn is_yaml_collection(node: Option<&Node>) -> bool {
+    matches!(
+        node,
+        Some(Node::List(_) | Node::Map(_) | Node::Set(_) | Node::Pair(..))
+    )
 }
 
 pub(crate) fn description_warning(

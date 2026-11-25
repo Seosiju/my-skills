@@ -813,15 +813,20 @@ fn keys_equal(left: &Rc<Node>, right: &Rc<Node>) -> bool {
     compare(left, right) || compare(right, left)
 }
 
+#[derive(Default)]
+pub(crate) struct YamlDiagnostics {
+    pub(crate) commented_fields: Vec<(String, String)>,
+    pub(crate) plain_name: Option<String>,
+}
+
 pub(crate) fn load_yaml(
     source: &str,
-    commented_fields: Option<&mut Vec<(String, String)>>,
+    diagnostics: Option<&mut YamlDiagnostics>,
 ) -> Result<Mapping, FrontmatterError> {
     let mut parser = Parser::new_from_str(source);
     let mut frames: Vec<Frame> = Vec::new();
     let mut anchors = HashMap::new();
-    let check_comments =
-        commented_fields.is_some() && (source.contains(" #") || source.contains("\t#"));
+    let check_comments = diagnostics.is_some() && (source.contains(" #") || source.contains("\t#"));
     let mut plain_scalars = Vec::new();
     let mut root = None;
     let mut document_start = None;
@@ -861,13 +866,16 @@ pub(crate) fn load_yaml(
                 continue;
             }
             Event::Scalar(text, style, anchor, tag) => {
-                let plain = (check_comments && style == TScalarStyle::Plain && !text.is_empty())
-                    .then(|| text.clone());
+                let plain =
+                    (diagnostics.is_some() && style == TScalarStyle::Plain && !text.is_empty())
+                        .then(|| text.clone());
                 let node = Rc::new(
                     resolve_scalar(text, style, tag.as_ref())
                         .ok_or_else(|| unsupported_tag(source, mark, tag.as_ref()))?,
                 );
-                if let Some(value) = plain {
+                if let Some(value) = plain
+                    && (check_comments || !matches!(*node, Node::String(_) | Node::Null))
+                {
                     plain_scalars.push((Rc::clone(&node), index, value));
                 }
                 (node, anchor)
@@ -950,7 +958,7 @@ pub(crate) fn load_yaml(
     match root.as_ref().map(|item| item.node.as_ref()) {
         None | Some(Node::Null) => Ok(Vec::new()),
         Some(Node::Map(mapping)) => {
-            if let Some(commented_fields) = commented_fields {
+            if let Some(diagnostics) = diagnostics {
                 for (key, effective_value) in mapping {
                     // Follow the effective scalar through aliases, merges, and overrides.
                     if let Node::String(field) = key.as_ref()
@@ -958,9 +966,18 @@ pub(crate) fn load_yaml(
                         && let Some((_, index, value)) = plain_scalars
                             .iter()
                             .find(|(node, _, _)| Rc::ptr_eq(node, effective_value))
-                        && has_inline_comment(source, *index, value)
                     {
-                        commented_fields.push((field.clone(), value.clone()));
+                        if check_comments && has_inline_comment(source, *index, value) {
+                            diagnostics
+                                .commented_fields
+                                .push((field.clone(), value.clone()));
+                        }
+                        if field == "name"
+                            && !matches!(effective_value.as_ref(), Node::Null | Node::String(_))
+                        {
+                            // Codex reads plain scalars into its string-valued name as written.
+                            diagnostics.plain_name = Some(value.clone());
+                        }
                     }
                 }
             }

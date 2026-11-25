@@ -98,7 +98,7 @@ pub(crate) fn rows(
         let directory = manifest.skill_dir(&skill.name);
         let (description, error) = match metadata(&directory) {
             Ok(meta) => (
-                catalog_description(&meta).unwrap_or_default().to_owned(),
+                field(&meta, "description").map_or_else(String::new, Node::python_string),
                 None,
             ),
             Err(err) => (
@@ -163,7 +163,10 @@ pub(crate) fn costs(
         }
         let description_chars = metadata(&manifest.skill_dir(&skill.name))
             .ok()
-            .and_then(|meta| catalog_description(&meta).map(|text| text.chars().count()));
+            .and_then(|meta| match field(&meta, "description") {
+                Some(Node::String(text)) if !text.trim().is_empty() => Some(text.chars().count()),
+                _ => None,
+            });
         for (_, cost) in targets {
             cost.skills += 1;
             if let Some(chars) = description_chars {
@@ -264,7 +267,7 @@ impl Catalog {
         }
         let rows = self.skills.iter().map(|row| {
             let summary = &row.summary;
-            let name = if row.description.is_empty() {
+            let name = if row.description.trim().is_empty() {
                 format!("{} (no description)", summary.name)
             } else {
                 summary.name.clone()
@@ -286,13 +289,6 @@ impl Catalog {
             cells
         });
         table(headers, rows, true)
-    }
-}
-
-fn catalog_description(meta: &Mapping) -> Option<&str> {
-    match field(meta, "description") {
-        Some(Node::String(text)) if !text.trim().is_empty() => Some(text),
-        _ => None,
     }
 }
 

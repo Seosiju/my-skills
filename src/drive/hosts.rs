@@ -27,7 +27,7 @@ pub struct SkillDisplay {
     pub missing_description: MissingDescription,
     pub requires_frontmatter: bool,
     pub malformed_frontmatter_uses_body: bool,
-    pub expects_text_description: bool,
+    pub expects_text_name_and_description: bool,
     pub collapse_whitespace: bool,
     pub accepts_bom: bool,
     pub frontmatter_keep_fields: &'static [&'static str],
@@ -70,7 +70,7 @@ pub const CLAUDE: HostConfig = HostConfig {
         requires_frontmatter: false,
         accepts_bom: true,
         malformed_frontmatter_uses_body: true,
-        expects_text_description: false,
+        expects_text_name_and_description: false,
         collapse_whitespace: false,
         // https://code.claude.com/docs/en/skills#frontmatter-reference
         frontmatter_keep_fields: &[
@@ -120,7 +120,7 @@ pub const CODEX: HostConfig = HostConfig {
         requires_frontmatter: true,
         accepts_bom: false,
         malformed_frontmatter_uses_body: false,
-        expects_text_description: true,
+        expects_text_name_and_description: true,
         collapse_whitespace: true,
         frontmatter_keep_fields: &[
             "name",
@@ -150,7 +150,7 @@ pub const AGY: HostConfig = HostConfig {
         requires_frontmatter: true,
         accepts_bom: true,
         malformed_frontmatter_uses_body: false,
-        expects_text_description: false,
+        expects_text_name_and_description: false,
         collapse_whitespace: false,
         frontmatter_keep_fields: &[
             "name",

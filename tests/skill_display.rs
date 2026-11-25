@@ -108,6 +108,36 @@ fn canaries() -> Vec<Canary> {
             )
         },
         Canary {
+            shared_warnings: &[
+                "Referenced supporting file not found: list-missing.md.",
+                "Referenced supporting file not found: end-missing.md.",
+            ],
+            ..Canary::new(
+                "list-fence-indent",
+                described("list-fence-indent", "A fenced block inside a list.")
+                    + "- item\n\n  ~~~md\n  [Inside](inside.md)\n     ~~~\n\n  [Missing](list-missing.md)\n\n[End](end-missing.md)\n",
+            )
+        },
+        Canary {
+            shared_warnings: &["Referenced supporting file not found: after-nested-missing.md."],
+            ..Canary::new(
+                "nested-fence-indent",
+                described("nested-fence-indent", "A fenced block inside a nested list.")
+                    + "- outer\n  - inner\n\n    ```md\n    [InNested](in-nested.md)\n    ```\n\n[AfterNested](after-nested-missing.md)\n",
+            )
+        },
+        Canary {
+            shared_warnings: &[
+                "Referenced supporting file not found: notes/(guide).md?raw=1#intro.",
+                "Referenced supporting file not found: images/report chart.png.",
+            ],
+            ..Canary::new(
+                "reference-links",
+                described("reference-links", "Reference links and images.")
+                    + "\n[Guide][docs] and ![Chart][fig]\n\n[docs]: notes/(guide).md?raw=1#intro \"Guide\"\n[fig]: <images/report chart.png> \"Chart\"\n",
+            )
+        },
+        Canary {
             host_warnings: [
                 &[],
                 &["Codex ignores these YAML fields: allowed-tools, argument-hint, model, paths."],
@@ -342,6 +372,48 @@ fn codex_checks_the_length_of_a_drafts_fallback_folder_name() {
             "warnings": ["Codex does not show this skill because it uses the 65-character folder name. If you want it to appear, use a folder name or YAML name of 64 characters or fewer."]
         })
     );
+}
+
+#[test]
+fn codex_warns_about_collection_names_and_preserves_plain_scalar_names() {
+    let rejected = "Codex does not show this skill because its YAML name is a list or mapping. If you want it to appear, use a plain text name.";
+    let uncertain = "Codex may display the name differently or omit the skill when the YAML name is a list or mapping. If you want a predictable name, use a plain text name.";
+    let cases = [
+        ("name-list", "name: [one, two]", rejected),
+        ("name-mapping", "name:\n  part: text", rejected),
+        ("name-may-repair", "name: [one, {part: text}]", uncertain),
+        (
+            "name-bool",
+            "name: false",
+            "Codex lists this skill as \"false\" using the YAML name. The folder is \"name-bool\" and the YAML name is \"false\". If you want the same name across services, make the two names match.",
+        ),
+        (
+            "name-octal",
+            "name: 0123",
+            "Codex lists this skill as \"0123\" using the YAML name. The folder is \"name-octal\" and the YAML name is \"0123\". If you want the same name across services, make the two names match.",
+        ),
+        (
+            "name-anchored",
+            "metadata: {flag: &flag false}\nname: *flag",
+            "Codex lists this skill as \"false\" using the YAML name. The folder is \"name-anchored\" and the YAML name is \"false\". If you want the same name across services, make the two names match.",
+        ),
+    ];
+    let canaries = cases.map(|(name, yaml, _)| {
+        Canary::new(name, format!("---\n{yaml}\ndescription: A skill.\n---\n"))
+    });
+    let fixture = with_canaries(&canaries);
+    let result = support_h::json(
+        fixture
+            .command()
+            .args(["validate", "--host", "codex", "--json"]),
+    );
+    assert_eq!(result["ok"], true);
+    let rows = result["skills"].as_array().unwrap();
+    for (name, _, expected) in cases {
+        let row = rows.iter().find(|row| row["skill"] == name).unwrap();
+        assert_eq!(row["errors"], json!([]), "{name}");
+        assert_eq!(row["warnings"], json!([expected]), "{name}");
+    }
 }
 
 #[test]

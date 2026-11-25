@@ -131,6 +131,35 @@ fn skills_json_includes_metadata_read_errors_without_inventing_a_description() {
 }
 
 #[test]
+fn skills_keeps_legacy_yaml_scalar_descriptions_in_the_catalog() {
+    let fixture = catalog();
+    for (name, yaml) in [("alpha", "false"), ("beta", "0"), ("gamma", "0123")] {
+        fs::write(
+            fixture.canonical(name).join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: {yaml}\n---\nBody.\n"),
+        )
+        .unwrap();
+    }
+    let data = json(fixture.command().args(["skills", "--json"]));
+    let rows = data["skills"].as_array().unwrap();
+    for (row, (name, description)) in
+        rows.iter()
+            .zip([("alpha", "False"), ("beta", "0"), ("gamma", "83")])
+    {
+        assert_eq!(row["name"], name);
+        assert_eq!(row["description"], description);
+        assert!(row.get("error").is_none(), "{row}");
+    }
+    assert_eq!(rows.len(), 3);
+    fixture
+        .command()
+        .arg("skills")
+        .assert()
+        .success()
+        .stdout("SKILL  ENABLED  CLAUDE   CODEX\n-----  -------  -------  -------\nalpha  yes      missing  missing\nbeta   no       -        missing\ngamma  yes      missing  missing\n");
+}
+
+#[test]
 fn skills_with_status_uses_selected_host_only() {
     let fixture = catalog();
     let data = json(fixture.command().args([

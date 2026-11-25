@@ -28,7 +28,9 @@
     },
     "codex": {
       "errors": [],
-      "warnings": []
+      "warnings": [
+        "Codex lists this skill as \"0123\" using the YAML name. The folder is \"83\" and the YAML name is \"0123\". If you want the same name across services, make the two names match."
+      ]
     },
     "standard": {
       "errors": [],
@@ -194,7 +196,7 @@
     "codex": {
       "errors": [],
       "warnings": [
-        "Codex lists this skill as \"295147905179352825856\" using the YAML name. The folder is \"big-integer\" and the YAML name is \"295147905179352825856\". If you want the same name across services, make the two names match."
+        "Codex lists this skill as \"0x10_0000_0000_0000_0000\" using the YAML name. The folder is \"big-integer\" and the YAML name is \"0x10_0000_0000_0000_0000\". If you want the same name across services, make the two names match."
       ]
     },
     "standard": {
@@ -218,7 +220,7 @@
     "codex": {
       "errors": [],
       "warnings": [
-        "Codex lists this skill as \"b\\\"Hi'\\\\\\\\u\\\\x00\\\\xc3\\\\xa9\\\"\" using the YAML name. The folder is \"binary-name\" and the YAML name is \"b\\\"Hi'\\\\\\\\u\\\\x00\\\\xc3\\\\xa9\\\"\". If you want the same name across services, make the two names match."
+        "Codex lists this skill as \"SGknXHUAw6k=\" using the YAML name. The folder is \"binary-name\" and the YAML name is \"SGknXHUAw6k=\". If you want the same name across services, make the two names match."
       ]
     },
     "standard": {
@@ -259,7 +261,9 @@
     },
     "codex": {
       "errors": [],
-      "warnings": []
+      "warnings": [
+        "Codex lists this skill as \"no\" using the YAML name. The folder is \"bool-false\" and the YAML name is \"no\". If you want the same name across services, make the two names match."
+      ]
     },
     "standard": {
       "errors": [],
@@ -282,7 +286,7 @@
     "codex": {
       "errors": [],
       "warnings": [
-        "Codex lists this skill as \"True\" using the YAML name. The folder is \"bool-true\" and the YAML name is \"True\". If you want the same name across services, make the two names match."
+        "Codex lists this skill as \"YES\" using the YAML name. The folder is \"bool-true\" and the YAML name is \"YES\". If you want the same name across services, make the two names match."
       ]
     },
     "standard": {
@@ -417,7 +421,7 @@
     "codex": {
       "errors": [],
       "warnings": [
-        "Codex lists this skill as \"2020-01-02 03:04:05.120000-04:30\" using the YAML name. The folder is \"datetime-name\" and the YAML name is \"2020-01-02 03:04:05.120000-04:30\". If you want the same name across services, make the two names match."
+        "Codex lists this skill as \"2020-1-2t3:04:05.12-4:30\" using the YAML name. The folder is \"datetime-name\" and the YAML name is \"2020-1-2t3:04:05.12-4:30\". If you want the same name across services, make the two names match."
       ]
     },
     "standard": {
@@ -512,7 +516,7 @@
     "codex": {
       "errors": [],
       "warnings": [
-        "Codex does not show this skill because its YAML description is a list or mapping. If you want it to appear, use a plain text description."
+        "Codex does not show this skill because its YAML name is a list or mapping. If you want it to appear, use a plain text name."
       ]
     },
     "standard": {
@@ -805,10 +809,9 @@
         "Antigravity CLI ignores these YAML fields: allowed-tools. If you want Antigravity CLI to see that information, put it in a supported field or the skill body.",
         "Referenced supporting file not found: missing.txt?raw=1#anchor. If you want the link to work, add the file or update the link.",
         "Referenced supporting file not found: missing.png. If you want the link to work, add the file or update the link.",
-        "Referenced supporting file not found: assets/(nested. If you want the link to work, add the file or update the link.",
-        "Referenced supporting file not found: missing.txt \"title\". If you want the link to work, add the file or update the link.",
+        "Referenced supporting file not found: assets/(nested).txt. If you want the link to work, add the file or update the link.",
         "Referenced supporting file not found: missing.txt. If you want the link to work, add the file or update the link.",
-        "Referenced supporting file not found: missing\nfile. If you want the link to work, add the file or update the link."
+        "Referenced supporting file not found: missing.txt. If you want the link to work, add the file or update the link."
       ]
     },
     "claude": {
@@ -818,10 +821,9 @@
         "Claude Code uses the first body line as the description because the YAML description is missing or empty. If you want a custom description, add one to the YAML frontmatter.",
         "Referenced supporting file not found: missing.txt?raw=1#anchor. If you want the link to work, add the file or update the link.",
         "Referenced supporting file not found: missing.png. If you want the link to work, add the file or update the link.",
-        "Referenced supporting file not found: assets/(nested. If you want the link to work, add the file or update the link.",
-        "Referenced supporting file not found: missing.txt \"title\". If you want the link to work, add the file or update the link.",
+        "Referenced supporting file not found: assets/(nested).txt. If you want the link to work, add the file or update the link.",
         "Referenced supporting file not found: missing.txt. If you want the link to work, add the file or update the link.",
-        "Referenced supporting file not found: missing\nfile. If you want the link to work, add the file or update the link."
+        "Referenced supporting file not found: missing.txt. If you want the link to work, add the file or update the link."
       ]
     },
     "codex": {
@@ -830,10 +832,9 @@
         "Codex does not show this skill because its description is missing or empty. If you want it to appear, add a description to the YAML frontmatter.",
         "Referenced supporting file not found: missing.txt?raw=1#anchor. If you want the link to work, add the file or update the link.",
         "Referenced supporting file not found: missing.png. If you want the link to work, add the file or update the link.",
-        "Referenced supporting file not found: assets/(nested. If you want the link to work, add the file or update the link.",
-        "Referenced supporting file not found: missing.txt \"title\". If you want the link to work, add the file or update the link.",
+        "Referenced supporting file not found: assets/(nested).txt. If you want the link to work, add the file or update the link.",
         "Referenced supporting file not found: missing.txt. If you want the link to work, add the file or update the link.",
-        "Referenced supporting file not found: missing\nfile. If you want the link to work, add the file or update the link."
+        "Referenced supporting file not found: missing.txt. If you want the link to work, add the file or update the link."
       ]
     },
     "standard": {
@@ -841,10 +842,9 @@
       "warnings": [
         "Referenced supporting file not found: missing.txt?raw=1#anchor. If you want the link to work, add the file or update the link.",
         "Referenced supporting file not found: missing.png. If you want the link to work, add the file or update the link.",
-        "Referenced supporting file not found: assets/(nested. If you want the link to work, add the file or update the link.",
-        "Referenced supporting file not found: missing.txt \"title\". If you want the link to work, add the file or update the link.",
+        "Referenced supporting file not found: assets/(nested).txt. If you want the link to work, add the file or update the link.",
         "Referenced supporting file not found: missing.txt. If you want the link to work, add the file or update the link.",
-        "Referenced supporting file not found: missing\nfile. If you want the link to work, add the file or update the link."
+        "Referenced supporting file not found: missing.txt. If you want the link to work, add the file or update the link."
       ]
     }
   },
@@ -1280,7 +1280,7 @@
     "codex": {
       "errors": [],
       "warnings": [
-        "Codex does not show this skill because its name is 72 characters. If you want it to appear, use a name of 64 characters or fewer."
+        "Codex may display the name differently or omit the skill when the YAML name is a list or mapping. If you want a predictable name, use a plain text name."
       ]
     },
     "standard": {
@@ -1409,7 +1409,9 @@
     },
     "codex": {
       "errors": [],
-      "warnings": []
+      "warnings": [
+        "Codex lists this skill as \"0_00\" using the YAML name. The folder is \"octal-zero\" and the YAML name is \"0_00\". If you want the same name across services, make the two names match."
+      ]
     },
     "standard": {
       "errors": [],
@@ -1450,7 +1452,7 @@
     "codex": {
       "errors": [],
       "warnings": [
-        "Codex lists this skill as \"[('a', 'b'), ('a', 'c')]\" using the YAML name. The folder is \"ordered-pairs-name\" and the YAML name is \"[('a', 'b'), ('a', 'c')]\". If you want the same name across services, make the two names match."
+        "Codex may display the name differently or omit the skill when the YAML name is a list or mapping. If you want a predictable name, use a plain text name."
       ]
     },
     "standard": {

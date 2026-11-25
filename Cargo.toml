@@ -32,6 +32,7 @@ walkdir = "2"
 toml = "0.8"
 dirs = "6"
 regex = "1"
+pulldown-cmark = { version = "0.13", default-features = false }
 cap-fs-ext = "4"
 cap-std = "4"
 include_dir = "0.7"

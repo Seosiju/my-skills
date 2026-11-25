@@ -114,9 +114,10 @@ string when guidance is available and `null` otherwise.
 
 `skills --json` includes the absolute `canonical_path` and the manifest `group`
 (or `null`) in each row. Repeatable `--group` matches any of the supplied groups
-and combines with the host and enabled-state filters. Text output labels
-skills without a readable YAML description as `(no description)`. JSON uses
-an empty `description` for these skills.
+and combines with the host and enabled-state filters. JSON represents YAML
+description values as text, including scalar values such as `false` as
+`"False"`. Text output labels skills with an empty or unavailable catalog
+description as `(no description)`.
 
 `skills --json --brief` returns the top-level `registry` and `skills` keys.
 Each row has `name`, `enabled`, `hosts`, `group`, and `status`, plus `error`
@@ -348,11 +349,10 @@ Both `doctor` and `doctor --quick` report catalog description cost per enabled
 host. Text output prints a `Catalog:` summary line (or `Catalog: no enabled hosts`),
 and JSON attaches `catalog: {skills, description_chars, longest, invalid}` to
 each enabled host row (`longest` lists up to two `{name, chars}` entries).
-Counts measure Unicode characters across wanted skills. Skills without a
-readable YAML description count as `0` characters and are left out of
-`longest`. JSON retains the `invalid` key for this count. Disabled hosts and
-reports without a loaded manifest omit
-`catalog`.
+Counts measure Unicode characters in nonblank YAML strings across wanted
+skills. Other description values and missing descriptions count as `0`
+characters and are left out of `longest`. JSON retains the `invalid` key for
+this count. Disabled hosts and reports without a loaded manifest omit `catalog`.
 
 Each built-in host row includes `configured_mode` (`link`, `copy`, or `null`
 when the manifest is unavailable) and `connections: {link, copy, fallback}`
