@@ -1,5 +1,5 @@
 //! Black-box tests for the integrator's commands: install, sync, uninstall,
-//! convert, bootstrap, validate, audit, status, set-root, data-path.
+//! convert, bootstrap, validate, status, set-root, data-path.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -123,7 +123,6 @@ fn install_dry_run_json_plans_links_by_default() {
     let creates: Vec<_> = actions.iter().filter(|a| a["action"] == "CREATE").collect();
     assert_eq!(creates.len(), 4, "{value}");
     assert!(creates.iter().all(|a| a["mode"] == "link"));
-    assert_eq!(value["audit"]["skipped"], false);
     assert!(
         !env.host("claude").join("alpha").exists(),
         "dry run wrote files"
@@ -302,16 +301,6 @@ fn invalid_skill_blocks_install_without_writing() {
 }
 
 #[test]
-fn audit_json_reports_not_blocked_for_clean_skills() {
-    let env = Env::new();
-    let out = env.cmd().args(["audit", "--json"]).output().unwrap();
-    assert!(out.status.success());
-    let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(value["blocked"], false);
-    assert_eq!(value["skills"].as_array().unwrap().len(), 2);
-}
-
-#[test]
 fn data_path_uses_xdg_data_home_and_rejects_bad_names() {
     let env = Env::new();
     env.cmd()
@@ -381,7 +370,7 @@ fn bootstrap_connects_enabled_skills() {
     assert!(is_link(&env.host("agy").join("alpha")));
 }
 
-// ---- regressions from the 2026-11-23 audit review (handoff §6) ----
+// ---- regressions from the 2026-11-23 release review (handoff §6) ----
 
 fn assert_install_retries_after_state_save_failure(mode: &str, expected_mode: InstallMode) {
     let env = Env::new();

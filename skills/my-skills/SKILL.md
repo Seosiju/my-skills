@@ -64,7 +64,7 @@ drafts under `skills/`; exit `1` flags `foreign`, `unmanaged`, `ambiguous`, or
   `my-skills validate <skill>`). A later `sync` prunes disabled connections
   (preview removals with `sync --dry-run --json`).
 - Pass several skill names or repeat `--group <group>` with `install`, `sync`,
-  `uninstall`, `enable`, `disable`, `audit`, or `validate`.
+  `uninstall`, `enable`, `disable`, or `validate`.
 - Inspect drift or conflicts with `my-skills diff <skill> --host <host> --patch`.
 - **New skill:** `my-skills new <name> [--group <group>] [--host <host>]`
   creates a disabled draft in `skills/<name>/SKILL.md` and registers it under
@@ -98,9 +98,8 @@ my-skills sync <skill> --host <host> --dry-run --json
 ```
 
 2. Read `registry`, `blocked`, `applicable`, `block_reasons`, `validation`,
-   `audit`, and `actions` (for `sync`, review removals as well as new/updated
-   connections). Stop and surface findings if `blocked` is `true` or audit would
-   block.
+   and `actions` (for `sync`, review removals as well as new and updated connections).
+   If `blocked` is `true`, show the reasons.
 3. To apply, drop only `--dry-run` when `applicable` is `true` (or only
    `needs_yes` remains for an already-approved multi-host scope), and check
    `applied`, `summary`, `cleanup_warnings`, and each action's `result`:
@@ -109,13 +108,6 @@ my-skills sync <skill> --host <host> --dry-run --json
 my-skills install <skill> --host <host> --json
 my-skills sync <skill> --host <host> --json
 ```
-
-## Never bypass audit
-
-If audit returns `blocked: true`, stop and show the finding — do not install,
-sync, share, or import that skill. The only bypass is `--skip-audit`, which
-requires explicit user approval for the exact command. `--force` only answers
-"may overwrite?" and never bypasses audit.
 
 ## References
 
@@ -126,8 +118,8 @@ Read a reference only when the task needs it:
 - [references/json-and-dry-run.md](references/json-and-dry-run.md) — `resolve`,
   `new --json`, dry-run and applied `install`/`sync --json`, error codes,
   `sync --check`, and multi-host rules.
-- [references/share-and-audit.md](references/share-and-audit.md) — Sharing
-  host-local skills (`share`), creating/importing skills (`new`, `import`), and
-  security and bundle audits (`audit`, `--with-governance`).
+- [references/sharing.md](references/sharing.md) — Sharing
+  host-local skills (`share`), creating and importing skills (`new`, `import`),
+  and viewing provenance (`--with-governance`).
 - [references/hosts.md](references/hosts.md) — `install_mode` (`link` vs `copy`)
   precedence, `doctor --quick`, `convert`, and Antigravity CLI (`agy`) notes.

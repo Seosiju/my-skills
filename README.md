@@ -94,6 +94,8 @@ my-skills sync --yes
 Add `--dry-run` to see what a command would do without changing anything.
 Commands that write to more than one agent ask for `--yes`.
 
+Registry owners are responsible for skill security. Use dedicated tools such as gitleaks or GitHub secret scanning to check for exposed credentials.
+
 ## Use the same skills on several machines
 
 Your registry is a normal Git repo. Push it to a private remote, clone it on

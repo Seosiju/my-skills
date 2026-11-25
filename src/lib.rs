@@ -11,7 +11,7 @@
 //! | `commands` | one handler per command group: flow and output only |
 //! | `registry` | the canonical side: root resolution, manifest, edits, catalog, seeds, share/import |
 //! | `drive` | the connection side: hosts, links, planning, applying, state, content hash |
-//! | `check` | Agent Skills validation and the security audit |
+//! | `check` | Agent Skills validation and host display diagnostics |
 //! | `git` | registry git hooks |
 //! | `update` | self-update from GitHub Releases |
 //! | `platform` | OS paths and machine-local data directories |

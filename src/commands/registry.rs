@@ -6,7 +6,6 @@ use std::process::ExitCode;
 
 use serde::Serialize;
 
-use crate::check::audit::format_gate;
 use crate::check::validate::validate_name;
 use crate::cli::*;
 use crate::drive::state::State;
@@ -158,20 +157,10 @@ pub fn share(args: &ShareArgs) -> ExitCode {
     if let Some(refusal) = resolution.write_refusal() {
         return super::config_error(refusal);
     }
-    match share::share(
-        &resolution,
-        &args.from_host,
-        skill,
-        args.enable,
-        args.force,
-        args.skip_audit,
-    ) {
+    match share::share(&resolution, &args.from_host, skill, args.enable, args.force) {
         Ok(result) => {
             if args.force {
                 println!("WARN: force overwrite allowed for existing canonical skill");
-            }
-            if args.skip_audit {
-                println!("WARN: audit skipped by explicit --skip-audit");
             }
             let name = result.name;
             println!(
@@ -198,10 +187,6 @@ pub fn share(args: &ShareArgs) -> ExitCode {
         }
         Err(Failure::Blocked(message)) => {
             println!("[BLOCKED] {message}");
-            ExitCode::from(1)
-        }
-        Err(Failure::Audit(gate)) => {
-            println!("{}", format_gate(&gate, "AUDIT BLOCKED"));
             ExitCode::from(1)
         }
     }
@@ -280,17 +265,7 @@ pub fn import(args: &ImportArgs) -> ExitCode {
         Err(err) => return super::config_error(err),
     };
     let source = seeds::expand_user(&args.source);
-    match share::import(
-        &manifest,
-        &source,
-        args.enable,
-        args.force,
-        args.skip_audit,
-        args.dry_run,
-        || {
-            println!("WARN: audit skipped by explicit --skip-audit");
-        },
-    ) {
+    match share::import(&manifest, &source, args.enable, args.force, args.dry_run) {
         Ok(result) => {
             let name = result.name;
             let canonical = display_path(&result.canonical);
@@ -298,7 +273,7 @@ pub fn import(args: &ImportArgs) -> ExitCode {
                 println!("  warn: {warning}");
             }
             if args.dry_run {
-                println!("Dry run — {name} passed validation and audit; nothing written");
+                println!("Dry run — {name} passed validation; nothing written");
                 if result.identical {
                     println!("  canonical already matches: {canonical}");
                 } else if result.overwritten {
@@ -345,11 +320,6 @@ pub fn import(args: &ImportArgs) -> ExitCode {
                 println!("  error: {error}");
             }
             eprintln!("\nNothing was imported (fix the source first).");
-            ExitCode::from(1)
-        }
-        Err(Failure::Audit(gate)) => {
-            println!("{}", format_gate(&gate, "AUDIT BLOCKED"));
-            eprintln!("\nNothing was imported (audit blocked).");
             ExitCode::from(1)
         }
         Err(Failure::Blocked(message)) => {

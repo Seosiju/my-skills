@@ -1,5 +1,5 @@
-//! validate, audit, status, set-root, data-path. Integrator.
-//! Output follows v0.4.1 `inspection_commands.py`, `audit_commands.py`,
+//! validate, status, set-root, data-path. Integrator.
+//! Output follows v0.4.1 `inspection_commands.py`,
 //! `cli_runtime.cmd_set_root`, and `registry_commands.cmd_data_path`.
 
 use std::fs;
@@ -9,10 +9,6 @@ use std::process::ExitCode;
 use serde_json::json;
 
 use super::config_error;
-use crate::check::audit::{
-    AuditFinding, Severity, cross_skill_findings, finding_json, policy_from_settings, result_json,
-    run_audit,
-};
 use crate::check::validate::gate_validation;
 use crate::cli::*;
 use crate::drive::link::{self, EntryKind};
@@ -69,9 +65,6 @@ pub fn validate(args: &ValidateArgs) -> ExitCode {
         names.dedup();
         names.iter().map(|name| manifest.skill_dir(name)).collect()
     };
-    if let Err(error) = policy_from_settings(&manifest.audit) {
-        return config_error(error);
-    }
     let mut ok = true;
     let mut skills = Vec::new();
     if dirs.is_empty() && !args.json {
@@ -104,88 +97,6 @@ pub fn validate(args: &ValidateArgs) -> ExitCode {
         println!("{report:#}");
     }
     ExitCode::from(u8::from(!ok))
-}
-
-pub fn audit(args: &AuditArgs) -> ExitCode {
-    let manifest = match load() {
-        Ok(m) => m,
-        Err(code) => return code,
-    };
-    let requested =
-        match crate::registry::manifest::select_names(&manifest, &args.skills, &args.groups) {
-            Ok(requested) => requested,
-            Err(e) => return config_error(e),
-        };
-    let skills = match crate::registry::manifest::selected_skills(&manifest, &requested, args.all) {
-        Ok(selection) => selection,
-        Err(e) => return config_error(e),
-    };
-    let policy = match policy_from_settings(&manifest.audit) {
-        Ok(p) => p,
-        Err(e) => return config_error(e),
-    };
-    let mut results = Vec::new();
-    for skill in &skills {
-        match run_audit(&manifest.skill_dir(&skill.name), &policy) {
-            Ok(result) => results.push(result),
-            Err(e) => return config_error(e),
-        }
-    }
-    let bundle = cross_skill_findings(&results);
-    let threshold = policy.effective_threshold();
-    let bundle_blocked = bundle_blocked(&bundle, threshold);
-    let blocked = results.iter().any(|r| r.blocked()) || bundle_blocked;
-
-    if args.json {
-        let value = if requested.len() == 1 {
-            result_json(&results[0])
-        } else {
-            json!({
-                "blocked": blocked,
-                "bundle_findings": bundle.iter().map(finding_json).collect::<Vec<_>>(),
-                "skills": results.iter().map(result_json).collect::<Vec<_>>(),
-            })
-        };
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&value).expect("JSON values always serialize")
-        );
-    } else {
-        for result in &results {
-            let status = if result.blocked() { "BLOCKED" } else { "OK" };
-            let threshold = result.threshold.map_or("none", |t| t.label());
-            println!("[{status}] {} (threshold={threshold})", result.skill);
-            for finding in &result.findings {
-                print_finding(finding);
-            }
-        }
-        if !bundle.is_empty() {
-            let status = if bundle_blocked { "BLOCKED" } else { "WARN" };
-            println!("[{status}] selected skill bundle");
-            for finding in &bundle {
-                print_finding(finding);
-            }
-        }
-    }
-    if blocked {
-        ExitCode::from(1)
-    } else {
-        ExitCode::SUCCESS
-    }
-}
-
-fn print_finding(finding: &AuditFinding) {
-    println!(
-        "  {}: {}: {}: {}",
-        finding.severity.label(),
-        finding.rule_id,
-        finding.file,
-        finding.message
-    );
-}
-
-fn bundle_blocked(findings: &[AuditFinding], threshold: Option<Severity>) -> bool {
-    threshold.is_some_and(|t| findings.iter().any(|f| f.severity >= t))
 }
 
 pub fn status(args: &StatusArgs) -> ExitCode {

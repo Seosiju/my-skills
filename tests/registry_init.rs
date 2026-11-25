@@ -153,7 +153,7 @@ fn seed_default_install_requires_confirmation_for_non_default_options() {
     init(&fixture).arg("--no-git").assert().success();
     for args in [
         &["install", "--mode", "link"][..],
-        &["install", "--skip-audit"][..],
+        &["install", "--all"][..],
     ] {
         fixture
             .command()
@@ -261,7 +261,7 @@ fn init_registry_seed_copy_does_not_copy_private_source_files() {
         "my-skills/references/hosts.md",
         "my-skills/references/json-and-dry-run.md",
         "my-skills/references/setup.md",
-        "my-skills/references/share-and-audit.md",
+        "my-skills/references/sharing.md",
     ];
     let tool_repo = Path::new(env!("CARGO_MANIFEST_DIR"));
     for file in seed_files {
