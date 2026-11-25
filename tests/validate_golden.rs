@@ -129,6 +129,85 @@ fn name_rules_match_python_regex_and_count_code_points() {
 }
 
 #[test]
+fn plain_scalars_warn_about_inline_yaml_comments() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("tiny-skill");
+    fs::create_dir(&path).unwrap();
+    for (yaml, field, preview) in [
+        (
+            "name: tiny-skill\ndescription: Gets cut off # lost text",
+            "description",
+            "Gets cut off",
+        ),
+        (
+            "name: tiny-skill # lost suffix\ndescription: An example",
+            "name",
+            "tiny-skill",
+        ),
+        (
+            "name: tiny-skill\r\n'description': 설명 ✏️\r\n  on a second line\t# lost text",
+            "description",
+            "설명 ✏️ on a second line",
+        ),
+        (
+            "{name: tiny-skill, description: Shows C# # lost text\n}",
+            "description",
+            "Shows C#",
+        ),
+        (
+            "name: tiny-skill\nmetadata: {summary: &summary An example # lost text\n}\ndescription: *summary",
+            "description",
+            "An example",
+        ),
+        (
+            "name: tiny-skill\n<<:\n  description: An example # lost text",
+            "description",
+            "An example",
+        ),
+    ] {
+        fs::write(path.join("SKILL.md"), format!("---\n{yaml}\n---\n")).unwrap();
+        let result = validate_skill(&path);
+        assert!(result.ok(), "{result:?}");
+        assert_eq!(
+            result.warnings,
+            [format!(
+                "A YAML comment cuts off '{field}'. Agents see {preview:?}. Put the full value in quotes."
+            )],
+            "{yaml:?}"
+        );
+    }
+}
+
+#[test]
+fn intact_scalars_and_standalone_comments_do_not_warn() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("tiny-skill");
+    fs::create_dir(&path).unwrap();
+    for fields in [
+        "description: 'Keeps # fragment'",
+        "description: \"Keeps # fragment\" # note after quoted value",
+        "description: Shows C# and topic#tag",
+        "description: |\n  Keeps # fragment",
+        "description: > # note after block header\n  Keeps # fragment",
+        "description: Keeps the value\n  # standalone comment",
+        "description: #tag\n  Keeps the value",
+        "description: Keeps the value\nmetadata:\n  description: Nested # comment",
+        "description: Overridden # comment\ndescription: 'Keeps # fragment'",
+    ] {
+        fs::write(
+            path.join("SKILL.md"),
+            format!("---\nname: tiny-skill\n{fields}\n---\n"),
+        )
+        .unwrap();
+        let result = validate_skill(&path);
+        assert!(
+            result.ok() && result.warnings.is_empty(),
+            "{fields:?}: {result:?}"
+        );
+    }
+}
+
+#[test]
 fn host_configuration_controls_limits_and_kept_fields() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("tiny-skill");

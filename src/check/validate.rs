@@ -6,11 +6,13 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::check::frontmatter::{Mapping, Node, parse_document, python_whitespace};
-use crate::drive::hosts::HostConfig;
+use crate::check::frontmatter::{Mapping, Node, parse_document_with_comments, python_whitespace};
+use crate::drive::hosts::{CODEX, HostConfig};
 
 const MAX_NAME_LEN: usize = 64;
 const MAX_DESCRIPTION_LEN: usize = 1024;
+const BOM_MESSAGE: &str =
+    "SKILL.md starts with a UTF-8 BOM. Codex rejects this file. Save it as UTF-8 without a BOM.";
 const OPTIONAL_FIELDS: &[&str] = &[
     "license",
     "compatibility",
@@ -56,7 +58,7 @@ pub fn validate_name(name: &str) -> Vec<String> {
     errors
 }
 
-/// Same checks and message text as v0.4.1 `validate_skill`.
+/// Standard validation without a specific target host.
 pub fn validate_skill(path: &Path) -> ValidationResult {
     validate(path, &[])
 }
@@ -95,13 +97,34 @@ fn validate(path: &Path, hosts: &[&HostConfig]) -> ValidationResult {
             return result;
         }
     };
-    let (metadata, body) = match parse_document(&text) {
+    if text.starts_with('\u{feff}') {
+        if hosts.iter().any(|host| host.name == CODEX.name) {
+            result.errors.push(BOM_MESSAGE.into());
+        } else {
+            result.warnings.push(BOM_MESSAGE.into());
+        }
+    }
+    let initial_errors = result.errors.len();
+    let mut commented_fields = Vec::new();
+    let (metadata, body) = match parse_document_with_comments(&text, Some(&mut commented_fields)) {
         Ok(parsed) => parsed,
         Err(error) => {
             result.errors.push(error.0);
             return result;
         }
     };
+
+    for (field, value) in commented_fields {
+        const PREVIEW_LEN: usize = 48;
+        let mut chars = value.chars();
+        let mut preview: String = chars.by_ref().take(PREVIEW_LEN).collect();
+        if chars.next().is_some() {
+            preview.push('…');
+        }
+        result.warnings.push(format!(
+            "A YAML comment cuts off '{field}'. Agents see {preview:?}. Put the full value in quotes."
+        ));
+    }
 
     if let Some(name) = get(&metadata, "name").filter(|name| name.truthy()) {
         let name = name.python_string();
@@ -167,7 +190,7 @@ fn validate(path: &Path, hosts: &[&HostConfig]) -> ValidationResult {
         }
     }
 
-    if result.ok() {
+    if result.errors.len() == initial_errors {
         host_diagnostics(&metadata, description_length, hosts, &mut result);
     }
     result
@@ -288,6 +311,9 @@ pub fn gate_validation(
     if !hosts.is_empty() {
         let check = validate(path, &hosts);
         for error in check.errors {
+            if error == BOM_MESSAGE {
+                result.warnings.retain(|warning| warning != BOM_MESSAGE);
+            }
             if !result.errors.contains(&error) {
                 result.errors.push(error);
             }
