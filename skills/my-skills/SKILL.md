@@ -69,12 +69,12 @@ drafts under `skills/`; exit `1` flags `foreign`, `unmanaged`, `ambiguous`, or
 - **New skill:** `my-skills new <name> [--group <group>] [--host <host>]`
   creates a disabled draft in `skills/<name>/SKILL.md` and registers it under
   `my-skills.toml.edit-lock` (edit → `my-skills enable <name>` → validate/commit).
-- **Editing loop:** edit canonical `skills/<name>/...`, validate
-  (`my-skills validate <skill> --json`), then commit (`pre-commit` validates;
-  `post-commit` refreshes copy hosts automatically) and push in a Git registry
-  — zero extra `my-skills` calls after committing. In a non-Git registry, run
-  one call: `my-skills sync <skill> --host <host> --json` (after previewing with
-  `--dry-run --json`).
+- **Editing loop:** edit canonical `skills/<name>/...` and run `my-skills validate <skill> --json`.
+  Content warnings explain each service's display without blocking delivery.
+  See the [recommended format](references/json-and-dry-run.md#validation), then
+  commit and push. In a Git registry, `post-commit` refreshes copy hosts.
+  In a non-Git registry, preview with `--dry-run --json`, then run
+  `my-skills sync <skill> --host <host> --json`.
 - **Session reload:** after adding or changing skills, start a new host session
   if needed — Claude Code picks up skills on restart, Codex detects changes
   automatically (restart if needed), and Antigravity CLI requires a new

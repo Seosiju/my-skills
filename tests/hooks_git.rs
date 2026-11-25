@@ -5,6 +5,7 @@ mod support_i;
 use std::fs;
 
 use assert_cmd::prelude::*;
+use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use support_g::{Fixture, MANIFEST, skill};
 use support_i::assert_with_busy_retry;
@@ -208,13 +209,15 @@ fn real_git_commit_runs_pre_commit_with_the_shell_quoted_binary_fallback() {
         skill("example")
     );
 
+    fixture.write("skills/example/reference.txt", "staged reference\n");
+    fs::remove_file(fixture.registry.join("skills/example/SKILL.md")).unwrap();
     fixture.git(&["add", "skills"]);
     fixture.write("skills/example/SKILL.md", &skill("example"));
     fixture
         .git_command(&["commit", "-qm", "invalid index"])
         .assert()
         .code(1)
-        .stderr(contains("[BLOCKED] example:"));
+        .stderr(contains("[BLOCKED] example: SKILL.md not found"));
 }
 
 #[test]
@@ -228,7 +231,7 @@ fn partial_git_commit_uses_the_index_selected_by_git() {
         .args(["hooks", "install"])
         .assert()
         .success();
-    fixture.write("skills/example/SKILL.md", "broken staged skill\n");
+    fixture.write("skills/example/reference.txt", "staged reference\n");
     fixture.git(&["add", "skills"]);
     fixture.write("note.txt", "good partial commit\n");
     fixture.git(&[
@@ -244,7 +247,7 @@ fn partial_git_commit_uses_the_index_selected_by_git() {
         .args(["hooks", "run", "pre-commit"])
         .assert()
         .code(1)
-        .stderr(contains("[BLOCKED] example:"));
+        .stderr(contains("[BLOCKED] example: SKILL.md not found"));
 }
 
 #[test]
@@ -313,7 +316,7 @@ fn pre_commit_checks_the_signature_of_staged_binary_assets() {
 }
 
 #[test]
-fn pre_commit_validates_staged_manifest_layout_host_limits_and_audit() {
+fn pre_commit_validates_staged_manifest_layout_and_audit_without_blocking_host_warnings() {
     let fixture = Fixture::isolated();
     fixture.init();
     fixture.write(
@@ -325,7 +328,7 @@ fn pre_commit_validates_staged_manifest_layout_host_limits_and_audit() {
     );
     let long = format!(
         "---\nname: example\ndescription: {}\n---\n",
-        "a".repeat(800)
+        "a".repeat(1100)
     );
     fixture.write("training material/example/SKILL.md", &long);
     fixture.write("training material/second/SKILL.md", &skill("second"));
@@ -343,9 +346,7 @@ fn pre_commit_validates_staged_manifest_layout_host_limits_and_audit() {
         .args(["hooks", "run", "pre-commit"])
         .assert()
         .code(1)
-        .stderr(contains(
-            "[BLOCKED] example: codex description exceeds 768 characters",
-        ))
+        .stderr(contains("[BLOCKED] example:").not())
         .stderr(contains("[BLOCKED] second: security: notes.txt:"));
 
     fixture.git(&["add", "my-skills.toml"]);
@@ -377,7 +378,7 @@ fn pre_commit_ignores_disabled_targets_and_only_deleted_or_unchanged_skills() {
     fixture.git(&["rm", "skills/old/SKILL.md"]);
     let long = format!(
         "---\nname: example\ndescription: {}\n---\n",
-        "a".repeat(800)
+        "a".repeat(1100)
     );
     fixture.write("skills/example/SKILL.md", &long);
     fixture.git(&["add", "skills/example"]);
@@ -420,14 +421,14 @@ fn nested_registry_hooks_find_the_manifest_from_gits_worktree_root() {
         .args(["hooks", "install"])
         .assert()
         .success();
-    fixture.write("skills/example/SKILL.md", "invalid staged content\n");
+    fixture.write("skills/example/reference.txt", "staged reference\n");
     fixture.registry = top;
     fixture.git(&["add", "."]);
     fixture
         .git_command(&["commit", "-qm", "initial"])
         .assert()
         .code(1)
-        .stderr(contains("[BLOCKED] example:"));
+        .stderr(contains("[BLOCKED] example: SKILL.md not found"));
 }
 
 #[test]

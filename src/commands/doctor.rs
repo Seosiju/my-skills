@@ -437,8 +437,13 @@ impl HostStatus {
                 .join(", ");
             write!(text, " (longest: {longest})").expect("writing to a String");
         }
-        if catalog.invalid > 0 {
-            write!(text, " ({} invalid)", catalog.invalid).expect("writing to a String");
+        if catalog.without_description > 0 {
+            write!(
+                text,
+                " ({} without a description)",
+                catalog.without_description
+            )
+            .expect("writing to a String");
         }
         Some(text)
     }

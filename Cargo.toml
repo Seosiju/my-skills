@@ -1,6 +1,6 @@
 [package]
 name = "my-skills"
-version = "1.3.1"
+version = "1.3.2"
 description = "Personal skill drive: one canonical skill registry, linked into every agent host."
 edition = "2024"
 rust-version = "1.85"
@@ -32,6 +32,7 @@ walkdir = "2"
 toml = "0.8"
 dirs = "6"
 regex = "1"
+pulldown-cmark = { version = "0.13", default-features = false }
 cap-fs-ext = "4"
 cap-std = "4"
 include_dir = "0.7"

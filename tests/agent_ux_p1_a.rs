@@ -677,17 +677,12 @@ fn validation_failure_leaves_the_root_cache_absent() {
     let mut cached = Vec::new();
     for cmd in ["install", "sync", "bootstrap"] {
         let fixture = batch();
-        skill(
-            &fixture.registry.join("skills"),
-            "alpha",
-            &"a".repeat(800),
-            "Example.",
-        );
+        fs::remove_file(fixture.canonical("alpha").join("SKILL.md")).unwrap();
         from_cwd(&fixture)
             .args([cmd, "--host", "claude"])
             .assert()
             .code(1)
-            .stdout(contains("description exceeds 768 characters"));
+            .stdout(contains("SKILL.md not found"));
         assert!(!fixture.host("claude").exists());
         if root_cache(&fixture).exists() {
             cached.push(cmd);

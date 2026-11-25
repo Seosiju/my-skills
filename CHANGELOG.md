@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 This project follows a GitHub-first release flow. Git tags and GitHub Releases
 are the release source of truth while PyPI publishing remains undecided.
 
+## [1.3.2] - 2026-11-25
+
+### Changed
+
+- my-skills no longer refuses to connect a skill because of its `SKILL.md` content. A missing `SKILL.md` and security audit policy still block. Everything else is now a notice. That includes the 768-character description rule (it had no basis in any host), missing body-link files, name and description rules, a UTF-8 BOM, and missing or unreadable frontmatter.
+- `validate` and connection commands tell you, per targeted host, how the skill will appear: not shown (and why), shown cut at N characters, or shown under a different name. The host rules were measured on Claude Code 2.1.318, Codex 0.172.0, and agy 1.5.16 and live in the host definitions. Fixing anything is optional.
+- Body-link notices use a CommonMark parser (`pulldown-cmark`), so links inside code, autolinks, and URIs with a scheme are not reported.
+- `my-skills new` writes the recommended format that every host shows in full: frontmatter present, `name` equal to the folder name, a description of 1,024 characters or fewer, values safely quoted, UTF-8 without a BOM. Long descriptions are kept, with a notice for hosts that would cut them.
+
+### Added
+
+- Regression tests with canary skills cover 16+ measured cases (missing name or description, long names and descriptions, extra fields, missing links, BOM, ` #` comments, multi-line values, CRLF, no frontmatter). They check that none of them is blocked and that each host's notice matches its measured behavior.
+
 ## [1.3.1] - 2026-11-25
 
 ### Added

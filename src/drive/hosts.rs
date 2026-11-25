@@ -13,12 +13,41 @@ pub struct HostConfig {
     pub default_user_path: &'static str,
     pub default_project_path: &'static str,
     pub reload_hint: &'static str,
-    pub description_max_chars: usize,
-    pub frontmatter_keep_fields: &'static [&'static str],
+    pub skill_display: SkillDisplay,
     pub default_enabled: bool,
 }
 
-const KEEP_FIELDS: &[&str] = &["name", "description"];
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillDisplay {
+    pub version: &'static str,
+    pub measured_on: &'static str,
+    pub uses_folder_name: bool,
+    pub name_limit: Option<usize>,
+    pub description_limit: Option<DescriptionLimit>,
+    pub missing_description: MissingDescription,
+    pub requires_frontmatter: bool,
+    pub malformed_frontmatter_uses_body: bool,
+    pub expects_text_name_and_description: bool,
+    pub collapse_whitespace: bool,
+    pub accepts_bom: bool,
+    pub frontmatter_keep_fields: &'static [&'static str],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DescriptionLimit {
+    pub max_chars: usize,
+    pub suffix: &'static str,
+    pub extra_field: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MissingDescription {
+    FirstBodyLine,
+    Hidden,
+    Blank,
+}
+
+const MEASURED_ON: &str = "2026-11-25";
 
 pub const CLAUDE: HostConfig = HostConfig {
     name: "claude",
@@ -27,8 +56,46 @@ pub const CLAUDE: HostConfig = HostConfig {
     default_user_path: "~/.claude/skills",
     default_project_path: ".claude/skills",
     reload_hint: "Claude Code picks up skills on restart; relaunch to see new skills.",
-    description_max_chars: 768,
-    frontmatter_keep_fields: KEEP_FIELDS,
+    skill_display: SkillDisplay {
+        version: "2.1.318",
+        measured_on: MEASURED_ON,
+        uses_folder_name: true,
+        name_limit: None,
+        description_limit: Some(DescriptionLimit {
+            max_chars: 1536,
+            suffix: "…",
+            extra_field: Some("when_to_use"),
+        }),
+        missing_description: MissingDescription::FirstBodyLine,
+        requires_frontmatter: false,
+        accepts_bom: true,
+        malformed_frontmatter_uses_body: true,
+        expects_text_name_and_description: false,
+        collapse_whitespace: false,
+        // https://code.claude.com/docs/en/skills#frontmatter-reference
+        frontmatter_keep_fields: &[
+            "name",
+            "description",
+            "when_to_use",
+            "argument-hint",
+            "arguments",
+            "disable-model-invocation",
+            "user-invocable",
+            "allowed-tools",
+            "disallowed-tools",
+            "model",
+            "effort",
+            "context",
+            "agent",
+            "background",
+            "hooks",
+            "paths",
+            "shell",
+            "metadata",
+            "license",
+            "compatibility",
+        ],
+    },
     default_enabled: true,
 };
 
@@ -39,8 +106,30 @@ pub const CODEX: HostConfig = HostConfig {
     default_user_path: "~/.agents/skills",
     default_project_path: ".agents/skills",
     reload_hint: "Codex detects skill changes automatically; restart if needed.",
-    description_max_chars: 768,
-    frontmatter_keep_fields: KEEP_FIELDS,
+    skill_display: SkillDisplay {
+        version: "0.172.0",
+        measured_on: MEASURED_ON,
+        uses_folder_name: false,
+        name_limit: Some(64),
+        description_limit: Some(DescriptionLimit {
+            max_chars: 1024,
+            suffix: "...",
+            extra_field: None,
+        }),
+        missing_description: MissingDescription::Hidden,
+        requires_frontmatter: true,
+        accepts_bom: false,
+        malformed_frontmatter_uses_body: false,
+        expects_text_name_and_description: true,
+        collapse_whitespace: true,
+        frontmatter_keep_fields: &[
+            "name",
+            "description",
+            "metadata",
+            "license",
+            "compatibility",
+        ],
+    },
     default_enabled: true,
 };
 
@@ -51,8 +140,26 @@ pub const AGY: HostConfig = HostConfig {
     default_user_path: "~/.gemini/config/skills",
     default_project_path: ".agents/skills",
     reload_hint: "Start a new Antigravity CLI session and use /skills to verify discovery.",
-    description_max_chars: 768,
-    frontmatter_keep_fields: KEEP_FIELDS,
+    skill_display: SkillDisplay {
+        version: "1.5.16",
+        measured_on: MEASURED_ON,
+        uses_folder_name: false,
+        name_limit: None,
+        description_limit: None,
+        missing_description: MissingDescription::Blank,
+        requires_frontmatter: true,
+        accepts_bom: true,
+        malformed_frontmatter_uses_body: false,
+        expects_text_name_and_description: false,
+        collapse_whitespace: false,
+        frontmatter_keep_fields: &[
+            "name",
+            "description",
+            "metadata",
+            "license",
+            "compatibility",
+        ],
+    },
     default_enabled: false,
 };
 
