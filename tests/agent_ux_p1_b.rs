@@ -88,6 +88,80 @@ fn host<'a>(report: &'a Value, field: &str, value: &str) -> &'a Value {
 }
 
 #[test]
+fn validate_reports_bom_at_the_effective_host_severity() {
+    let fixture = fixture();
+    let check = |skill, host| {
+        let mut command = fixture.command();
+        command.args(["validate", skill, "--json"]);
+        if let Some(host) = host {
+            command.args(["--host", host]);
+        }
+        let output = command.output().unwrap();
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        (output.status.code().unwrap(), report["skills"][0].clone())
+    };
+
+    let (code, clean) = check("example", None);
+    assert_eq!(code, 0);
+    assert_eq!(clean["errors"], json!([]));
+    assert_eq!(clean["warnings"], json!([]));
+
+    for name in ["example", "other"] {
+        fixture.write(
+            &format!("skills/{name}/SKILL.md"),
+            &format!("\u{feff}{}", skill(name)),
+        );
+    }
+
+    let (code, codex) = check("example", None);
+    assert_eq!(code, 1);
+    let message = codex["errors"][0].as_str().unwrap();
+    assert!(message.contains("UTF-8 BOM"));
+    assert!(message.contains("Codex rejects this file"));
+    assert!(message.contains("UTF-8 without a BOM"));
+    assert_eq!(codex["errors"], json!([message]));
+    assert_eq!(codex["warnings"], json!([]));
+
+    for (name, host) in [("other", None), ("example", Some("claude"))] {
+        let (code, claude) = check(name, host);
+        assert_eq!(code, 0);
+        assert_eq!(claude["errors"], json!([]));
+        assert_eq!(claude["warnings"], json!([message]));
+    }
+
+    let (code, explicit_codex) = check("other", Some("codex"));
+    assert_eq!(code, 1);
+    assert_eq!(explicit_codex["errors"], json!([message]));
+    assert_eq!(explicit_codex["warnings"], json!([]));
+
+    fixture.write(
+        "skills/example/SKILL.md",
+        &format!("\u{feff}{}\n[Reference](missing.md)\n", skill("example")),
+    );
+    let (code, missing_reference) = check("example", None);
+    assert_eq!(code, 1);
+    assert_eq!(
+        missing_reference["errors"],
+        json!(["referenced supporting file not found: missing.md", message])
+    );
+    assert_eq!(missing_reference["warnings"], json!([]));
+
+    fixture.write(
+        "skills/example/SKILL.md",
+        &format!(
+            "\u{feff}---\nname: example\ndescription: {}\n---\n",
+            "x".repeat(769)
+        ),
+    );
+    let (code, long_description) = check("example", Some("codex"));
+    assert_eq!(code, 1);
+    assert_eq!(
+        long_description["errors"],
+        json!([message, "codex description exceeds 768 characters"])
+    );
+}
+
+#[test]
 fn validate_shares_the_gate_and_respects_host_and_group_selection() {
     let fixture = fixture();
     let long = format!(

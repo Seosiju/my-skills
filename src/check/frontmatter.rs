@@ -46,6 +46,13 @@ pub(crate) fn python_whitespace(c: char) -> bool {
 }
 
 pub(crate) fn parse_document(text: &str) -> Result<(Mapping, String), FrontmatterError> {
+    parse_document_with_comments(text, None)
+}
+
+pub(crate) fn parse_document_with_comments(
+    text: &str,
+    commented_fields: Option<&mut Vec<(String, String)>>,
+) -> Result<(Mapping, String), FrontmatterError> {
     if text.is_empty() {
         return Err(FrontmatterError(
             "file is empty: no frontmatter found".into(),
@@ -71,7 +78,7 @@ pub(crate) fn parse_document(text: &str) -> Result<(Mapping, String), Frontmatte
     for line in lines.by_ref() {
         if delimiter(line) {
             return Ok((
-                load_yaml(&yaml.join("\n"))?,
+                load_yaml(&yaml.join("\n"), commented_fields)?,
                 lines.collect::<Vec<_>>().join("\n"),
             ));
         }
@@ -805,10 +812,16 @@ fn keys_equal(left: &Rc<Node>, right: &Rc<Node>) -> bool {
     compare(left, right) || compare(right, left)
 }
 
-fn load_yaml(source: &str) -> Result<Mapping, FrontmatterError> {
+fn load_yaml(
+    source: &str,
+    commented_fields: Option<&mut Vec<(String, String)>>,
+) -> Result<Mapping, FrontmatterError> {
     let mut parser = Parser::new_from_str(source);
     let mut frames: Vec<Frame> = Vec::new();
     let mut anchors = HashMap::new();
+    let check_comments =
+        commented_fields.is_some() && (source.contains(" #") || source.contains("\t#"));
+    let mut plain_scalars = Vec::new();
     let mut root = None;
     let mut document_start = None;
     if let Some((index, c)) = source.chars().enumerate().find(|&(_, c)| {
@@ -847,9 +860,16 @@ fn load_yaml(source: &str) -> Result<Mapping, FrontmatterError> {
                 continue;
             }
             Event::Scalar(text, style, anchor, tag) => {
-                let node = resolve_scalar(text, style, tag.as_ref())
-                    .ok_or_else(|| unsupported_tag(source, mark, tag.as_ref()))?;
-                (Rc::new(node), anchor)
+                let plain = (check_comments && style == TScalarStyle::Plain && !text.is_empty())
+                    .then(|| text.clone());
+                let node = Rc::new(
+                    resolve_scalar(text, style, tag.as_ref())
+                        .ok_or_else(|| unsupported_tag(source, mark, tag.as_ref()))?,
+                );
+                if let Some(value) = plain {
+                    plain_scalars.push((Rc::clone(&node), index, value));
+                }
+                (node, anchor)
             }
             Event::MappingStart(..) | Event::SequenceStart(..) => {
                 let (anchor, tag, kind) = match event {
@@ -928,12 +948,45 @@ fn load_yaml(source: &str) -> Result<Mapping, FrontmatterError> {
     }
     match root.as_ref().map(|item| item.node.as_ref()) {
         None | Some(Node::Null) => Ok(Vec::new()),
-        Some(Node::Map(mapping)) => Ok(mapping.clone()),
+        Some(Node::Map(mapping)) => {
+            if let Some(commented_fields) = commented_fields {
+                for (key, effective_value) in mapping {
+                    // Follow the effective scalar through aliases, merges, and overrides.
+                    if let Node::String(field) = key.as_ref()
+                        && matches!(field.as_str(), "name" | "description")
+                        && let Some((_, index, value)) = plain_scalars
+                            .iter()
+                            .find(|(node, _, _)| Rc::ptr_eq(node, effective_value))
+                        && has_inline_comment(source, *index, value)
+                    {
+                        commented_fields.push((field.clone(), value.clone()));
+                    }
+                }
+            }
+            Ok(mapping.clone())
+        }
         Some(node) => Err(FrontmatterError(format!(
             "frontmatter must be a YAML mapping, got {}",
             node.type_name()
         ))),
     }
+}
+
+fn has_inline_comment(source: &str, index: usize, value: &str) -> bool {
+    let Some((start, _)) = source.char_indices().nth(index) else {
+        return false;
+    };
+    let mut raw = source[start..].chars();
+    // YAML folds whitespace across lines. Match the content to find the end
+    // of the scalar, then look for a comment on that same physical line.
+    let content = |c: &char| !matches!(c, ' ' | '\t' | '\n');
+    for c in value.chars().filter(content) {
+        if raw.find(content) != Some(c) {
+            return false;
+        }
+    }
+    let tail = raw.as_str();
+    tail.starts_with([' ', '\t']) && tail.trim_start_matches([' ', '\t']).starts_with('#')
 }
 
 fn yaml_error(details: String) -> FrontmatterError {
