@@ -5,7 +5,11 @@ All notable changes to this project will be documented in this file.
 This project follows a GitHub-first release flow. Git tags and GitHub Releases
 are the release source of truth while PyPI publishing remains undecided.
 
-## [Unreleased]
+## [1.3.1] - 2026-11-25
+
+### Added
+
+- `scripts/hub-check.py` (development tool) runs Claude Code, Codex, and agy headless to confirm that every agent sees the registry's skills, and that edits, new skills, and disables reach all of them. The table it prints is the pre-release check.
 
 ### Fixed
 
