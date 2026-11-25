@@ -155,13 +155,13 @@ fn windows_displays_registry_doctor_and_plan_paths_consistently() {
 #[test]
 fn invalid_skill_fails_both_dry_runs_with_machine_and_human_diagnostics() {
     let fixture = registry(false);
-    write_skill(&fixture, &"x".repeat(800), "Example body.");
+    fs::remove_file(fixture.registry.join("skills/example/SKILL.md")).unwrap();
     for command in ["install", "sync"] {
         let out = dry_run(&fixture, command)
             .assert()
             .code(1)
-            .stdout(contains("[BLOCKED] example: codex validation failed"))
-            .stdout(contains("description exceeds 768 characters"));
+            .stdout(contains("[BLOCKED] example: validation failed"))
+            .stdout(contains("SKILL.md not found"));
         assert_eq!(
             stdout(&out).lines().next().unwrap(),
             "BLOCKED: 1 item(s) would be refused (validation 1, audit 0, plan 0)"
@@ -171,23 +171,23 @@ fn invalid_skill_fails_both_dry_runs_with_machine_and_human_diagnostics() {
             .arg("--json")
             .assert()
             .code(1)
-            .stderr(contains("description exceeds 768 characters"))
+            .stderr(contains("SKILL.md not found"))
             .stderr(contains("No files were changed"));
         let value = json(&out);
         assert_eq!(value["dry_run"], true);
         assert_eq!(value["blocked"], true);
         assert_eq!(value["applicable"], false);
         let validation = value["validation"].as_array().unwrap();
-        let host_check = validation
+        let check = validation
             .iter()
-            .find(|check| check["host"] == "codex")
+            .find(|check| check["host"].is_null())
             .unwrap();
-        assert_eq!(host_check["skill"], "example");
-        assert_eq!(host_check["ok"], false);
-        assert!(host_check["errors"][0].as_str().unwrap().contains("768"));
-        assert!(host_check["warnings"].is_array());
+        assert_eq!(check["skill"], "example");
+        assert_eq!(check["ok"], false);
+        assert_eq!(check["errors"], serde_json::json!(["SKILL.md not found"]));
+        assert_eq!(check["warnings"], serde_json::json!([]));
         assert_eq!(value["block_reasons"][0]["kind"], "validation");
-        assert_eq!(value["block_reasons"][0]["host"], "codex");
+        assert!(value["block_reasons"][0]["host"].is_null());
     }
     assert!(!fixture.base.join("hosts").exists());
 }
@@ -386,7 +386,7 @@ fn inactive_registry_refusal_starts_each_text_plan() {
         "{first_lines:?}"
     );
 
-    write_skill(&fixture, &"x".repeat(800), "Example body.");
+    fs::remove_file(fixture.registry.join("skills/example/SKILL.md")).unwrap();
     for command in ["install", "sync"] {
         let out = dry_run(&fixture, command)
             .env_remove("MY_SKILLS_ROOT")
@@ -489,7 +489,7 @@ fn previews_report_an_empty_audit_when_it_did_not_run() {
         .success()
         .stdout(contains("audit skipped").not());
 
-    write_skill(&fixture, &"x".repeat(800), "Example body.");
+    fs::remove_file(fixture.registry.join("skills/example/SKILL.md")).unwrap();
     for command in ["install", "sync"] {
         let rejected = json(&dry_run(&fixture, command).arg("--json").assert().code(1));
         assert_eq!(rejected["audit"], expected, "{command}");

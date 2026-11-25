@@ -18,10 +18,11 @@ validation, audit, or dry-run plan uses its normal report shape.
 
 `my-skills new <name> [--group <group>] [--host <host>] [--description <text>] [--dry-run] [--json]`
 creates `skills/<name>/SKILL.md` (outside any host directory) and registers it
-disabled (`enabled = false`), enforcing host description limits (`768` chars
-for built-in hosts). JSON returns `skill`, `enabled`, `group`, `hosts`,
+disabled (`enabled = false`). It keeps long descriptions in full and warns
+when a selected service would shorten them. The selection is the explicit
+`--host` list or, by default, the enabled targets. JSON returns `skill`, `enabled`, `group`, `hosts`,
 `canonical_dir`, `canonical_path`, `created`, `next`, and `registry` (plus
-`dry_run: true` only with `--dry-run`). Exit `2` emits `invalid_name`,
+`warnings` when present and `dry_run: true` only with `--dry-run`). Exit `2` emits `invalid_name`,
 `already_exists`, `unknown_host`, `inactive_registry`, `usage` (including
 `--description` errors), or `config`.
 
@@ -51,13 +52,18 @@ result has `registry: {path, source}`, overall `ok`, and `skills` entries with
 `skill`, `ok`, `errors`, and `warnings`. Exit `0` means the checks passed, `1`
 means a check failed, and `2` means a usage or configuration error.
 
-The pre-commit gate applies standard validation, the security floor, host
-limits, and the manifest audit policy. An over-limit description fails.
-`license`, `compatibility`, and `metadata` do not emit unsupported-field
-warnings; `allowed-tools` keeps its dedicated warning; other unsupported fields
-warn once per skill listing affected hosts. `--host <host>` narrows host checks
-to that host. A bare `validate` scans all skill directories, including
-unregistered ones.
+Content diagnostics are warnings, including skills a service hides and
+names or descriptions it displays differently. `install` and `sync` deliver
+the skill as written. A missing `SKILL.md` or blocking security finding can
+fail the gate. Pass `--host <host>` to preview that service's warnings even
+when it is disabled or outside the skill's host list. A bare
+`validate` scans all skill directories, including unregistered ones.
+
+For consistent display across services, save `SKILL.md` in UTF-8 without a BOM.
+Start with a YAML block between `---` lines. Use the folder name for `name`,
+with lowercase letters, digits, and single hyphens, up to 64 characters.
+Include a description of up to 1,024 characters. Quote values that contain
+YAML syntax such as ` #`.
 
 ## Dry-run and applied JSON (`install` and `sync`)
 

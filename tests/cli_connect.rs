@@ -281,7 +281,7 @@ fn validate_reports_ok_and_fail() {
         .assert()
         .success()
         .stdout(contains("[OK] alpha").and(contains("[OK] beta")));
-    env.write_skill("beta", "");
+    fs::remove_file(env.root().join("skills/beta/SKILL.md")).unwrap();
     env.cmd()
         .arg("validate")
         .assert()
@@ -292,7 +292,7 @@ fn validate_reports_ok_and_fail() {
 #[test]
 fn invalid_skill_blocks_install_without_writing() {
     let env = Env::new();
-    env.write_skill("alpha", "");
+    fs::remove_file(env.root().join("skills/alpha/SKILL.md")).unwrap();
     env.cmd()
         .args(["install", "alpha", "--host", "claude"])
         .assert()
@@ -630,25 +630,22 @@ fn convert_blocks_when_canonical_is_missing() {
 }
 
 #[test]
-fn doctor_full_validation_includes_host_checks() {
+fn doctor_full_validation_does_not_fail_for_host_display_warnings() {
     let env = Env::new();
-    // Under the 1024-character standard limit, over the 768-character host limit.
-    env.write_skill("alpha", &"x".repeat(800));
+    env.write_skill("alpha", &"x".repeat(2000));
+    fs::remove_file(env.root().join("skills/beta/SKILL.md")).unwrap();
     let out = env
         .cmd()
         .args(["doctor", "--no-update-check", "--json"])
         .output()
         .unwrap();
     let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    let failures = report["full_validation"]["failures"].as_array().unwrap();
-    let alpha = failures.iter().find(|f| f["skill"] == "alpha").unwrap();
-    assert!(
-        alpha["errors"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|e| e.as_str().unwrap().contains("description exceeds 768")),
-        "{alpha}"
+    assert!(out.status.success());
+    assert_eq!(
+        report["full_validation"],
+        serde_json::json!({"checked": 2, "failures": [
+            {"skill": "beta", "errors": ["SKILL.md not found"]}
+        ]})
     );
 }
 
@@ -663,20 +660,20 @@ fn bootstrap_dry_run_shows_mode_override() {
 }
 
 #[test]
-fn hosts_a_skill_does_not_connect_to_do_not_validate_it() {
+fn only_hosts_a_skill_connects_to_report_display_warnings() {
     let env = Env::new();
-    // beta is claude-only; 800 characters breaks only the host limit (768).
-    env.write_skill("beta", &"x".repeat(800));
+    // beta is claude-only, despite exceeding both measured display limits.
+    env.write_skill("beta", &"x".repeat(2000));
     env.cmd()
         .args(["install", "beta", "--host", "codex"])
         .assert()
         .success()
-        .stdout(contains("skipped: beta -> codex"));
+        .stdout(contains("skipped: beta -> codex").and(contains("shows a shortened").not()));
     env.cmd()
         .args(["install", "beta", "--host", "claude"])
         .assert()
-        .code(1)
-        .stdout(contains("[BLOCKED] beta: claude validation failed"));
+        .success()
+        .stdout(contains("Claude Code shows a shortened").and(contains("Codex").not()));
 }
 
 #[test]

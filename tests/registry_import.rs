@@ -198,11 +198,30 @@ fn import_validation_block_does_not_modify_manifest() {
     let fixture = Fixture::repo();
     let source = external(&fixture, "# Example\n");
     fs::write(
-        source.join("SKILL.md"),
-        "---\nname: brand\n---\n\n# No description\n",
+        source.join("reference.txt"),
+        "-----BEGIN PRIVATE KEY-----\nexample\n-----END PRIVATE KEY-----\n",
     )
     .unwrap();
-    assert_blocked(&fixture, &source, "validation failed", false);
+    assert_blocked(&fixture, &source, "validation failed", true);
+}
+
+#[test]
+fn import_keeps_the_folder_identifier_and_original_contents() {
+    for content in [
+        "No frontmatter.\n",
+        "---\nname: brand\n---\n\n# No description\n",
+        "---\nname: 'Brand Draft'\ndescription: A skill.\n---\n",
+    ] {
+        let fixture = Fixture::repo();
+        let source = external(&fixture, "# Example\n");
+        fs::write(source.join("SKILL.md"), content).unwrap();
+        import(&fixture, &source).assert().success();
+        assert_eq!(
+            fs::read(fixture.canonical("brand").join("SKILL.md")).unwrap(),
+            content.as_bytes()
+        );
+        assert_registration(&fixture, false, &["claude", "codex"]);
+    }
 }
 
 #[test]
@@ -401,11 +420,21 @@ fn import_no_skillmd_blocks() {
 }
 
 #[test]
-fn import_invalid_source_blocks() {
+fn import_warns_about_malformed_frontmatter_and_keeps_the_bytes() {
     let fixture = Fixture::repo();
     let source = external(&fixture, "# Brand\n");
-    fs::write(source.join("SKILL.md"), "# No frontmatter\n").unwrap();
-    assert_blocked(&fixture, &source, "missing opening '---'", false);
+    let text = "---\ndescription: [unclosed\n---\n";
+    fs::write(source.join("SKILL.md"), text).unwrap();
+    import(&fixture, &source)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "my-skills could not read the YAML frontmatter",
+        ));
+    assert_eq!(
+        fs::read(fixture.canonical("brand").join("SKILL.md")).unwrap(),
+        text.as_bytes()
+    );
 }
 
 #[test]

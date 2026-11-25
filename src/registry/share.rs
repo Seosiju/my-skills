@@ -153,6 +153,9 @@ fn plan_candidate(
     if let Some(reason) = foreign_record_reason(manifest, state, &name, host) {
         risks.push(Risk::error(reason));
     }
+    if let Some(error) = invalid_registration_name(&name) {
+        risks.push(Risk::error(error));
+    }
     // Invalid frontmatter may propose a path outside the registry.
     let dest_name = if validate_name(&name).is_empty() {
         &name
@@ -256,9 +259,21 @@ fn candidate_metadata(source: &Path) -> (String, String) {
             .map(Node::python_string)
     };
     (
-        value("name").unwrap_or_else(|| name.into()),
+        if validate_name(name).is_empty() {
+            name.into()
+        } else {
+            value("name")
+                .filter(|name| validate_name(name).is_empty())
+                .unwrap_or_else(|| name.into())
+        },
         value("description").unwrap_or_default(),
     )
+}
+
+fn invalid_registration_name(name: &str) -> Option<String> {
+    validate_name(name)
+        .first()
+        .map(|error| format!("invalid registry skill name {name:?}: {error}"))
 }
 
 fn risks(source: &Path, policy: &AuditPolicy, skip_audit: bool) -> Result<Vec<Risk>> {
@@ -307,6 +322,7 @@ pub(crate) struct ImportOutcome {
     pub enabled: bool,
     pub identical: bool,
     pub overwritten: bool,
+    pub warnings: Vec<String>,
     pub cleanup_warning: Option<CleanupWarning>,
 }
 
@@ -332,10 +348,10 @@ pub(crate) fn import(
     if gate.skipped {
         on_audit_skip();
     }
-    let meta = metadata(&snapshot.source).map_err(Failure::Blocked)?;
-    let name = field(&meta, "name")
-        .expect("name checked by validation")
-        .python_string();
+    let (name, _) = candidate_metadata(&snapshot.source);
+    if let Some(error) = invalid_registration_name(&name) {
+        return Err(Failure::Blocked(error));
+    }
     let canonical = manifest.skill_dir(&name);
     let old = Canonical::read(&canonical)?;
     let hash = hash_directory(&snapshot.source)?;
@@ -376,6 +392,7 @@ pub(crate) fn import(
         enabled,
         identical: status == "identical",
         overwritten: status == "different",
+        warnings: validation.warnings,
         cleanup_warning,
     })
 }
@@ -431,6 +448,9 @@ pub(crate) fn share(
             "{name}: validation failed: {}",
             errors.join("; ")
         )]));
+    }
+    if let Some(error) = invalid_registration_name(&name) {
+        return Err(Failure::Blocked(error));
     }
     let canonical = manifest.skill_dir(&name);
     let old = Canonical::read(&canonical)?;
