@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>my-skills internal architecture</title>
+<style>
+:root {
+  color-scheme: light;
+  --color-paper:   oklch(98.5% 0.004 250);
+  --color-paper-2: oklch(96.5% 0.005 252);
+  --color-rule:    oklch(93% 0.007 255);
+  --color-rule-2:  oklch(83% 0.011 255);
+  --color-muted:   oklch(56% 0.013 255);
+  --color-neutral: oklch(46% 0.015 255);
+  --color-ink-2:   oklch(34% 0.018 257);
+  --color-ink:     oklch(24% 0.020 258);
+  --color-accent:  oklch(58% 0.20 256);
+  /* group A — warm amber for registry/ */
+  --color-g1:      oklch(68% 0.15 55);
+  --color-g1-ink:  oklch(52% 0.14 50);
+  --color-g1-tint: oklch(96.5% 0.015 60 / .52);
+  /* group B — accent blue for drive/ */
+  --color-g2:      oklch(58% 0.20 256 / .55);
+  --color-g2-ink:  oklch(48% 0.19 256);
+  --color-g2-tint: oklch(97% 0.012 256 / .52);
+  /* group C — sage green for check/ */
+  --color-g3:      oklch(62% 0.14 155);
+  --color-g3-ink:  oklch(46% 0.13 155);
+  --color-g3-tint: oklch(96.5% 0.016 155 / .52);
+  /* group D — neutral slate for Files on disk */
+  --color-g4:      oklch(72% 0.014 255);
+  --color-g4-ink:  oklch(42% 0.016 255);
+  --color-g4-tint: oklch(95.5% 0.007 255 / .55);
+  --font-display: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-body: ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --space-xs: 4px; --space-sm: 8px; --space-md: 16px; --space-lg: 24px; --space-xl: 40px; --space-2xl: 64px;
+  --radius-card: 10px; --radius-tile: 12px;
+  --color-veil: oklch(98.5% 0.004 250 / .78);
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --color-paper:   oklch(18% 0.012 255);
+  --color-paper-2: oklch(22% 0.014 255);
+  --color-rule:    oklch(24% 0.013 255);
+  --color-rule-2:  oklch(38% 0.018 255);
+  --color-muted:   oklch(65% 0.014 255);
+  --color-neutral: oklch(72% 0.012 255);
+  --color-ink-2:   oklch(85% 0.010 255);
+  --color-ink:     oklch(94% 0.008 255);
+  --color-accent:  oklch(70% 0.16 256);
+  --color-g1:      oklch(70% 0.14 55);
+  --color-g1-ink:  oklch(78% 0.12 55);
+  --color-g1-tint: oklch(26% 0.030 60 / .40);
+  --color-g2:      oklch(70% 0.16 256 / .55);
+  --color-g2-ink:  oklch(76% 0.14 256);
+  --color-g2-tint: oklch(28% 0.045 256 / .36);
+  --color-g3:      oklch(66% 0.13 155);
+  --color-g3-ink:  oklch(76% 0.12 155);
+  --color-g3-tint: oklch(26% 0.032 155 / .36);
+  --color-g4:      oklch(44% 0.016 255);
+  --color-g4-ink:  oklch(76% 0.012 255);
+  --color-g4-tint: oklch(23% 0.014 255 / .55);
+  --color-veil: oklch(18% 0.012 255 / .78);
+}
+@font-face { font-family:"Geist"; font-style:normal; font-weight:100 900; font-display:swap;
+  src:url(data:font/woff2;base64,%%FONT_DISPLAY%%) format("woff2"); }
+@font-face { font-family:"JetBrains Mono"; font-style:normal; font-weight:100 800; font-display:swap;
+  src:url(data:font/woff2;base64,%%FONT_JBM%%) format("woff2"); }
+.kicker, .node .role, .el, .legend, .foot, .canvas-legend { letter-spacing: 0.03em; }
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { overflow-x: clip; }
+body { background: var(--color-paper); color: var(--color-ink); font-family: var(--font-body); padding: var(--space-xl) var(--space-lg) var(--space-2xl); }
+.page { width: fit-content; max-width: 100%; margin: 0 auto; }
+
+.head { display:grid; grid-template-columns: 1fr auto; gap: var(--space-lg); align-items:end;
+  padding-bottom: var(--space-md); border-bottom: 1px solid var(--color-rule-2); margin-bottom: var(--space-lg); }
+.kicker { font-family: var(--font-mono); font-size: 11px; color: var(--color-accent); margin-bottom: var(--space-sm); }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(22px, 4vw, 30px); letter-spacing: -0.005em; line-height: 1.2; }
+.lede { max-width: 360px; font-size: 12px; line-height: 1.7; color: var(--color-neutral); padding-bottom: 2px; }
+
+.scroller { overflow-x: auto; border: 1px solid var(--color-rule-2); border-radius: var(--radius-card); }
+.canvas { position: relative; width: 1400px; height: 753px; background: var(--color-paper);
+  background-image:
+    linear-gradient(var(--color-rule) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-rule) 1px, transparent 1px);
+  background-size: 24px 24px; background-position: -1px -1px; }
+
+.group { position:absolute; border-radius: var(--radius-tile); }
+.g-label { position:absolute; top:11px; left:12px; display:flex; align-items:center; gap:6px;
+  font-family: var(--font-mono); font-size: 11.5px; font-weight: 600;
+  color: var(--color-neutral); white-space: nowrap; }
+.group.ga { border:1.5px solid var(--color-g1); background: var(--color-g1-tint); }
+.group.gb { border:1.5px solid var(--color-g2); background: var(--color-g2-tint); }
+.group.gc { border:1.5px solid var(--color-g3); background: var(--color-g3-tint); }
+.group.gd { border:1.5px solid var(--color-g4); background: var(--color-g4-tint); }
+.group.ga > .g-label { color: var(--color-g1-ink); }
+.group.gb > .g-label { color: var(--color-g2-ink); }
+.group.gc > .g-label { color: var(--color-g3-ink); }
+.group.gd > .g-label { color: var(--color-g4-ink); }
+
+.node { position:absolute; width:132px; text-align:center; }
+.node.w152 { width:152px; }
+.node.w196 { width:196px; }
+.tile { width:60px; height:60px; margin:0 auto; border-radius: var(--radius-tile);
+  background:#fff; border:1px solid var(--color-rule-2); display:grid; place-items:center;
+  box-shadow: 0 1px 2px oklch(24% 0.02 258 / 0.05); }
+.tile img { width:32px; height:32px; object-fit:contain; }
+.node .name { font-family: var(--font-display); font-weight:600; font-size:13px; margin-top: var(--space-sm); letter-spacing:0; }
+.node .role { font-family: var(--font-mono); font-size:9.2px; color: var(--color-muted); margin-top:2px; white-space: nowrap; }
+.node .role.sub { font-size:8.6px; margin-top:2px; }
+.node .name span, .node .role span { background: var(--color-veil); backdrop-filter: blur(1.5px);
+  padding: 0 var(--space-xs); border-radius: 3px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+
+svg.edges { position:absolute; inset:0; width:1400px; height:753px; pointer-events:none; }
+.e  { stroke: var(--color-accent); stroke-width:1.6; fill:none; }
+.n  { stroke: var(--color-neutral); stroke-width:1.4; fill:none; }
+.dash { stroke-dasharray:4 5; }
+.el { font-family: var(--font-mono); font-size:10px; fill: var(--color-neutral);
+  paint-order: stroke; stroke: var(--color-paper); stroke-width:4px; stroke-linejoin:round; }
+.el.a { fill: var(--color-accent); }
+
+.canvas-legend { position:absolute; left:20px; bottom:18px; display:flex; align-items:center; gap:20px;
+  font-family: var(--font-mono); font-size:9.5px; color: var(--color-muted);
+  background: var(--color-veil); backdrop-filter: blur(1.5px);
+  padding: 7px 12px; border-radius: 6px; border: 1px solid var(--color-rule-2); }
+.canvas-legend .row { display:flex; align-items:center; gap:7px; }
+.canvas-legend .sw { display:inline-block; width:24px; border-top:1.6px solid var(--color-accent); }
+.canvas-legend .sw.n { border-color: var(--color-neutral); border-top-width:1.4px; }
+.canvas-legend .sw.dash { border-top-style: dashed; }
+
+.legend { display:flex; gap: var(--space-lg); align-items:center; margin-top: var(--space-md);
+  font-family: var(--font-mono); font-size:10px; color: var(--color-muted); flex-wrap:wrap; }
+.legend .sw { display:inline-block; width:30px; vertical-align:middle; margin-right:6px; border-top:1.6px solid var(--color-accent); }
+.legend .sw.n { border-color: var(--color-neutral); border-top-width:1.4px; }
+.legend .sw.dash { border-top-style: dashed; }
+
+.foot { margin-top: var(--space-xl); padding-top: var(--space-md); border-top: 1px solid var(--color-rule-2);
+  display:flex; justify-content:space-between; gap: var(--space-md); flex-wrap:wrap;
+  font-family: var(--font-mono); font-size:10px; color: var(--color-muted); }
+.foot a { color: inherit; text-decoration-color: var(--color-rule-2); text-underline-offset: 2px; }
+</style>
+<body>
+<div class="page">
+
+  <header class="head">
+    <div>
+      <div class="kicker">my-skills / internals</div>
+      <h1>CLI module &amp; file ownership</h1>
+    </div>
+    <p class="lede">How commands flow from clap dispatch through registry, drive, check, git, platform, and update modules to files on disk and GitHub Releases.</p>
+  </header>
+
+  <div class="scroller">
+  <div class="canvas">
+
+    <!-- GROUPS ============================================================ -->
+    <div class="group gd" style="left:265px; top:21px; width:428px; height:194px; border-color: var(--color-rule-2); background: var(--color-g4-tint);">
+      <div class="g-label">commands/</div>
+    </div>
+    <div class="group gc" style="left:930px; top:21px; width:192px; height:194px;">
+      <div class="g-label">check/</div>
+    </div>
+    <div class="group ga" style="left:24px; top:265px; width:335px; height:199px;">
+      <div class="g-label">registry/</div>
+    </div>
+    <div class="group gb" style="left:375px; top:265px; width:560px; height:199px;">
+      <div class="g-label">drive/</div>
+    </div>
+    <div class="group gd" style="left:24px; top:507px; width:1232px; height:189px;">
+      <div class="g-label">On-disk data</div>
+    </div>
+
+    <!-- EDGES ============================================================= -->
+    <svg class="edges" viewBox="0 0 1400 753" aria-hidden="true">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="context-stroke"/>
+        </marker>
+      </defs>
+
+      <!-- Row 1: cli.rs -> resolve.rs and command handlers -->
+      <path class="e" d="M148 114 H332" marker-end="url(#ar)"/>
+      <path class="e" d="M228 114 V58 H584 V78" marker-end="url(#ar)"/>
+      <text class="el a" x="188" y="106" text-anchor="middle">dispatch</text>
+
+      <!-- Row 1: command handlers -> check/ validate -->
+      <path class="e" d="M620 114 H990" marker-end="url(#ar)"/>
+      <text class="el a" x="811" y="106" text-anchor="middle">validate</text>
+
+      <!-- resolve.rs read-only lookup joins the bus -->
+      <path class="n dash" d="M368 202 V240"/>
+      <text class="el" x="378" y="228" text-anchor="start">read-only</text>
+
+      <!-- Row 1 -> Row 2 bus at y=240 -->
+      <path class="e" d="M584 202 V240"/>
+      <path class="e" d="M132 240 H588"/>
+      <path class="n" d="M588 240 H1316"/>
+      <path class="e" d="M132 240 V313" marker-end="url(#ar)"/>
+      <path class="e" d="M276 240 V313" marker-end="url(#ar)"/>
+      <path class="e" d="M448 240 V313" marker-end="url(#ar)"/>
+      <path class="e" d="M588 240 V313" marker-end="url(#ar)"/>
+      <path class="n" d="M868 240 V313" marker-end="url(#ar)"/>
+      <path class="n" d="M1015 240 V313" marker-end="url(#ar)"/>
+      <path class="n" d="M1168 240 V313" marker-end="url(#ar)"/>
+      <path class="n" d="M1316 240 V313" marker-end="url(#ar)"/>
+
+      <!-- git/hooks.rs -> check/ validate on pre-commit -->
+      <path class="n dash" d="M1043 313 V196" marker-end="url(#ar)"/>
+      <text class="el" x="1053" y="270" text-anchor="start">pre-commit</text>
+
+      <!-- drive/ internals (tile center y=349) -->
+      <path class="e" d="M484 349 H552" marker-end="url(#ar)"/>
+      <path class="n" d="M624 349 H692" marker-end="url(#ar)"/>
+      <path class="n dash" d="M832 349 H764" marker-end="url(#ar)"/>
+      <text class="el" x="798" y="341" text-anchor="middle">guard</text>
+      <path class="n dash" d="M993 349 H904" marker-end="url(#ar)"/>
+      <text class="el" x="948" y="341" text-anchor="middle">post-commit</text>
+
+      <!-- Row 2 -> Row 3 -->
+      <path class="n" d="M132 434 V553" marker-end="url(#ar)"/>
+      <text class="el" x="122" y="480" text-anchor="end">cache</text>
+      <path class="n" d="M132 486 H248 V553" marker-end="url(#ar)"/>
+      <text class="el" x="190" y="478" text-anchor="middle">read toml</text>
+
+      <path class="e" d="M276 434 V553" marker-end="url(#ar)"/>
+      <text class="el a" x="286" y="490" text-anchor="start">stage / edit</text>
+
+      <path class="n dash" d="M448 434 V486 H562 V553" marker-end="url(#ar)"/>
+      <text class="el" x="505" y="478" text-anchor="middle">hash / diff</text>
+
+      <path class="e" d="M588 434 V553" marker-end="url(#ar)"/>
+      <text class="el a" x="598" y="490" text-anchor="start">link / staged copy</text>
+
+      <path class="n" d="M728 434 V486 H780 V553" marker-end="url(#ar)"/>
+      <text class="el" x="738" y="479" text-anchor="start">state.json</text>
+
+      <path class="n dash" d="M868 434 V486 H814 V553" marker-end="url(#ar)"/>
+      <text class="el" x="878" y="479" text-anchor="start">.lock</text>
+
+      <path class="n dash" d="M1029 434 V553" marker-end="url(#ar)"/>
+      <text class="el" x="1039" y="490" text-anchor="start">install / run</text>
+
+      <path class="n" d="M1168 434 V553" marker-end="url(#ar)"/>
+      <text class="el" x="1178" y="490" text-anchor="start">data-path</text>
+
+      <path class="n dash" d="M1316 434 V553" marker-end="url(#ar)"/>
+      <text class="el" x="1326" y="490" text-anchor="start">HTTPS</text>
+    </svg>
+
+    <!-- NODES ============================================================= -->
+    <!-- Row 1 (top=84) -->
+    <div class="node" style="left:46px; top:84px">
+      <div class="tile"><img src="%%ICON_rust%%" alt=""></div>
+      <div class="name"><span>cli.rs</span></div>
+      <div class="role"><span>clap entry &amp; dispatch</span></div>
+    </div>
+
+    <div class="node" style="left:302px; top:84px">
+      <div class="tile"><img src="%%ICON_resolve%%" alt=""></div>
+      <div class="name"><span>resolve.rs</span></div>
+      <div class="role"><span>0-hash canonical</span></div>
+      <div class="role sub"><span>path lookup</span></div>
+    </div>
+
+    <div class="node w196" style="left:486px; top:84px">
+      <div class="tile"><img src="%%ICON_commands%%" alt=""></div>
+      <div class="name"><span>command handlers</span></div>
+      <div class="role"><span>connect · inspect · registry</span></div>
+      <div class="role sub"><span>diff · doctor · hooks · update</span></div>
+    </div>
+
+    <div class="node w152" style="left:950px; top:84px">
+      <div class="tile"><img src="%%ICON_validate%%" alt=""></div>
+      <div class="name"><span>validate</span></div>
+      <div class="role"><span>format · host display</span></div>
+    </div>
+
+    <!-- Row 2 (top=319) -->
+    <div class="node" style="left:66px; top:319px">
+      <div class="tile"><img src="%%ICON_manifest%%" alt=""></div>
+      <div class="name"><span>root · manifest</span></div>
+      <div class="role"><span>root.rs · manifest.rs</span></div>
+    </div>
+
+    <div class="node w152" style="left:200px; top:319px">
+      <div class="tile"><img src="%%ICON_share%%" alt=""></div>
+      <div class="name"><span>share · edit</span></div>
+      <div class="role"><span>share · edit · catalog</span></div>
+      <div class="role sub"><span>seeds.rs</span></div>
+    </div>
+
+    <div class="node w152" style="left:372px; top:319px">
+      <div class="tile"><img src="%%ICON_plan%%" alt=""></div>
+      <div class="name"><span>hosts · plan</span></div>
+      <div class="role"><span>hosts · plan · hash</span></div>
+      <div class="role sub"><span>ignore · diff</span></div>
+    </div>
+
+    <div class="node" style="left:522px; top:319px">
+      <div class="tile"><img src="%%ICON_link%%" alt=""></div>
+      <div class="name"><span>apply · link</span></div>
+      <div class="role"><span>staged snapshot</span></div>
+      <div class="role sub"><span>apply.rs · link.rs</span></div>
+    </div>
+
+    <div class="node" style="left:662px; top:319px">
+      <div class="tile"><img src="%%ICON_state%%" alt=""></div>
+      <div class="name"><span>state.rs</span></div>
+      <div class="role"><span>load / atomic save</span></div>
+    </div>
+
+    <div class="node" style="left:802px; top:319px">
+      <div class="tile"><img src="%%ICON_lock%%" alt=""></div>
+      <div class="name"><span>lock.rs</span></div>
+      <div class="role"><span>state.json.lock</span></div>
+    </div>
+
+    <div class="node" style="left:963px; top:319px">
+      <div class="tile"><img src="%%ICON_git%%" alt=""></div>
+      <div class="name"><span>git/hooks.rs</span></div>
+      <div class="role"><span>5 hooks</span></div>
+      <div class="role sub"><span>pre/post-commit</span></div>
+    </div>
+
+    <div class="node" style="left:1102px; top:319px">
+      <div class="tile"><img src="%%ICON_platform%%" alt=""></div>
+      <div class="name"><span>platform/</span></div>
+      <div class="role"><span>paths.rs · data.rs</span></div>
+    </div>
+
+    <div class="node" style="left:1250px; top:319px">
+      <div class="tile"><img src="%%ICON_update%%" alt=""></div>
+      <div class="name"><span>update.rs</span></div>
+      <div class="role"><span>check · verify · swap</span></div>
+    </div>
+
+    <!-- Row 3 (top=559) -->
+    <div class="node w152" style="left:56px; top:559px">
+      <div class="tile"><img src="%%ICON_rootcache%%" alt=""></div>
+      <div class="name"><span>Root cache</span></div>
+      <div class="role"><span>~/.config/my-skills/</span></div>
+      <div class="role sub"><span>root</span></div>
+    </div>
+
+    <div class="node w152" style="left:200px; top:559px">
+      <div class="tile"><img src="%%ICON_registry%%" alt=""></div>
+      <div class="name"><span>Registry</span></div>
+      <div class="role"><span>my-skills[.local].toml</span></div>
+      <div class="role sub"><span>skills/&lt;name&gt;/</span></div>
+    </div>
+
+    <div class="node" style="left:522px; top:559px">
+      <div class="tile"><img src="%%ICON_hosts%%" alt=""></div>
+      <div class="name"><span>Host folders</span></div>
+      <div class="role"><span>claude · codex · agy</span></div>
+    </div>
+
+    <div class="node w152" style="left:721px; top:559px">
+      <div class="tile"><img src="%%ICON_statefile%%" alt=""></div>
+      <div class="name"><span>Install state</span></div>
+      <div class="role"><span>~/.local/state/my-skills/</span></div>
+      <div class="role sub"><span>state.json + .lock</span></div>
+    </div>
+
+    <div class="node w152" style="left:953px; top:559px">
+      <div class="tile"><img src="%%ICON_git%%" alt=""></div>
+      <div class="name"><span>.git/hooks</span></div>
+      <div class="role"><span>pre-commit · post-commit</span></div>
+      <div class="role sub"><span>post-merge · post-*</span></div>
+    </div>
+
+    <div class="node" style="left:1102px; top:559px">
+      <div class="tile"><img src="%%ICON_localdata%%" alt=""></div>
+      <div class="name"><span>Local data</span></div>
+      <div class="role"><span>data-path/&lt;skill&gt;</span></div>
+    </div>
+
+    <div class="node w152" style="left:1240px; top:559px">
+      <div class="tile"><img src="%%ICON_github%%" alt=""></div>
+      <div class="name"><span>GitHub Releases</span></div>
+      <div class="role"><span>SHA256SUMS · archive</span></div>
+    </div>
+
+    <div class="canvas-legend">
+      <div class="row"><span class="sw"></span><span>primary command flow</span></div>
+      <div class="row"><span class="sw n"></span><span>read / state / support</span></div>
+      <div class="row"><span class="sw n dash"></span><span>inspection / lock / hook / network</span></div>
+    </div>
+
+  </div>
+  </div>
+
+  <div class="foot">
+    <span>my-skills — internal CLI architecture (v1.4)</span>
+    <span>icons: devicon / Lucide · made with <a href="https://github.com/caru-ini/stack-diagram" target="_blank" rel="noopener">stack-diagram</a></span>
+  </div>
+
+</div>
+</body>
+</html>
