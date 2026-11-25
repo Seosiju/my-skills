@@ -40,15 +40,6 @@ pub enum Outcome {
     Unchanged,
 }
 
-/// Audit metadata stored on the record (v0.4.1 `audit_metadata`).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct AuditMeta {
-    pub last_audit_at: String,
-    pub last_audit_result_hash: String,
-    pub audit_profile: String,
-    pub audit_threshold: String,
-}
-
 /// A cleanup failure after the on-disk connection and state were committed.
 #[derive(Debug)]
 pub(crate) struct CleanupWarning {
@@ -103,7 +94,7 @@ impl CopySnapshot {
             .prefix(".my-skills-check-")
             .tempdir()
             .map_err(|err| Error::io(std::env::temp_dir(), err))?;
-        // Validation and audit identify the skill from this directory name.
+        // Validation identifies the skill from this directory name.
         let path = temp.path().join(source.file_name().unwrap_or_default());
         copy_tree(source, &path)?;
         let hash = hash_directory(&path)?;
@@ -184,9 +175,9 @@ fn prepare_with(
 
 /// Apply one plan item and persist its state before reporting success.
 /// CLI batches use prepare and apply_prepared to check the snapshot first.
-pub fn apply(item: &PlanItem, state: &mut State, audit: Option<&AuditMeta>) -> Result<Outcome> {
+pub fn apply(item: &PlanItem, state: &mut State) -> Result<Outcome> {
     let prepared = prepare(item, &mut BTreeMap::new())?;
-    let applied = apply_prepared(item, state, audit, prepared.as_ref())?;
+    let applied = apply_prepared(item, state, prepared.as_ref())?;
     applied.print_cleanup_warnings();
     Ok(applied.outcome)
 }
@@ -194,17 +185,15 @@ pub fn apply(item: &PlanItem, state: &mut State, audit: Option<&AuditMeta>) -> R
 pub(crate) fn apply_prepared(
     item: &PlanItem,
     state: &mut State,
-    audit: Option<&AuditMeta>,
     prepared: Option<&PreparedConnection>,
 ) -> Result<Applied> {
-    apply_prepared_group(item, &[], state, audit, prepared)
+    apply_prepared_group(item, &[], state, prepared)
 }
 
 pub(crate) fn apply_prepared_group(
     item: &PlanItem,
     aliases: &[&PlanItem],
     state: &mut State,
-    audit: Option<&AuditMeta>,
     prepared: Option<&PreparedConnection>,
 ) -> Result<Applied> {
     let dest = &item.destination;
@@ -213,8 +202,7 @@ pub(crate) fn apply_prepared_group(
         (Action::Create, Some(PreparedConnection::Link { entry, kind, .. })) => {
             let connection = Connection::Link(*kind);
             let hash = hash_directory(&item.source)?;
-            let records =
-                targets.map(|target| record_for(target, &connection, hash.clone(), audit));
+            let records = targets.map(|target| record_for(target, &connection, hash.clone()));
             replace_entry(entry, dest, EntryKind::Missing, None, || {
                 commit_records(state, records).map_err(|err| Error::StateSave(Box::new(err)))
             })?;
@@ -228,7 +216,7 @@ pub(crate) fn apply_prepared_group(
             }),
         ) => {
             let records =
-                targets.map(|target| record_for(target, connection, snapshot.hash.clone(), audit));
+                targets.map(|target| record_for(target, connection, snapshot.hash.clone()));
             let stage = stage_near(dest)?;
             let entry = stage.path().join(&item.skill);
             copy_tree(&snapshot.path, &entry)?;
@@ -260,7 +248,7 @@ pub(crate) fn apply_prepared_group(
         }
         (Action::Remove, _) => remove(item, state),
         (Action::Convert, None) if item.mode == InstallMode::Link => {
-            convert_copy_to_link(item, aliases, state, audit)
+            convert_copy_to_link(item, aliases, state)
         }
         (action, _) if action.writes() => Err(Error::Refused("connection was not prepared".into())),
         _ => Ok(Applied::new(Outcome::Unchanged, None)),
@@ -308,7 +296,6 @@ fn convert_copy_to_link(
     item: &PlanItem,
     aliases: &[&PlanItem],
     state: &mut State,
-    audit: Option<&AuditMeta>,
 ) -> Result<Applied> {
     let dest = &item.destination;
     let staged = stage_near(dest)?;
@@ -320,7 +307,7 @@ fn convert_copy_to_link(
             let hash = hash_directory(&item.source)?;
             let records = std::iter::once(item)
                 .chain(aliases.iter().copied())
-                .map(|target| record_for(target, &connection, hash.clone(), audit));
+                .map(|target| record_for(target, &connection, hash.clone()));
             let digest = installed_copy_hash(item, state, EntryKind::Dir);
             let warning = replace_entry(&entry, dest, EntryKind::Dir, digest.as_deref(), || {
                 commit_records(state, records)
@@ -567,18 +554,12 @@ fn absolute(path: &Path) -> Result<PathBuf> {
     std::path::absolute(path).map_err(|e| Error::io(path, e))
 }
 
-fn record_for(
-    item: &PlanItem,
-    connection: &Connection,
-    hash: String,
-    audit: Option<&AuditMeta>,
-) -> InstallRecord {
+fn record_for(item: &PlanItem, connection: &Connection, hash: String) -> InstallRecord {
     let (mode, link_kind, fallback_reason) = match connection {
         Connection::Link(kind) => (InstallMode::Link, Some(*kind), None),
         Connection::Copy => (InstallMode::Copy, None, None),
         Connection::CopyFallback { reason } => (InstallMode::Copy, None, Some(reason.clone())),
     };
-    let audit = audit.cloned().unwrap_or_default();
     InstallRecord {
         skill: item.skill.clone(),
         host: item.host.clone(),
@@ -591,10 +572,6 @@ fn record_for(
         source_type: "canonical".into(),
         source_url: String::new(),
         source_revision: String::new(),
-        last_audit_at: audit.last_audit_at,
-        last_audit_result_hash: audit.last_audit_result_hash,
-        audit_profile: audit.audit_profile,
-        audit_threshold: audit.audit_threshold,
         link_kind,
         fallback_reason,
     }
@@ -661,7 +638,7 @@ mod tests {
             })
         };
         let prepared = prepare_with(&item, &mut BTreeMap::new(), force_fallback).unwrap();
-        let err = apply_prepared(&item, &mut state, None, prepared.as_ref()).unwrap_err();
+        let err = apply_prepared(&item, &mut state, prepared.as_ref()).unwrap_err();
         assert!(matches!(err, Error::StateSave(_)), "{err}");
         assert_eq!(
             link::entry_kind(&item.destination).unwrap(),
@@ -679,7 +656,7 @@ mod tests {
             ..item.clone()
         };
         assert_eq!(
-            apply(&other, &mut state, None).unwrap(),
+            apply(&other, &mut state).unwrap(),
             Outcome::Created(Connection::Copy)
         );
         let persisted = State::load(Some(&state_path)).unwrap();
@@ -688,7 +665,7 @@ mod tests {
         assert!(persisted.get("alpha", "codex").is_some());
 
         assert_eq!(
-            apply_prepared(&item, &mut state, None, prepared.as_ref())
+            apply_prepared(&item, &mut state, prepared.as_ref())
                 .unwrap()
                 .outcome,
             Outcome::Created(Connection::CopyFallback {
@@ -701,11 +678,16 @@ mod tests {
         let record = persisted.get("alpha", "claude").unwrap();
         assert_eq!(record.mode, InstallMode::Copy);
         assert_eq!(record.fallback_reason.as_deref(), Some(reason));
+        assert_eq!(record.link_kind, None);
+        assert_eq!(
+            record.installed_hash,
+            hash_directory(&item.destination).unwrap()
+        );
     }
 
     #[test]
     fn checked_snapshot_is_the_only_copy_source_across_hosts() {
-        use crate::check::{audit, validate};
+        use crate::check::validate;
         use crate::drive::plan::{self, Status};
         use crate::registry::manifest::{CliOverrides, load_manifest};
 
@@ -733,9 +715,7 @@ mod tests {
         let mut snapshots = BTreeMap::new();
         let prepared = prepare(&item, &mut snapshots).unwrap().unwrap();
         let staged = prepared.check_snapshot().unwrap();
-        assert!(validate::compose_validation(staged).ok());
-        let policy = audit::policy_from_settings(&manifest.audit).unwrap();
-        assert!(!audit::run_audit(staged, &policy).unwrap().blocked());
+        assert!(validate::validate_skill(staged).ok());
         let hash = hash_directory(staged).unwrap();
 
         fs::write(&skill_md, "Invalid edit after the check.").unwrap();
@@ -744,7 +724,7 @@ mod tests {
         let second_prepared = prepare(&second, &mut snapshots).unwrap().unwrap();
         assert_eq!(second_prepared.check_snapshot(), Some(staged));
         for (item, prepared) in [(item, prepared), (second, second_prepared)] {
-            let applied = apply_prepared(&item, &mut state, None, Some(&prepared)).unwrap();
+            let applied = apply_prepared(&item, &mut state, Some(&prepared)).unwrap();
             assert!(applied.cleanup_warnings.is_empty());
             assert_eq!(
                 fs::read_to_string(item.destination.join("SKILL.md")).unwrap(),
@@ -784,7 +764,7 @@ mod tests {
             let create =
                 plan::plan_install_one(&manifest, skill, "claude", &state, InstallMode::Copy)
                     .unwrap();
-            apply(&create, &mut state, None).unwrap();
+            apply(&create, &mut state).unwrap();
             fs::write(source.join("SKILL.md"), "New canonical content.").unwrap();
             let item = if convert {
                 plan::plan_convert(
@@ -812,7 +792,7 @@ mod tests {
             let installed = item.destination.join("SKILL.md");
             fs::write(&installed, "A late host edit.").unwrap();
             let before = fs::read(&state_path).unwrap();
-            let error = apply(&item, &mut state, None).unwrap_err();
+            let error = apply(&item, &mut state).unwrap_err();
             assert!(error.to_string().contains("CONFLICT"), "{error}");
             assert_eq!(fs::read_to_string(installed).unwrap(), "A late host edit.");
             assert_eq!(fs::read(&state_path).unwrap(), before);

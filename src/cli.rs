@@ -68,8 +68,6 @@ pub enum Channel {
 pub enum Command {
     /// Validate canonical skills against the Agent Skills standard
     Validate(ValidateArgs),
-    /// Audit canonical skills for agent-skill security risks
-    Audit(AuditArgs),
     /// Report environment, hosts, registry, hooks, and manifest health
     Doctor(DoctorArgs),
     /// Update the installed my-skills binary
@@ -124,21 +122,6 @@ pub struct ValidateArgs {
     #[arg(long)]
     pub host: Option<String>,
     /// Machine-readable results
-    #[arg(long)]
-    pub json: bool,
-}
-
-#[derive(Debug, Args)]
-pub struct AuditArgs {
-    /// Skills to audit (default: every enabled skill)
-    pub skills: Vec<String>,
-    /// Also audit every skill in this manifest group (repeatable)
-    #[arg(long = "group", value_name = "GROUP")]
-    pub groups: Vec<String>,
-    /// Include disabled skills
-    #[arg(long)]
-    pub all: bool,
-    /// Machine-readable findings
     #[arg(long)]
     pub json: bool,
 }
@@ -235,7 +218,7 @@ pub struct InstallArgs {
     /// Override the install mode for new connections (link or copy)
     #[arg(long, value_enum)]
     pub mode: Option<ModeArg>,
-    /// Show the plan, validation, and audit result; write nothing.
+    /// Show the plan and validation; write nothing.
     /// Exits 1 only on validation failure
     #[arg(long)]
     pub dry_run: bool,
@@ -244,9 +227,6 @@ pub struct InstallArgs {
     /// reported per action (`result`), with `applied` and `summary`
     #[arg(long)]
     pub json: bool,
-    /// Connect even if the security audit would block
-    #[arg(long)]
-    pub skip_audit: bool,
     /// Confirm a write to more than one host
     #[arg(long)]
     pub yes: bool,
@@ -274,9 +254,6 @@ pub struct ShareArgs {
     /// Overwrite a different canonical skill with the same name
     #[arg(long)]
     pub force: bool,
-    /// Share even if the security audit would block (prints a warning)
-    #[arg(long)]
-    pub skip_audit: bool,
     /// Same as --plan: show what would be shared; write nothing
     #[arg(long)]
     pub dry_run: bool,
@@ -331,8 +308,7 @@ pub struct SkillsArgs {
     /// error and governance when present); the table is unchanged
     #[arg(long)]
     pub brief: bool,
-    /// Add governance details: audit status, profile, threshold, and hash, plus
-    /// provenance (source type, trust tier, last audit hash)
+    /// Add provenance details (source type and trust tier)
     #[arg(long = "with-governance", alias = "with-status")]
     pub with_governance: bool,
 }
@@ -352,20 +328,17 @@ pub struct SyncArgs {
     #[arg(long)]
     pub all: bool,
     /// Report drift only; change nothing. Exits 1 when anything is out of date.
-    /// Does not validate or audit (use --dry-run --json for that). Takes
+    /// Does not validate (use --dry-run --json for that). Takes
     /// precedence over --dry-run; not combinable with --json
     #[arg(long)]
     pub check: bool,
     /// Confirm a write to more than one host
     #[arg(long)]
     pub yes: bool,
-    /// Connect even if the security audit would block
-    #[arg(long)]
-    pub skip_audit: bool,
     /// Keep connections the manifest no longer wants (sync prunes them by default)
     #[arg(long)]
     pub no_prune: bool,
-    /// Show the plan, validation, and audit result; write nothing.
+    /// Show the plan and validation; write nothing.
     /// Exits 1 only on validation failure
     #[arg(long)]
     pub dry_run: bool,
@@ -412,9 +385,6 @@ pub struct ImportArgs {
     /// Register the imported skill as enabled
     #[arg(long)]
     pub enable: bool,
-    /// Import even if the security audit would block
-    #[arg(long)]
-    pub skip_audit: bool,
     /// Show what would change; write nothing
     #[arg(long)]
     pub dry_run: bool,
@@ -554,7 +524,6 @@ impl Command {
     pub fn wants_json(&self) -> bool {
         match self {
             Command::Validate(args) => args.json,
-            Command::Audit(args) => args.json,
             Command::Doctor(args) => args.json,
             Command::Install(args) => args.json,
             Command::Share(args) => args.json,
@@ -582,7 +551,6 @@ pub fn run(cli: Cli) -> ExitCode {
     }
     match cli.command {
         Command::Validate(args) => commands::inspect::validate(&args),
-        Command::Audit(args) => commands::inspect::audit(&args),
         Command::Doctor(args) => commands::doctor::run(&args),
         Command::Update(args) => commands::update::run(&args),
         Command::Bootstrap(args) => commands::connect::bootstrap(&args),

@@ -1,4 +1,4 @@
-//! Skill format and host display diagnostics. Security gates are applied separately.
+//! Skill format and host display diagnostics.
 
 mod links;
 
@@ -400,46 +400,7 @@ fn get<'a>(metadata: &'a Mapping, name: &str) -> Option<&'a Node> {
     })
 }
 
-/// Content diagnostics plus a security
-/// audit with every rule enabled. Findings at `High` or above become errors
-/// (`security: <file>: <message>`); lower findings become warnings.
-pub fn compose_validation(path: &Path) -> ValidationResult {
-    compose_validation_for_hosts(path, &[])
-}
-
-fn compose_validation_for_hosts(path: &Path, hosts: &[&HostConfig]) -> ValidationResult {
-    use crate::check::audit::{AuditPolicy, Severity, run_audit};
-
-    let mut result = validate(path, hosts);
-    let policy = AuditPolicy {
-        enabled: true,
-        profile: "default".into(),
-        threshold: None,
-        disabled_rules: Vec::new(),
-    };
-    match run_audit(path, &policy) {
-        Ok(audit) => {
-            for finding in audit.findings {
-                let line = format!("security: {}: {}", finding.file, finding.message);
-                if finding.severity >= Severity::High {
-                    result.errors.push(line);
-                } else {
-                    result.warnings.push(line);
-                }
-            }
-        }
-        Err(err) => result.errors.push(format!("security: audit failed: {err}")),
-    }
-    result
-}
-
-/// The drive's commit and health gate: standard validation plus the fixed
-/// security floor (`compose_validation`), the host checks for every enabled
-/// target the skill connects to, and the manifest's `[audit]` policy
-/// (profile, threshold, disabled rules). Used by the pre-commit hook and by
-/// `doctor`'s full validation so both apply the same rules (spec D2).
-/// `manifest = None` (unreadable manifest) falls back to built-in host
-/// defaults and the default audit policy.
+/// Errors used by the pre-commit hook and doctor's full validation.
 pub fn gate_errors(
     path: &Path,
     name: &str,
@@ -456,9 +417,6 @@ pub fn gate_validation(
     manifest: Option<&crate::registry::manifest::Manifest>,
     only_host: Option<&str>,
 ) -> ValidationResult {
-    use crate::check::audit::{policy_from_settings, run_audit};
-    use crate::registry::manifest::AuditSettings;
-
     let skill = manifest.and_then(|m| m.skills.get(name));
     let hosts = crate::drive::hosts::ALL
         .into_iter()
@@ -471,38 +429,11 @@ pub fn gate_validation(
             only_host.map_or(enabled && listed, |name| name == host.name)
         })
         .collect::<Vec<_>>();
-    let mut result = compose_validation_for_hosts(path, &hosts);
-
-    let settings = manifest.map_or_else(AuditSettings::default, |m| m.audit.clone());
-    match policy_from_settings(&settings) {
-        Ok(policy) if policy.enabled => match run_audit(path, &policy) {
-            Ok(audit) => {
-                if let Some(threshold) = audit.threshold {
-                    for finding in audit.findings.iter().filter(|f| f.severity >= threshold) {
-                        let floor = format!("security: {}: {}", finding.file, finding.message);
-                        result.warnings.retain(|warning| warning != &floor);
-                        if !result.errors.contains(&floor) {
-                            result.errors.push(format!(
-                                "audit ({}): {}: {}: {}",
-                                finding.severity.label(),
-                                finding.rule_id,
-                                finding.file,
-                                finding.message
-                            ));
-                        }
-                    }
-                }
-            }
-            Err(err) => result.errors.push(format!("audit failed: {err}")),
-        },
-        Ok(_) => {}
-        Err(err) => result.errors.push(format!("audit policy: {err}")),
-    }
-    result
+    validate(path, &hosts)
 }
 
 #[cfg(test)]
-mod compose_tests {
+mod validation_tests {
     use super::*;
 
     fn fixture(name: &str) -> PathBuf {
@@ -514,23 +445,14 @@ mod compose_tests {
     }
 
     #[test]
-    fn compose_validation_keeps_the_security_floor_and_allows_content() {
-        let good = compose_validation(&fixture("good-skill"));
+    fn validation_keeps_host_display_warnings() {
+        let good = validate_skill(&fixture("good-skill"));
         assert!(
             good.errors.is_empty() && good.warnings.is_empty(),
             "{good:?}"
         );
 
-        let secret = compose_validation(&fixture("secret-skill"));
-        assert_eq!(
-            secret.errors,
-            vec![
-                "security: SKILL.md: AWS access key id pattern",
-                "security: SKILL.md: secret-like assignment",
-            ]
-        );
-
-        let bad = compose_validation(&fixture("bad-name"));
+        let bad = validate_skill(&fixture("bad-name"));
         assert_eq!(bad.errors, Vec::<String>::new());
         let codex = validate_skill_for_host(&fixture("bad-name"), &crate::drive::hosts::CODEX);
         assert_eq!(

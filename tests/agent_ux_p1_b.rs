@@ -13,9 +13,7 @@ use support_g::{Fixture, MANIFEST, skill};
 
 fn fixture() -> Fixture {
     let fixture = Fixture::isolated();
-    let mut manifest = format!(
-        "{MANIFEST}\n[defaults]\ninstall_mode = \"link\"\n\n[audit]\nthreshold = \"medium\"\n"
-    );
+    let mut manifest = format!("{MANIFEST}\n[defaults]\ninstall_mode = \"link\"\n");
     for (host, enabled, mode) in [
         ("agy", false, "copy"),
         ("claude", true, "link"),
@@ -239,14 +237,8 @@ fn validate_shares_the_gate_and_respects_host_and_group_selection() {
             .success(),
     );
     assert_eq!(doctor["full_validation"]["failures"], json!([]));
-    fixture.write(
-        "skills/example/SKILL.md",
-        &format!(
-            "{}\n![Example](https://example.invalid/pixel.png)",
-            skill("example")
-        ),
-    );
-    let audit = read_json(
+    fs::remove_file(fixture.registry.join("skills/example/SKILL.md")).unwrap();
+    let validation = read_json(
         &fixture
             .command()
             .args(["validate", "example", "--json"])
@@ -262,19 +254,16 @@ fn validate_shares_the_gate_and_respects_host_and_group_selection() {
     );
     assert_eq!(
         doctor["full_validation"]["failures"][0]["errors"],
-        audit["skills"][0]["errors"]
+        validation["skills"][0]["errors"]
     );
-    assert!(
-        audit["skills"][0]["errors"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|error| { error.as_str().unwrap().starts_with("audit (") })
+    assert_eq!(
+        validation["skills"][0]["errors"],
+        json!(["SKILL.md not found"])
     );
 }
 
 #[test]
-fn validate_reports_promoted_finding_once_and_keeps_other_warnings() {
+fn validate_retains_host_warnings_with_legacy_audit_settings() {
     let fixture = fixture();
     let markdown = concat!(
         "---\nname: example\ndescription: A valid example skill.\n",
@@ -282,45 +271,26 @@ fn validate_reports_promoted_finding_once_and_keeps_other_warnings() {
         "![Example](https://example.invalid/pixel.png)\n",
     );
     fixture.write("skills/example/SKILL.md", markdown);
-    let check = |code| {
-        read_json(
+    for threshold in ["medium", "high"] {
+        fixture.write(
+            "my-skills.local.toml",
+            &format!("[audit]\nthreshold = '{threshold}'\n"),
+        );
+        let report = read_json(
             &fixture
                 .command()
-                .args(["validate", "example", "--json"])
+                .args(["validate", "example", "--host", "agy", "--json"])
                 .assert()
-                .code(code),
-        )
-    };
-    let promoted = check(1);
-    let row = &promoted["skills"][0];
-    assert_eq!(row["errors"].as_array().unwrap().len(), 1);
-    assert!(
-        row["errors"][0]
-            .as_str()
-            .unwrap()
-            .contains("markdown-remote-image")
-    );
-    let warnings = row["warnings"].as_array().unwrap();
-    assert!(
-        warnings
-            .iter()
-            .any(|w| w.as_str().unwrap().contains("allowed-tools"))
-    );
-    assert!(
-        !warnings
-            .iter()
-            .any(|w| w.as_str().unwrap().contains("example.invalid/pixel.png"))
-    );
-
-    fixture.write("my-skills.local.toml", "[audit]\nthreshold = 'high'\n");
-    let unpromoted = check(0);
-    assert!(
-        unpromoted["skills"][0]["warnings"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|w| { w.as_str().unwrap().contains("example.invalid/pixel.png") })
-    );
+                .success(),
+        );
+        assert_eq!(report["skills"][0]["errors"], json!([]));
+        assert_eq!(
+            report["skills"][0]["warnings"],
+            json!([
+                "Antigravity CLI ignores these YAML fields: allowed-tools. If you want Antigravity CLI to see that information, put it in a supported field or the skill body."
+            ])
+        );
+    }
 }
 
 #[test]
@@ -370,7 +340,7 @@ fn json_errors_include_usage_selection_and_config_codes() {
             "requires a skill name",
         ),
         (
-            &["audit", "absent", "--json"][..],
+            &["validate", "absent", "--json"][..],
             "unknown_skill",
             "unknown skill",
         ),
@@ -403,13 +373,13 @@ fn json_errors_include_usage_selection_and_config_codes() {
         .stderr(contains("error:"));
     assert_error(&assert, "config", "does not contain");
 
-    fixture.write("my-skills.local.toml", "[audit]\nthreshold = 'invalid'\n");
+    fixture.write("my-skills.local.toml", "[defaults\n");
     let assert = fixture
         .command()
         .args(["validate", "--json"])
         .assert()
         .code(2);
-    assert_error(&assert, "config", "invalid");
+    assert_error(&assert, "config", "invalid TOML");
 }
 
 #[test]

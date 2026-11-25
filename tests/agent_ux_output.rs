@@ -13,9 +13,7 @@ use support_g::{Fixture, MANIFEST};
 
 fn registry(two_hosts: bool) -> Fixture {
     let fixture = Fixture::isolated();
-    let mut manifest = format!(
-        "{MANIFEST}\n[defaults]\ninstall_mode = \"copy\"\n\n[audit]\nthreshold = \"medium\"\n"
-    );
+    let mut manifest = format!("{MANIFEST}\n[defaults]\ninstall_mode = \"copy\"\n");
     for (host, enabled) in [("claude", two_hosts), ("codex", true), ("agy", false)] {
         let path = fixture.base.join("hosts").join(host);
         manifest.push_str(&format!(
@@ -112,11 +110,6 @@ fn windows_displays_registry_doctor_and_plan_paths_consistently() {
         let action = &value["actions"][0];
         check_path(&action["source"]);
         check_path(&action["destination"]);
-        let audited = value["audit"]["skills"].as_array().unwrap();
-        assert!(!audited.is_empty(), "{command}: audit ran");
-        for skill in audited {
-            check_path(&skill["path"]);
-        }
     }
 
     let active = fixture.base.join("active");
@@ -164,7 +157,7 @@ fn invalid_skill_fails_both_dry_runs_with_machine_and_human_diagnostics() {
             .stdout(contains("SKILL.md not found"));
         assert_eq!(
             stdout(&out).lines().next().unwrap(),
-            "BLOCKED: 1 item(s) would be refused (validation 1, audit 0, plan 0)"
+            "BLOCKED: 1 item(s) would be refused (validation 1, plan 0)"
         );
 
         let out = dry_run(&fixture, command)
@@ -193,36 +186,33 @@ fn invalid_skill_fails_both_dry_runs_with_machine_and_human_diagnostics() {
 }
 
 #[test]
-fn audit_block_is_reported_by_previews_and_enforced_by_real_runs() {
+fn unmanaged_destination_is_reported_by_previews_and_enforced_by_real_runs() {
     let fixture = registry(false);
-    write_skill(
-        &fixture,
-        "A valid example skill.",
-        "![Example image](https://example.invalid/pixel.png)",
-    );
+    let destination = fixture.base.join("hosts/codex/example");
+    fs::create_dir_all(&destination).unwrap();
+    let original = destination.join("SKILL.md");
+    fs::write(&original, "Local skill.").unwrap();
     for command in ["install", "sync"] {
         let out = dry_run(&fixture, command).assert().success();
         assert_eq!(
             stdout(&out).lines().next().unwrap(),
-            "BLOCKED: 1 item(s) would be refused (validation 0, audit 1, plan 0)"
+            "BLOCKED: 1 item(s) would be refused (validation 0, plan 1)"
         );
-
         let value = json(&dry_run(&fixture, command).arg("--json").assert().success());
         assert_eq!(value["blocked"], true);
         assert_eq!(value["applicable"], false);
-        assert_eq!(value["audit"]["blocked"], true);
-        assert_eq!(value["block_reasons"][0]["kind"], "audit");
+        assert_eq!(value["block_reasons"][0]["kind"], "block_conflict");
         assert_eq!(value["block_reasons"][0]["skill"], "example");
-        assert!(value["block_reasons"][0]["host"].is_null());
-
+        assert_eq!(value["block_reasons"][0]["host"], "codex");
         fixture
             .command()
             .arg(command)
             .assert()
             .code(1)
-            .stdout(contains("AUDIT BLOCKED"));
+            .stdout(contains("BLOCKED"));
+        assert_eq!(fs::read_to_string(&original).unwrap(), "Local skill.");
     }
-    assert!(!fixture.base.join("hosts").exists());
+    assert!(!fixture.base.join("xdg-state/my-skills/state.json").exists());
 }
 
 #[test]
@@ -235,7 +225,7 @@ fn drifted_copy_is_reported_without_turning_preview_into_an_exit_code_gate() {
     let out = dry_run(&fixture, "sync").assert().success();
     assert_eq!(
         stdout(&out).lines().next().unwrap(),
-        "BLOCKED: 1 item(s) would be refused (validation 0, audit 0, plan 1)"
+        "BLOCKED: 1 item(s) would be refused (validation 0, plan 1)"
     );
     let value = json(&dry_run(&fixture, "sync").arg("--json").assert().success());
     assert_eq!(value["blocked"], true);
@@ -281,7 +271,7 @@ fn clean_previews_show_whether_multi_host_confirmation_is_needed() {
         );
         assert_eq!(value["blocked"], false);
         assert_eq!(value["applicable"], true);
-        assert_eq!(value["audit"]["blocked"], false);
+        assert!(value.get("audit").is_none());
         assert!(value["block_reasons"].as_array().unwrap().is_empty());
     }
     assert!(!fixture.base.join("hosts").exists());
@@ -396,7 +386,7 @@ fn inactive_registry_refusal_starts_each_text_plan() {
         assert_eq!(lines.next().unwrap(), first_lines[0]);
         assert_eq!(
             lines.next().unwrap(),
-            "BLOCKED: 1 item(s) would be refused (validation 1, audit 0, plan 0)"
+            "BLOCKED: 1 item(s) would be refused (validation 1, plan 0)"
         );
     }
 }
@@ -464,55 +454,6 @@ fn connect_usage_errors_leave_empty_config_home_alone() {
     assert!(
         cached.is_empty(),
         "usage errors created a cache: {cached:?}"
-    );
-}
-
-#[test]
-fn previews_report_an_empty_audit_when_it_did_not_run() {
-    let fixture = registry(false);
-    fixture.command().arg("sync").assert().success();
-    let expected = serde_json::json!({"blocked": false, "skills": [], "skipped": false});
-    let noop = json(&dry_run(&fixture, "sync").arg("--json").assert().success());
-    assert_eq!(noop["audit"], expected);
-    // Nothing to write means no audit gate, with or without --skip-audit, and
-    // the text preview agrees with the JSON.
-    let noop_skip = json(
-        &dry_run(&fixture, "sync")
-            .args(["--json", "--skip-audit"])
-            .assert()
-            .success(),
-    );
-    assert_eq!(noop_skip["audit"], expected);
-    dry_run(&fixture, "sync")
-        .arg("--skip-audit")
-        .assert()
-        .success()
-        .stdout(contains("audit skipped").not());
-
-    fs::remove_file(fixture.registry.join("skills/example/SKILL.md")).unwrap();
-    for command in ["install", "sync"] {
-        let rejected = json(&dry_run(&fixture, command).arg("--json").assert().code(1));
-        assert_eq!(rejected["audit"], expected, "{command}");
-    }
-}
-
-#[test]
-fn sync_preview_reports_an_explicit_skip_audit() {
-    let fixture = registry(false);
-    dry_run(&fixture, "sync")
-        .arg("--skip-audit")
-        .assert()
-        .success()
-        .stdout(contains("WARN: audit skipped by explicit --skip-audit"));
-    let plan = json(
-        &dry_run(&fixture, "sync")
-            .args(["--json", "--skip-audit"])
-            .assert()
-            .success(),
-    );
-    assert_eq!(
-        plan["audit"],
-        serde_json::json!({"blocked": false, "skills": [], "skipped": true})
     );
 }
 

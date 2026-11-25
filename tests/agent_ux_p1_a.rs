@@ -430,7 +430,7 @@ fn enable_and_disable_preview_every_change_and_noop_then_edit_only_the_selection
 fn invalid_batch_arguments_never_write_the_manifest_or_root_cache() {
     let fixture = batch();
     let before = fs::read(fixture.manifest()).unwrap();
-    for cmd in ["enable", "disable", "install", "sync", "uninstall", "audit"] {
+    for cmd in ["enable", "disable", "install", "sync", "uninstall"] {
         for invalid in [["alpha", "unregistered"], ["--group", "unregistered"]] {
             fixture
                 .command()
@@ -461,46 +461,6 @@ fn invalid_batch_arguments_never_write_the_manifest_or_root_cache() {
         .stderr(contains("unknown skill: local-only"));
     assert_eq!(fs::read(fixture.manifest()).unwrap(), before);
     assert!(!fixture.root.join("config/my-skills").exists());
-}
-
-#[test]
-fn audit_keeps_single_result_and_reports_cross_skill_bundle_findings() {
-    let fixture = batch();
-    let audit_fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/audit");
-    for (name, example) in [("alpha", "credential-reader"), ("beta", "network-sender")] {
-        let source = audit_fixtures.join(example).join("SKILL.md");
-        let text = fs::read_to_string(source)
-            .unwrap()
-            .replace(&format!("name: {example}"), &format!("name: {name}"));
-        fs::write(fixture.canonical(name).join("SKILL.md"), text).unwrap();
-    }
-    let single = support_h::json(fixture.command().args(["audit", "alpha", "--json"]));
-    assert_eq!(single["skill"], "alpha");
-    assert!(single.get("skills").is_none());
-    let same = support_h::json(
-        fixture
-            .command()
-            .args(["audit", "gamma", "--group", "other", "--json"]),
-    );
-    assert_eq!(same["skill"], "gamma");
-    assert!(same.get("bundle_findings").is_none());
-
-    let output = fixture
-        .command()
-        .args(["audit", "alpha", "--group", "batch", "--json"])
-        .assert()
-        .code(1)
-        .stderr("");
-    let bundle: Value = serde_json::from_slice(&output.get_output().stdout).unwrap();
-    assert_eq!(bundle["blocked"], true);
-    assert_eq!(names(&bundle, "skills", "skill"), ["alpha", "beta"]);
-    assert_eq!(
-        names(&bundle, "bundle_findings", "rule_id"),
-        ["cross-skill-credential-network"]
-    );
-    let default = support_h::json(fixture.command().args(["audit", "--json"]));
-    assert_eq!(names(&default, "skills", "skill"), ["alpha", "gamma"]);
-    assert_eq!(default["bundle_findings"], json!([]));
 }
 
 #[test]
@@ -584,8 +544,7 @@ fn skills_brief_uses_only_the_documented_keys_and_preserves_governance_and_text(
             "group": complete["group"], "status": complete["status"],
         });
         assert_eq!(*row, expected);
-        expected["governance"] =
-            json!({"audit": complete["audit"], "provenance": complete["provenance"]});
+        expected["governance"] = json!({"provenance": complete["provenance"]});
         assert_eq!(*governed, expected);
     }
     let text = fixture
@@ -683,31 +642,6 @@ fn validation_failure_leaves_the_root_cache_absent() {
             .assert()
             .code(1)
             .stdout(contains("SKILL.md not found"));
-        assert!(!fixture.host("claude").exists());
-        if root_cache(&fixture).exists() {
-            cached.push(cmd);
-        }
-    }
-    assert!(cached.is_empty(), "commands that cached a root: {cached:?}");
-}
-
-#[test]
-fn audit_block_leaves_the_root_cache_absent() {
-    let mut cached = Vec::new();
-    for cmd in ["install", "sync", "bootstrap"] {
-        let fixture = batch();
-        fixture.write_manifest(&format!("{BATCH}\n[audit]\nthreshold = 'medium'\n"));
-        skill(
-            &fixture.registry.join("skills"),
-            "alpha",
-            "Fixture skill.",
-            "![Sample](https://example.invalid/sample.png)",
-        );
-        from_cwd(&fixture)
-            .args([cmd, "--host", "claude"])
-            .assert()
-            .code(1)
-            .stdout(contains("AUDIT BLOCKED"));
         assert!(!fixture.host("claude").exists());
         if root_cache(&fixture).exists() {
             cached.push(cmd);

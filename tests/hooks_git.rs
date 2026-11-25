@@ -288,7 +288,7 @@ fn raw_index_blobs_ignore_worktree_attributes_and_checkout_filters() {
 }
 
 #[test]
-fn pre_commit_checks_the_signature_of_staged_binary_assets() {
+fn pre_commit_accepts_staged_binary_assets_without_inspecting_their_signature() {
     let fixture = Fixture::isolated();
     fixture.init();
     fixture.write("skills/example/SKILL.md", &skill("example"));
@@ -309,14 +309,11 @@ fn pre_commit_checks_the_signature_of_staged_binary_assets() {
         .command()
         .args(["hooks", "run", "pre-commit"])
         .assert()
-        .code(1)
-        .stderr(contains(
-            "[BLOCKED] example: security: pixel.png: file contains a NUL byte",
-        ));
+        .success();
 }
 
 #[test]
-fn pre_commit_validates_staged_manifest_layout_and_audit_without_blocking_host_warnings() {
+fn pre_commit_validates_staged_manifest_layout_without_blocking_host_warnings() {
     let fixture = Fixture::isolated();
     fixture.init();
     fixture.write(
@@ -331,10 +328,9 @@ fn pre_commit_validates_staged_manifest_layout_and_audit_without_blocking_host_w
         "a".repeat(1100)
     );
     fixture.write("training material/example/SKILL.md", &long);
-    fixture.write("training material/second/SKILL.md", &skill("second"));
     fixture.write(
         "training material/second/notes.txt",
-        "-----BEGIN PRIVATE KEY-----\nexample\n-----END PRIVATE KEY-----\n",
+        "Only a supporting file.\n",
     );
     fixture.git(&["add", "."]);
     fixture.write(
@@ -347,7 +343,7 @@ fn pre_commit_validates_staged_manifest_layout_and_audit_without_blocking_host_w
         .assert()
         .code(1)
         .stderr(contains("[BLOCKED] example:").not())
-        .stderr(contains("[BLOCKED] second: security: notes.txt:"));
+        .stderr(contains("[BLOCKED] second: SKILL.md not found"));
 
     fixture.git(&["add", "my-skills.toml"]);
     fixture

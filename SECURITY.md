@@ -43,6 +43,8 @@ Out of scope:
   the files written by `my-skills`.
 - Public information already intentionally committed to the repository.
 
+Registry owners are responsible for skill security. Use dedicated tools such as gitleaks or GitHub secret scanning to check for exposed credentials.
+
 ## Release Hygiene
 
 Before a Rust release, maintainers should run the checks in

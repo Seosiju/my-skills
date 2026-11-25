@@ -12,7 +12,7 @@ When a `--json` command hits a usage or configuration error, read the
 Codes are `usage`, `inactive_registry`, `unknown_skill`, `unknown_group`,
 `unknown_host`, `already_exists`, `invalid_name`, `state_busy` (writer lock
 timed out after 30s), and `config`. `hint` is a string or `null`. A blocked
-validation, audit, or dry-run plan uses its normal report shape.
+validation or dry-run plan uses its normal report shape.
 
 ## Creating skills (`new --json`)
 
@@ -54,8 +54,7 @@ means a check failed, and `2` means a usage or configuration error.
 
 Content diagnostics are warnings, including skills a service hides and
 names or descriptions it displays differently. `install` and `sync` deliver
-the skill as written. A missing `SKILL.md` or blocking security finding can
-fail the gate. Pass `--host <host>` to preview that service's warnings even
+the skill as written. A missing `SKILL.md` fails validation. Pass `--host <host>` to preview that service's warnings even
 when it is disabled or outside the skill's host list. A bare
 `validate` scans all skill directories, including unregistered ones.
 
@@ -84,13 +83,11 @@ JSON:
 - `actions`: planned connection changes (for `sync`, review removals as well as
   new and updated connections).
 - `validation`: per-skill and per-host validation checks.
-- `audit`: audit gate outcome and findings.
-- `blocked`: `true` if validation, audit, a blocked plan item, or an inactive
+- `blocked`: `true` if validation, a blocked plan item, or an inactive
   cwd registry would refuse the write (`needs_yes` alone leaves `blocked: false`).
 - `applicable`: `true` only if the write can proceed without blocking or missing
   `--yes`.
-- `block_reasons`: structured reasons explaining every refusal, including audit
-  blocks, `block_drift`, `block_foreign`, `shared_destination` (when a
+- `block_reasons`: structured reasons explaining every refusal, including `block_drift`, `block_foreign`, `shared_destination` (when a
   single-host operation would alter a destination shared with an unselected
   recorded peer), `needs_yes`, `inactive_registry`, and late `conflict`. Host
   rows in `validation` that merely repeat skill-level errors or warnings are
@@ -119,8 +116,8 @@ Exit-code rules:
   document; early errors such as `unknown_skill`, `state_busy`, and
   `sync --json --check` emit `{"error": ...}`).
 - Use `sync --check` when you need a non-zero exit code for any drift (drift
-  only; it does not run validation or audit).
-- Explicit `sync <skill...>` or `sync --group <group>` validates and audits all
+  only).
+- Explicit `sync <skill...>` or `sync --group <group>` validates all
   wanted skills on the selected hosts, including `FRESH` links (failing `1` if a
   wanted skill is broken). Disabled skills whose only planned action is `REMOVE`
   (prune) skip those checks unless `--all` puts them in scope to connect.
@@ -132,7 +129,7 @@ Exit-code rules:
 Use `my-skills skills [skill...] --json --brief` for compact rows. Positional
 `skill...` names intersect (AND) with `--group`, `--host`, and
 `--enabled`/`--disabled`. A row keeps `error` when skill metadata is missing or
-invalid. Add `--with-governance` to put `audit` and `provenance` under
+invalid. Add `--with-governance` to put `provenance` under
 `governance` in each brief row.
 
 Use `my-skills status [skill...] --group <group> --json` for a top-level JSON

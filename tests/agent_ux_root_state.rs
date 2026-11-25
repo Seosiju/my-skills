@@ -58,7 +58,6 @@ fn read_only_commands_and_previews_leave_the_root_cache_uncreated() {
 
     for args in [
         &["validate"][..],
-        &["audit"],
         &["status"],
         &["skills"],
         &["data-path", "alpha"],

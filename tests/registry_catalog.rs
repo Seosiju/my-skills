@@ -195,8 +195,6 @@ fn skills_with_status_uses_selected_host_only() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["name"], "beta");
     assert_eq!(rows[0]["status"], json!({"codex": "MISSING"}));
-    assert_eq!(rows[0]["audit"]["status"], "ok");
-    assert_eq!(rows[0]["audit"]["findings"], "0");
     assert_eq!(rows[0]["provenance"]["trust_tier"], "local-authored");
 }
 
