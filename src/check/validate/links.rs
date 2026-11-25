@@ -1,21 +1,21 @@
 use std::path::Path;
 
-use pulldown_cmark::{Event, Parser, Tag};
+use pulldown_cmark::{Event, LinkType, Parser, Tag};
 
 use crate::check::frontmatter::python_whitespace;
 
 pub(super) fn warn_missing(path: &Path, body: &str, warnings: &mut Vec<String>) {
     for event in Parser::new(body) {
-        let (Event::Start(Tag::Link { dest_url, .. }) | Event::Start(Tag::Image { dest_url, .. })) =
-            event
-        else {
-            continue;
+        let dest_url = match event {
+            Event::Start(Tag::Link {
+                link_type: LinkType::Autolink | LinkType::Email,
+                ..
+            }) => continue,
+            Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. }) => dest_url,
+            _ => continue,
         };
         let reference = dest_url.trim_matches(python_whitespace);
-        if ["http://", "https://", "#", "mailto:"]
-            .iter()
-            .any(|prefix| reference.starts_with(prefix))
-        {
+        if reference.starts_with('#') || has_uri_scheme(reference) {
             continue;
         }
         let clean = reference
@@ -30,4 +30,12 @@ pub(super) fn warn_missing(path: &Path, body: &str, warnings: &mut Vec<String>) 
             ));
         }
     }
+}
+
+fn has_uri_scheme(reference: &str) -> bool {
+    reference.split_once(':').is_some_and(|(scheme, _)| {
+        let mut bytes = scheme.bytes();
+        bytes.next().is_some_and(|byte| byte.is_ascii_alphabetic())
+            && bytes.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'.' | b'-'))
+    })
 }

@@ -139,7 +139,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a double-quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"oops\\q\"\n                 ^\nfound unknown escape character 'q'\n  in \"<unicode string>\", line 2, column 20:\n    description: \"oops\\q\"\n                       ^",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -250,7 +250,7 @@
     "agy": {
       "errors": [],
       "warnings": [
-        "Antigravity CLI shows an empty description because the YAML description is missing or empty. If you want a custom description, add one to the YAML frontmatter."
+        "The YAML description is a non-text scalar. How Antigravity CLI displays it may vary. If you want a text description, put the value in quotes."
       ]
     },
     "claude": {
@@ -306,7 +306,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got bool",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -335,7 +335,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got date",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -388,7 +388,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got datetime",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -441,7 +441,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: found duplicate anchor 'meta'; first occurrence\n  in \"<unicode string>\", line 1, column 7:\n    name: &meta duplicate-anchor\n          ^\nsecond occurrence\n  in \"<unicode string>\", line 2, column 14:\n    description: &meta test\n                 ^",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -510,7 +510,7 @@
     "claude": {
       "errors": [],
       "warnings": [
-        "Claude Code may display the description differently or omit the skill when the YAML description is a list or mapping. If you want a text description, put it in quotes or use a YAML text block."
+        "The YAML description is a list or mapping. Claude Code uses the first non-empty body line when a description is omitted. If you want a custom description, write the YAML value as text."
       ]
     },
     "codex": {
@@ -584,7 +584,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got float",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -667,7 +667,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a block scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: |bogus\n                 ^\nexpected chomping or indentation indicators, but found 'b'\n  in \"<unicode string>\", line 2, column 15:\n    description: |bogus\n                  ^",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -696,7 +696,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a double-quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"bad\\u12z9\"\n                 ^\nexpected escape sequence of 4 hexadecimal numbers, but found 'z'\n  in \"<unicode string>\", line 2, column 20:\n    description: \"bad\\u12z9\"\n                       ^",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -725,7 +725,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a block mapping\n  in \"<unicode string>\", line 1, column 1:\n    name: invalid-indentation\n    ^\nexpected <block end>, but found '<block mapping start>'\n  in \"<unicode string>\", line 3, column 3:\n      extra: x\n      ^",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -754,7 +754,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while constructing a mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {<<: [x]}\n                 ^\nexpected a mapping for merging, but found scalar\n  in \"<unicode string>\", line 2, column 20:\n    description: {<<: [x]}\n                       ^",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -783,7 +783,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning for the next token\nfound character '@' that cannot start any token\n  in \"<unicode string>\", line 2, column 14:\n    description: @oops\n                 ^",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -878,7 +878,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"oops\n                 ^\nfound unexpected end of stream\n  in \"<unicode string>\", line 2, column 19:\n    description: \"oops\n                      ^",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -907,7 +907,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: mapping values are not allowed here\n  in \"<unicode string>\", line 2, column 17:\n    description: key: value\n                    ^",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -960,7 +960,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: found undefined alias 'unknown'\n  in \"<unicode string>\", line 2, column 14:\n    description: *unknown\n                 ^",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -989,7 +989,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a simple key\n  in \"<unicode string>\", line 2, column 1:\n    description\n    ^\ncould not find expected ':'\n  in \"<unicode string>\", line 2, column 12:\n    description\n               ^",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -1068,7 +1068,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a flow mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {one: two\n                 ^\nexpected ',' or '}', but got '<stream end>'\n  in \"<unicode string>\", line 2, column 23:\n    description: {one: two\n                          ^",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -1097,7 +1097,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a flow sequence\n  in \"<unicode string>\", line 2, column 14:\n    description: [one\n                 ^\nexpected ',' or ']', but got '<stream end>'\n  in \"<unicode string>\", line 2, column 18:\n    description: [one\n                     ^",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -1170,7 +1170,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"unterminated\n                 ^\nfound unexpected end of stream\n  in \"<unicode string>\", line 3, column 10:\n    next: key\n             ^",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -1199,7 +1199,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: expected a single document in the stream\n  in \"<unicode string>\", line 1, column 1:\n    name: multiple-documents\n    ^\nbut found another document\n  in \"<unicode string>\", line 4, column 1:\n    --- {name: x}\n    ^",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -1324,7 +1324,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got list",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -1377,7 +1377,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got int",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -1398,7 +1398,7 @@
     "agy": {
       "errors": [],
       "warnings": [
-        "Antigravity CLI shows an empty description because the YAML description is missing or empty. If you want a custom description, add one to the YAML frontmatter."
+        "The YAML description is a non-text scalar. How Antigravity CLI displays it may vary. If you want a text description, put the value in quotes."
       ]
     },
     "claude": {
@@ -1472,7 +1472,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got set",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -1493,7 +1493,7 @@
     "agy": {
       "errors": [],
       "warnings": [
-        "Antigravity CLI shows an empty description because the YAML description is missing or empty. If you want a custom description, add one to the YAML frontmatter.",
+        "The YAML description is a non-text scalar. How Antigravity CLI displays it may vary. If you want a text description, put the value in quotes.",
         "Antigravity CLI ignores these YAML fields: allowed-tools, x-extra. If you want Antigravity CLI to see that information, put it in a supported field or the skill body.",
         "Referenced supporting file not found: missing.txt. If you want the link to work, add the file or update the link."
       ]
@@ -1612,7 +1612,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while constructing a mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {[]: x}\n                 ^\nfound unhashable key\n  in \"<unicode string>\", line 2, column 15:\n    description: {[]: x}\n                  ^",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -1641,7 +1641,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: could not determine a constructor for the tag '!custom'\n  in \"<unicode string>\", line 2, column 14:\n    description: !custom text\n                 ^",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
@@ -1699,7 +1699,7 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: could not determine a constructor for the tag 'tag:yaml.org,2002:value'\n  in \"<unicode string>\", line 2, column 14:\n    description: =\n                 ^",
-        "If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {

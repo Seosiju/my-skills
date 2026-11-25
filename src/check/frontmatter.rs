@@ -817,6 +817,8 @@ fn keys_equal(left: &Rc<Node>, right: &Rc<Node>) -> bool {
 pub(crate) struct YamlDiagnostics {
     pub(crate) commented_fields: Vec<(String, String)>,
     pub(crate) plain_name: Option<String>,
+    pub(crate) name_may_be_quoted: bool,
+    pub(crate) description_may_be_quoted: bool,
 }
 
 pub(crate) fn load_yaml(
@@ -828,6 +830,7 @@ pub(crate) fn load_yaml(
     let mut anchors = HashMap::new();
     let check_comments = diagnostics.is_some() && (source.contains(" #") || source.contains("\t#"));
     let mut plain_scalars = Vec::new();
+    let mut collection_spans = Vec::new();
     let mut root = None;
     let mut document_start = None;
     if let Some((index, c)) = source.chars().enumerate().find(|&(_, c)| {
@@ -914,8 +917,13 @@ pub(crate) fn load_yaml(
             Event::MappingEnd | Event::SequenceEnd => {
                 let frame = frames.pop().expect("end event has an open collection");
                 let anchor = frame.anchor;
+                let end = index;
                 index = frame.start;
-                (Rc::new(frame.finish(source)?), anchor)
+                let node = Rc::new(frame.finish(source)?);
+                if diagnostics.is_some() {
+                    collection_spans.push((Rc::clone(&node), index, end));
+                }
+                (node, anchor)
             }
             Event::Alias(id) => {
                 let value: &Located = anchors.get(&id).ok_or_else(|| {
@@ -961,11 +969,17 @@ pub(crate) fn load_yaml(
             if let Some(diagnostics) = diagnostics {
                 for (key, effective_value) in mapping {
                     // Follow the effective scalar through aliases, merges, and overrides.
-                    if let Node::String(field) = key.as_ref()
-                        && matches!(field.as_str(), "name" | "description")
-                        && let Some((_, index, value)) = plain_scalars
-                            .iter()
-                            .find(|(node, _, _)| Rc::ptr_eq(node, effective_value))
+                    let Node::String(field) = key.as_ref() else {
+                        continue;
+                    };
+                    let may_be_quoted = match field.as_str() {
+                        "name" => &mut diagnostics.name_may_be_quoted,
+                        "description" => &mut diagnostics.description_may_be_quoted,
+                        _ => continue,
+                    };
+                    if let Some((_, index, value)) = plain_scalars
+                        .iter()
+                        .find(|(node, _, _)| Rc::ptr_eq(node, effective_value))
                     {
                         if check_comments && has_inline_comment(source, *index, value) {
                             diagnostics
@@ -979,6 +993,12 @@ pub(crate) fn load_yaml(
                             diagnostics.plain_name = Some(value.clone());
                         }
                     }
+                    if let Some((_, start, end)) = collection_spans
+                        .iter()
+                        .find(|(node, _, _)| Rc::ptr_eq(node, effective_value))
+                    {
+                        *may_be_quoted = may_quote_collection(source, *start, *end);
+                    }
                 }
             }
             Ok(mapping.clone())
@@ -988,6 +1008,27 @@ pub(crate) fn load_yaml(
             node.type_name()
         ))),
     }
+}
+
+fn may_quote_collection(source: &str, start: usize, end: usize) -> bool {
+    // Codex may quote an inline value containing a colon followed by space.
+    // Use the parsed value's own span, including the origin of a YAML alias.
+    let Some((start, '[' | '{')) = source.char_indices().nth(start) else {
+        return false;
+    };
+    let Some((end, ']' | '}')) = source.char_indices().nth(end) else {
+        return false;
+    };
+    let line_prefix = source[..start].rsplit('\n').next().unwrap_or_default();
+    let Some((_, before_value)) = line_prefix.split_once(':') else {
+        return false;
+    };
+    let value = &source[start..end];
+    before_value.starts_with(char::is_whitespace)
+        && !value.contains('\n')
+        && value
+            .match_indices(':')
+            .any(|(index, _)| value[index + 1..].starts_with(char::is_whitespace))
 }
 
 fn has_inline_comment(source: &str, index: usize, value: &str) -> bool {

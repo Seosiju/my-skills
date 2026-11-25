@@ -160,6 +160,27 @@ fn skills_keeps_legacy_yaml_scalar_descriptions_in_the_catalog() {
 }
 
 #[test]
+fn skills_catalog_keeps_the_dev_1_3_1_output_for_explicit_null() {
+    let fixture = catalog();
+    fs::write(
+        fixture.canonical("alpha").join("SKILL.md"),
+        "---\nname: alpha\ndescription: null\n---\nBody.\n",
+    )
+    .unwrap();
+    let data = json(fixture.command().args(["skills", "alpha", "--json"]));
+    let row = &data["skills"][0];
+    assert_eq!(row["name"], "alpha");
+    assert_eq!(row["description"], "None");
+    assert!(row.get("error").is_none(), "{row}");
+    fixture
+        .command()
+        .args(["skills", "alpha"])
+        .assert()
+        .success()
+        .stdout("SKILL  ENABLED  CLAUDE   CODEX\n-----  -------  -------  -------\nalpha  yes      missing  missing\n");
+}
+
+#[test]
 fn skills_with_status_uses_selected_host_only() {
     let fixture = catalog();
     let data = json(fixture.command().args([

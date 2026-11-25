@@ -138,6 +138,14 @@ fn canaries() -> Vec<Canary> {
             )
         },
         Canary {
+            shared_warnings: &["Referenced supporting file not found: assets/local-missing.md."],
+            ..Canary::new(
+                "external-links",
+                described("external-links", "URI links and local links.")
+                    + "\n<user@example.com> <ftp://example.com/remote.txt>\n\n[Remote](custom+git.v2-data:some/resource)\n![Image](data:image/png;base64,AAAA)\n[Drive](C:/missing.txt)\n[Local](assets/local-missing.md)\n",
+            )
+        },
+        Canary {
             host_warnings: [
                 &[],
                 &["Codex ignores these YAML fields: allowed-tools, argument-hint, model, paths."],
@@ -217,7 +225,7 @@ fn canaries() -> Vec<Canary> {
                 MISSING_LINK,
             ],
             host_warnings: [
-                &["If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description"],
+                &["If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."],
                 &["Codex may not show this skill if it cannot read the YAML frontmatter."],
                 &["Antigravity CLI may not show this skill if it cannot read the YAML frontmatter."],
             ],
@@ -237,7 +245,7 @@ fn canaries() -> Vec<Canary> {
         },
         Canary {
             host_warnings: [
-                &["Claude Code may display the description differently or omit the skill when the YAML description is a list or mapping."],
+                &["The YAML description is a list or mapping. Claude Code uses the first non-empty body line when a description is omitted. If you want a custom description, write the YAML value as text."],
                 &["Codex does not show this skill because its YAML description is a list or mapping."],
                 &["Antigravity CLI may display the description differently or omit the skill when the YAML description is a list or mapping."],
             ],
@@ -245,7 +253,7 @@ fn canaries() -> Vec<Canary> {
         },
         Canary {
             host_warnings: [
-                &["Claude Code may display the description differently or omit the skill when the YAML description is a list or mapping."],
+                &["The YAML description is a list or mapping. Claude Code uses the first non-empty body line when a description is omitted. If you want a custom description, write the YAML value as text."],
                 &["Codex may display the description differently or omit the skill when the YAML description is a list or mapping."],
                 &["Antigravity CLI may display the description differently or omit the skill when the YAML description is a list or mapping."],
             ],
@@ -413,6 +421,95 @@ fn codex_warns_about_collection_names_and_preserves_plain_scalar_names() {
         let row = rows.iter().find(|row| row["skill"] == name).unwrap();
         assert_eq!(row["errors"], json!([]), "{name}");
         assert_eq!(row["warnings"], json!([expected]), "{name}");
+    }
+}
+
+#[test]
+fn codex_collection_repair_uses_the_effective_value_of_each_field() {
+    let rejects_name = "Codex does not show this skill because its YAML name is a list or mapping. If you want it to appear, use a plain text name.";
+    let rejects_description = "Codex does not show this skill because its YAML description is a list or mapping. If you want it to appear, use a plain text description.";
+    let may_repair_name = "Codex may display the name differently or omit the skill when the YAML name is a list or mapping. If you want a predictable name, use a plain text name.";
+    let cases = [
+        (
+            "name-context",
+            "name: [one, two]\ndescription: A skill.\nextra: 'Unrelated: text'",
+            &[rejects_name][..],
+        ),
+        (
+            "desc-context",
+            "name: desc-context\ndescription: [one, two]\nextra: 'Unrelated: text'",
+            &[rejects_description][..],
+        ),
+        (
+            "name-inline",
+            "{name: [one, two], description: A skill.}",
+            &[rejects_name][..],
+        ),
+        (
+            "name-comment",
+            "name: [one, two] # Unrelated: text\ndescription: A skill.",
+            &[rejects_name][..],
+        ),
+        (
+            "repair-desc",
+            "name: [one, two]\ndescription: {part: text}",
+            &[rejects_name][..],
+        ),
+        (
+            "repair-name",
+            "name: [one, {part: text}]\ndescription: [one, two]",
+            &[may_repair_name, rejects_description][..],
+        ),
+        (
+            "name-alias",
+            "metadata:\n  label: &label [one, {part: text}]\nname: *label\ndescription: A skill.",
+            &[may_repair_name][..],
+        ),
+    ];
+    let canaries = cases.map(|(name, yaml, _)| Canary::new(name, format!("---\n{yaml}\n---\n")));
+    let fixture = with_canaries(&canaries);
+    let result = support_h::json(
+        fixture
+            .command()
+            .args(["validate", "--host", "codex", "--json"]),
+    );
+    assert_eq!(result["ok"], true);
+    let rows = result["skills"].as_array().unwrap();
+    for (name, _, expected) in cases {
+        let row = rows.iter().find(|row| row["skill"] == name).unwrap();
+        assert_eq!(row["errors"], json!([]), "{name}");
+        assert_eq!(row["warnings"], json!(expected), "{name}");
+    }
+}
+
+#[test]
+fn agy_distinguishes_non_text_scalars_from_a_missing_description() {
+    let canaries = [
+        ("bool-desc", "false"),
+        ("zero-desc", "0"),
+        ("null-desc", "null"),
+    ]
+    .map(|(name, value)| {
+        Canary::new(
+            name,
+            format!("---\nname: {name}\ndescription: {value}\n---\n"),
+        )
+    });
+    let fixture = with_canaries(&canaries);
+    let result = support_h::json(
+        fixture
+            .command()
+            .args(["validate", "--host", "agy", "--json"]),
+    );
+    assert_eq!(result["ok"], true);
+    for row in result["skills"].as_array().unwrap() {
+        let expected = if row["skill"] == "null-desc" {
+            "Antigravity CLI shows an empty description because the YAML description is missing or empty. If you want a custom description, add one to the YAML frontmatter."
+        } else {
+            "The YAML description is a non-text scalar. How Antigravity CLI displays it may vary. If you want a text description, put the value in quotes."
+        };
+        assert_eq!(row["errors"], json!([]), "{row}");
+        assert_eq!(row["warnings"], json!([expected]), "{row}");
     }
 }
 

@@ -155,7 +155,7 @@ fn validate(path: &Path, hosts: &[&HostConfig]) -> ValidationResult {
     let mut diagnostics = YamlDiagnostics::default();
     match load_yaml(&yaml, Some(&mut diagnostics)) {
         Ok(metadata) => {
-            for (field, value) in diagnostics.commented_fields {
+            for (field, value) in &diagnostics.commented_fields {
                 const PREVIEW_LEN: usize = 48;
                 let mut chars = value.chars();
                 let mut preview: String = chars.by_ref().take(PREVIEW_LEN).collect();
@@ -166,13 +166,7 @@ fn validate(path: &Path, hosts: &[&HostConfig]) -> ValidationResult {
                     "A YAML comment cuts off '{field}'. Agents see {preview:?}. If you want the full value to appear, put it in quotes."
                 ));
             }
-            host_diagnostics(
-                &metadata,
-                &yaml,
-                diagnostics.plain_name.as_deref(),
-                &readable_hosts,
-                &mut result,
-            );
+            host_diagnostics(&metadata, &diagnostics, &readable_hosts, &mut result);
         }
         Err(error) => {
             warn_frontmatter(error, &mut result);
@@ -180,7 +174,7 @@ fn validate(path: &Path, hosts: &[&HostConfig]) -> ValidationResult {
                 let service = host.display_name;
                 let warning = if host.skill_display.malformed_frontmatter_uses_body {
                     format!(
-                        "If {service} cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+                        "If {service} cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
                     )
                 } else {
                     format!(
@@ -203,8 +197,7 @@ fn warn_frontmatter(error: FrontmatterError, result: &mut ValidationResult) {
 
 fn host_diagnostics(
     metadata: &Mapping,
-    yaml: &str,
-    plain_name: Option<&str>,
+    diagnostics: &YamlDiagnostics,
     hosts: &[&HostConfig],
     result: &mut ValidationResult,
 ) {
@@ -213,28 +206,17 @@ fn host_diagnostics(
     let description_node = get(metadata, "description");
     let name_is_collection = is_yaml_collection(name_node);
     let description_is_collection = is_yaml_collection(description_node);
-    // Codex can quote a flow collection when a value contains a second
-    // colon followed by whitespace. This may also happen via an alias.
-    let may_repair_collection = (name_is_collection || description_is_collection)
-        && yaml
-            .lines()
-            .filter_map(|line| line.split_once(':'))
-            .any(|(_, value)| {
-                value
-                    .match_indices(':')
-                    .any(|(index, _)| value[index + 1..].starts_with(char::is_whitespace))
-            });
     for host in hosts {
         let service = host.display_name;
         let display = &host.skill_display;
-        let rejects_as_text = |node: Option<&Node>| {
+        let rejects_as_text = |node: Option<&Node>, may_be_quoted: bool| {
             display.expects_text_name_and_description
                 && matches!(node, Some(Node::List(_) | Node::Map(_)))
-                && !may_repair_collection
+                && !may_be_quoted
         };
         let uncertain_name = display.expects_text_name_and_description && name_is_collection;
         let name = if uncertain_name {
-            if rejects_as_text(name_node) {
+            if rejects_as_text(name_node, diagnostics.name_may_be_quoted) {
                 result.warnings.push(format!(
                     "{service} does not show this skill because its YAML name is a list or mapping. If you want it to appear, use a plain text name."
                 ));
@@ -245,7 +227,7 @@ fn host_diagnostics(
             ));
             None
         } else if display.expects_text_name_and_description {
-            plain_name.or(legacy_name.as_deref())
+            diagnostics.plain_name.as_deref().or(legacy_name.as_deref())
         } else {
             legacy_name.as_deref()
         };
@@ -283,10 +265,15 @@ fn host_diagnostics(
             .map(Node::python_string)
             .filter(|text| !display.collapse_whitespace || !text.trim().is_empty());
         if description_is_collection {
-            let rejects_type = rejects_as_text(description_node);
+            let rejects_type =
+                rejects_as_text(description_node, diagnostics.description_may_be_quoted);
             let warning = if rejects_type {
                 format!(
                     "{service} does not show this skill because its YAML description is a list or mapping. If you want it to appear, use a plain text description."
+                )
+            } else if display.missing_description == MissingDescription::FirstBodyLine {
+                format!(
+                    "The YAML description is a list or mapping. {service} uses the first non-empty body line when a description is omitted. If you want a custom description, write the YAML value as text."
                 )
             } else {
                 format!(
@@ -326,6 +313,13 @@ fn host_diagnostics(
             if let Some(warning) = description_warning(host, description, extra.as_deref()) {
                 result.warnings.push(warning);
             }
+        } else if !description_is_collection
+            && display.missing_description == MissingDescription::Blank
+            && description_node.is_some_and(|node| !matches!(node, Node::Null | Node::String(_)))
+        {
+            result.warnings.push(format!(
+                "The YAML description is a non-text scalar. How {service} displays it may vary. If you want a text description, put the value in quotes."
+            ));
         } else if !description_is_collection {
             let message = match display.missing_description {
                 MissingDescription::FirstBodyLine => "uses the first body line as the description",
