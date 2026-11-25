@@ -50,18 +50,28 @@ fn without_fenced_code(body: &str) -> String {
             quote_depth += 1;
             content = rest.strip_prefix(' ').unwrap_or(rest);
         }
-        let trimmed = content.trim_start();
-        let indent = content.len() - trimmed.len();
+        let trimmed = content.trim_start_matches([' ', '\t']);
+        let indent = content[..content.len() - trimmed.len()]
+            .bytes()
+            .fold(0, |column, byte| {
+                if byte == b'\t' {
+                    column + (4 - column % 4)
+                } else {
+                    column + 1
+                }
+            });
         if fence.is_some_and(|(_, _, depth, list_indent)| {
             quote_depth < depth
                 || (quote_depth == depth && !trimmed.is_empty() && indent < list_indent)
         }) {
             fence = None;
         }
-        if let Some((marker, width, depth, _)) = fence {
+        if let Some((marker, width, depth, list_indent)) = fence {
+            let rest = trimmed.trim_start_matches(marker);
             if quote_depth == depth
-                && trimmed.len() - trimmed.trim_start_matches(marker).len() >= width
-                && trimmed.trim_start_matches(marker).trim().is_empty()
+                && indent <= list_indent + 3
+                && trimmed.len() - rest.len() >= width
+                && rest.trim_matches([' ', '\t']).is_empty()
             {
                 fence = None;
             }

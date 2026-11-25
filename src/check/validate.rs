@@ -2,6 +2,7 @@
 
 mod links;
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
@@ -10,13 +11,6 @@ use crate::check::frontmatter::{FrontmatterError, Mapping, Node, load_yaml, spli
 use crate::drive::hosts::{HostConfig, MissingDescription};
 
 const MAX_NAME_LEN: usize = 64;
-const OPTIONAL_FIELDS: &[&str] = &[
-    "license",
-    "compatibility",
-    "metadata",
-    "allowed-tools",
-    "allowed_tools",
-];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationResult {
@@ -139,6 +133,19 @@ fn validate(path: &Path, hosts: &[&HostConfig]) -> ValidationResult {
         }
         Err(error) => {
             warn_frontmatter(error, &mut result);
+            for host in readable_hosts {
+                let service = host.display_name;
+                let warning = if host.skill_display.requires_frontmatter {
+                    format!(
+                        "{service} does not show this skill because the YAML frontmatter has no closing '---'. If you want it to appear, add the closing line."
+                    )
+                } else {
+                    format!(
+                        "{service} may treat SKILL.md as body text because the YAML frontmatter has no closing '---'. If you want it to use the YAML fields, add the closing line."
+                    )
+                };
+                result.warnings.push(warning);
+            }
             return result;
         }
     };
@@ -157,16 +164,24 @@ fn validate(path: &Path, hosts: &[&HostConfig]) -> ValidationResult {
                     "A YAML comment cuts off '{field}'. Agents see {preview:?}. If you want the full value to appear, put it in quotes."
                 ));
             }
-            if get(&metadata, "allowed-tools").is_some()
-                || get(&metadata, "allowed_tools").is_some()
-            {
-                result.warnings.push(
-                    "'allowed-tools' has inconsistent host support and may be ignored".into(),
-                );
-            }
-            host_diagnostics(&metadata, &readable_hosts, &mut result);
+            host_diagnostics(&metadata, &yaml, &readable_hosts, &mut result);
         }
-        Err(error) => warn_frontmatter(error, &mut result),
+        Err(error) => {
+            warn_frontmatter(error, &mut result);
+            for host in readable_hosts {
+                let service = host.display_name;
+                let warning = if host.skill_display.malformed_frontmatter_uses_body {
+                    format!(
+                        "If {service} cannot read this YAML, it loads the skill without those fields and uses the first body line as the description. If you want a custom description, fix the YAML."
+                    )
+                } else {
+                    format!(
+                        "{service} may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
+                    )
+                };
+                result.warnings.push(warning);
+            }
+        }
     }
     links::warn_missing(path, &body, &mut result.warnings);
     result
@@ -178,25 +193,84 @@ fn warn_frontmatter(error: FrontmatterError, result: &mut ValidationResult) {
     ));
 }
 
-fn host_diagnostics(metadata: &Mapping, hosts: &[&HostConfig], result: &mut ValidationResult) {
+fn host_diagnostics(
+    metadata: &Mapping,
+    yaml: &str,
+    hosts: &[&HostConfig],
+    result: &mut ValidationResult,
+) {
     let name = field_text(metadata, "name");
-    let description = field_text(metadata, "description");
+    let description_node = get(metadata, "description");
+    let is_collection = matches!(
+        description_node,
+        Some(Node::List(_) | Node::Map(_) | Node::Set(_) | Node::Pair(..))
+    );
+    // Codex can quote a flow collection when a value contains a second
+    // colon followed by whitespace. This may also happen via an alias.
+    let may_repair_collection = is_collection
+        && yaml
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .any(|(_, value)| {
+                value
+                    .match_indices(':')
+                    .any(|(index, _)| value[index + 1..].starts_with(char::is_whitespace))
+            });
     for host in hosts {
         let service = host.display_name;
         let display = &host.skill_display;
-        if let Some(name) = &name {
-            let length = name.chars().count();
-            if let Some(limit) = display.name_limit
-                && length > limit
-            {
-                result.warnings.push(format!(
+        let yaml_name = name
+            .as_deref()
+            .map(|name| display_text(host, name))
+            .filter(|name| !name.is_empty());
+        let folder = &result.skill;
+        let shown = if display.uses_folder_name {
+            folder.as_str()
+        } else {
+            yaml_name.as_deref().unwrap_or(folder)
+        };
+        let length = shown.chars().count();
+        if let Some(limit) = display.name_limit
+            && length > limit
+        {
+            let warning = if yaml_name.is_none() {
+                format!(
+                    "{service} does not show this skill because it uses the {length}-character folder name. If you want it to appear, use a folder name or YAML name of {limit} characters or fewer."
+                )
+            } else {
+                format!(
                     "{service} does not show this skill because its name is {length} characters. If you want it to appear, use a name of {limit} characters or fewer."
-                ));
-                continue;
-            }
+                )
+            };
+            result.warnings.push(warning);
+            continue;
         }
 
-        if description.is_none() && display.missing_description == MissingDescription::Hidden {
+        // Codex accepts plain scalars such as numbers and booleans as text.
+        let description = description_node
+            .filter(|node| !is_collection && !matches!(node, Node::Null))
+            .filter(|node| display.expects_text_description || node.truthy())
+            .map(Node::python_string)
+            .filter(|text| !display.collapse_whitespace || !text.trim().is_empty());
+        if is_collection {
+            let rejects_type = display.expects_text_description
+                && matches!(description_node, Some(Node::List(_) | Node::Map(_)))
+                && !may_repair_collection;
+            let warning = if rejects_type {
+                format!(
+                    "{service} does not show this skill because its YAML description is a list or mapping. If you want it to appear, use a plain text description."
+                )
+            } else {
+                format!(
+                    "{service} may display the description differently or omit the skill when the YAML description is a list or mapping. If you want a text description, put it in quotes or use a YAML text block."
+                )
+            };
+            result.warnings.push(warning);
+            if rejects_type {
+                continue;
+            }
+        } else if description.is_none() && display.missing_description == MissingDescription::Hidden
+        {
             result.warnings.push(format!(
                 "{service} does not show this skill because its description is missing or empty. If you want it to appear, add a description to the YAML frontmatter."
             ));
@@ -204,13 +278,12 @@ fn host_diagnostics(metadata: &Mapping, hosts: &[&HostConfig], result: &mut Vali
         }
 
         if let Some(name) = &name
-            && name != &result.skill
+            && (name != folder || shown != folder)
         {
-            let folder = &result.skill;
-            let (shown, source) = if display.uses_folder_name {
-                (folder, "the folder name")
+            let source = if display.uses_folder_name || yaml_name.is_none() {
+                "the folder name"
             } else {
-                (name, "the YAML name")
+                "the YAML name"
             };
             result.warnings.push(format!(
                 "{service} lists this skill as {shown:?} using {source}. The folder is {folder:?} and the YAML name is {name:?}. If you want the same name across services, make the two names match."
@@ -218,17 +291,14 @@ fn host_diagnostics(metadata: &Mapping, hosts: &[&HostConfig], result: &mut Vali
         }
 
         if let Some(description) = &description {
-            let extra_length = display
+            let extra = display
                 .description_limit
                 .and_then(|limit| limit.extra_field)
-                .and_then(|field| field_text(metadata, field))
-                .map_or(0, |extra| extra.chars().count());
-            if let Some(warning) =
-                description_warning(host, description.chars().count() + extra_length)
-            {
+                .and_then(|field| field_text(metadata, field));
+            if let Some(warning) = description_warning(host, description, extra.as_deref()) {
                 result.warnings.push(warning);
             }
-        } else {
+        } else if !is_collection {
             let message = match display.missing_description {
                 MissingDescription::FirstBodyLine => "uses the first body line as the description",
                 MissingDescription::Blank => "shows an empty description",
@@ -243,8 +313,7 @@ fn host_diagnostics(metadata: &Mapping, hosts: &[&HostConfig], result: &mut Vali
             .iter()
             .filter(|(key, _)| {
                 !matches!(&**key, Node::String(key)
-                    if OPTIONAL_FIELDS.contains(&key.as_str())
-                        || display.frontmatter_keep_fields.contains(&key.as_str()))
+                    if display.frontmatter_keep_fields.contains(&key.as_str()))
             })
             .map(|(key, _)| key.python_string())
             .collect();
@@ -257,20 +326,37 @@ fn host_diagnostics(metadata: &Mapping, hosts: &[&HostConfig], result: &mut Vali
     }
 }
 
-pub(crate) fn description_warning(host: &HostConfig, length: usize) -> Option<String> {
+pub(crate) fn description_warning(
+    host: &HostConfig,
+    description: &str,
+    extra: Option<&str>,
+) -> Option<String> {
     let limit = host.skill_display.description_limit?;
+    let extra = limit
+        .extra_field
+        .zip(extra.filter(|text| !text.trim().is_empty()));
+    let length = display_text(host, description).chars().count()
+        + extra.map_or(0, |(_, text)| display_text(host, text).chars().count());
     if length <= limit.max_chars {
         return None;
     }
-    let subject = limit.extra_field.map_or_else(
+    let subject = extra.map_or_else(
         || "description".to_owned(),
-        |field| format!("description and {field} combined"),
+        |(field, _)| format!("description and {field} combined"),
     );
-    let visible = limit.max_chars - limit.suffix.chars().count();
+    let visible = limit.max_chars.saturating_sub(limit.suffix.chars().count());
     Some(format!(
         "{} shows a shortened {subject} ({length} characters). It keeps the first {visible} characters and adds {:?}. If you want the full text to appear, keep it to {} characters or fewer.",
         host.display_name, limit.suffix, limit.max_chars
     ))
+}
+
+fn display_text<'a>(host: &HostConfig, text: &'a str) -> Cow<'a, str> {
+    if host.skill_display.collapse_whitespace {
+        Cow::Owned(text.split_whitespace().collect::<Vec<_>>().join(" "))
+    } else {
+        Cow::Borrowed(text)
+    }
 }
 
 fn field_text(metadata: &Mapping, name: &str) -> Option<String> {

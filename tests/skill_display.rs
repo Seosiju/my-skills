@@ -11,15 +11,6 @@ const MISSING_DESCRIPTION: [&str; 3] = [
     "Codex does not show this skill because its description is missing",
     "Antigravity CLI shows an empty description",
 ];
-const NAME_DIFFERS: [&str; 3] = [
-    "Claude Code lists this skill as",
-    "Codex lists this skill as",
-    "Antigravity CLI lists this skill as",
-];
-const TRUNCATED: [&str; 2] = [
-    "It keeps the first 1535 characters and adds \"…\".",
-    "It keeps the first 1021 characters and adds \"...\".",
-];
 const MISSING_LINK: &str = "Referenced supporting file not found: missing.md.";
 const YAML_COMMENT: &str = "A YAML comment cuts off 'description'. Agents see \"Some text\".";
 
@@ -44,6 +35,7 @@ impl Canary {
 fn canaries() -> Vec<Canary> {
     let skill = |yaml| format!("---\n{yaml}\n---\nBody first line.\n");
     let described = |name, description| skill(format!("name: {name}\ndescription: {description}"));
+    let quoted = |text: String| serde_json::to_string(&text).unwrap();
     vec![
         Canary::new("minimal", described("minimal", "A minimal skill.")),
         Canary::new("no-name", skill("description: A skill.".into())),
@@ -73,20 +65,55 @@ fn canaries() -> Vec<Canary> {
         },
         Canary {
             host_warnings: [
-                &[NAME_DIFFERS[0]],
-                &["Codex does not show this skill because its name is 70 characters"],
-                &[NAME_DIFFERS[2]],
+                &["Claude Code lists this skill as \"long-name\" using the folder name."],
+                &["Codex does not show this skill because its name is 70 characters. If you want it to appear, use a name of 64 characters or fewer."],
+                &["Antigravity CLI lists this skill as \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\" using the YAML name."],
             ],
             ..Canary::new("long-name", described(&"x".repeat(70), "A skill."))
         },
         Canary::new("desc-800", described("desc-800", &"가".repeat(800))),
         Canary {
-            host_warnings: [&[], &[TRUNCATED[1]], &[]],
+            host_warnings: [&[], &["Codex shows a shortened description (1100 characters). It keeps the first 1021 characters and adds \"...\"."], &[]],
             ..Canary::new("desc-1100", described("desc-1100", &"가".repeat(1100)))
         },
         Canary {
-            host_warnings: [&[TRUNCATED[0]], &[TRUNCATED[1]], &[]],
+            host_warnings: [
+                &["Claude Code shows a shortened description (2000 characters). It keeps the first 1535 characters and adds \"…\"."],
+                &["Codex shows a shortened description (2000 characters). It keeps the first 1021 characters and adds \"...\"."],
+                &[],
+            ],
             ..Canary::new("desc-2000", described("desc-2000", &"가".repeat(2000)))
+        },
+        Canary::new(
+            "desc-trimmed",
+            described("desc-trimmed", &quoted(format!("{}{}{}", " ".repeat(100), "가".repeat(1000), " ".repeat(100)))),
+        ),
+        Canary::new(
+            "desc-folded-edge",
+            described("desc-folded-edge", &quoted(format!("{}\t\u{a0} \n{}", "가".repeat(512), "나".repeat(511)))),
+        ),
+        Canary {
+            host_warnings: [&[], &["Codex shows a shortened description (1025 characters). It keeps the first 1021 characters and adds \"...\"."], &[]],
+            ..Canary::new(
+                "desc-folded-over",
+                described("desc-folded-over", &quoted(format!("{}\t\u{a0} \n{}", "가".repeat(512), "나".repeat(512)))),
+            )
+        },
+        Canary {
+            shared_warnings: &["Referenced supporting file not found: actual-missing.md."],
+            ..Canary::new(
+                "fence-indent",
+                described("fence-indent", "A link diagnostic check.")
+                    + "~~~md\n    ~~~\n[Inside code](false-positive.md)\n~~~\n\n[Outside code](actual-missing.md)\n",
+            )
+        },
+        Canary {
+            host_warnings: [
+                &[],
+                &["Codex ignores these YAML fields: allowed-tools, argument-hint, model, paths."],
+                &["Antigravity CLI ignores these YAML fields: allowed-tools, argument-hint, model, paths."],
+            ],
+            ..Canary::new("claude-fields", skill("name: claude-fields\ndescription: A skill.\nallowed-tools: Read\nargument-hint: '[value]'\nmodel: sonnet\npaths: ['docs/**']".into()))
         },
         Canary {
             host_warnings: [
@@ -159,16 +186,45 @@ fn canaries() -> Vec<Canary> {
                 "my-skills could not read the YAML frontmatter.",
                 MISSING_LINK,
             ],
+            host_warnings: [
+                &["If Claude Code cannot read this YAML, it loads the skill without those fields and uses the first body line as the description"],
+                &["Codex may not show this skill if it cannot read the YAML frontmatter."],
+                &["Antigravity CLI may not show this skill if it cannot read the YAML frontmatter."],
+            ],
             ..Canary::new(
                 "invalid-yaml",
                 described("invalid-yaml", "[unclosed") + "[Missing](missing.md)\n",
             )
         },
         Canary {
+            shared_warnings: &["unterminated frontmatter: no closing '---' delimiter found"],
+            host_warnings: [
+                &["Claude Code may treat SKILL.md as body text because the YAML frontmatter has no closing '---'."],
+                &["Codex does not show this skill because the YAML frontmatter has no closing '---'."],
+                &["Antigravity CLI does not show this skill because the YAML frontmatter has no closing '---'."],
+            ],
+            ..Canary::new("unterminated", "---\nname: unterminated\ndescription: A skill.\n".into())
+        },
+        Canary {
+            host_warnings: [
+                &["Claude Code may display the description differently or omit the skill when the YAML description is a list or mapping."],
+                &["Codex does not show this skill because its YAML description is a list or mapping."],
+                &["Antigravity CLI may display the description differently or omit the skill when the YAML description is a list or mapping."],
+            ],
+            ..Canary::new("list-description", described("list-description", "[one, two]"))
+        },
+        Canary {
+            host_warnings: [
+                &["Claude Code may display the description differently or omit the skill when the YAML description is a list or mapping."],
+                &["Codex may display the description differently or omit the skill when the YAML description is a list or mapping."],
+                &["Antigravity CLI may display the description differently or omit the skill when the YAML description is a list or mapping."],
+            ],
+            ..Canary::new("repairable-description", described("repairable-description", "{part: text}"))
+        },
+        Canary {
             host_warnings: [
                 &[
-                    "description and when_to_use combined (1537 characters)",
-                    TRUNCATED[0],
+                    "Claude Code shows a shortened description and when_to_use combined (1537 characters). It keeps the first 1535 characters and adds \"…\".",
                 ],
                 &["Codex ignores these YAML fields: when_to_use."],
                 &["Antigravity CLI ignores these YAML fields: when_to_use."],
@@ -209,6 +265,7 @@ fn assert_warnings(row: &Value, expected: &[&str], label: &str) {
     assert_eq!(row["ok"], true, "{label}: {row}");
     assert_eq!(row["errors"], json!([]), "{label}: {row}");
     let warnings = row["warnings"].as_array().unwrap();
+    assert_eq!(warnings.len(), expected.len(), "{label}: {warnings:?}");
     for expected in expected {
         assert!(
             warnings
@@ -249,6 +306,42 @@ fn validate_reports_canary_display_for_only_the_selected_host() {
             assert_warnings(row, &expected, &format!("{host} / {}", canary.name));
         }
     }
+}
+
+#[test]
+fn validate_uses_the_manifest_hosts_without_an_override() {
+    let canaries = canaries();
+    let fixture = with_canaries(&canaries);
+    let manifest = fs::read_to_string(fixture.manifest()).unwrap().replace(
+        "[skills.desc-2000]\n",
+        "[skills.desc-2000]\nhosts = ['claude']\n",
+    );
+    fs::write(fixture.manifest(), manifest).unwrap();
+    let result = support_h::json(fixture.command().args(["validate", "desc-2000", "--json"]));
+    assert_warnings(
+        &result["skills"][0],
+        &["Claude Code shows a shortened description (2000 characters)."],
+        "claude-only skill",
+    );
+}
+
+#[test]
+fn codex_checks_the_length_of_a_drafts_fallback_folder_name() {
+    let fixture = with_canaries(&[]);
+    let name = "a".repeat(65);
+    let dir = fixture.canonical(&name);
+    fs::create_dir(&dir).unwrap();
+    fs::write(dir.join("SKILL.md"), "---\ndescription: A skill.\n---\n").unwrap();
+    let result = support_h::json(fixture.command().args(["validate", &name, "--json"]));
+    assert_eq!(
+        result["skills"][0],
+        json!({
+            "skill": name,
+            "ok": true,
+            "errors": [],
+            "warnings": ["Codex does not show this skill because it uses the 65-character folder name. If you want it to appear, use a folder name or YAML name of 64 characters or fewer."]
+        })
+    );
 }
 
 #[test]

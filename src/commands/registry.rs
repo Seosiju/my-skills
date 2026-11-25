@@ -496,12 +496,20 @@ fn create_new_skill(args: &NewArgs) -> Result<()> {
     }
     share::ensure_outside_hosts(&manifest_path, share::target_paths(&manifest))?;
     share::ensure_outside_hosts(&canonical_dir, share::target_paths(&manifest))?;
-    let warnings = crate::check::validate::description_warning(
-        &crate::drive::hosts::CODEX,
-        description.chars().count(),
-    )
-    .into_iter()
-    .collect();
+    let warnings = crate::drive::hosts::ALL
+        .into_iter()
+        .filter(|host| {
+            if hosts.is_empty() {
+                manifest
+                    .targets
+                    .get(host.name)
+                    .is_some_and(|target| target.enabled)
+            } else {
+                hosts.iter().any(|name| name == host.name)
+            }
+        })
+        .filter_map(|host| crate::check::validate::description_warning(host, description, None))
+        .collect();
 
     let canonical_dir_text = display_path(&canonical_dir);
     let canonical_path_text = display_path(&canonical_path);

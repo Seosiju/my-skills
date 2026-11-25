@@ -114,11 +114,13 @@ string when guidance is available and `null` otherwise.
 
 `skills --json` includes the absolute `canonical_path` and the manifest `group`
 (or `null`) in each row. Repeatable `--group` matches any of the supplied groups
-and combines with the host and enabled-state filters.
+and combines with the host and enabled-state filters. Text output labels
+skills without a readable YAML description as `(no description)`. JSON uses
+an empty `description` for these skills.
 
 `skills --json --brief` returns the top-level `registry` and `skills` keys.
 Each row has `name`, `enabled`, `hosts`, `group`, and `status`, plus `error`
-if skill metadata is missing or invalid. With `--with-governance`, brief rows
+if skill metadata could not be read. With `--with-governance`, brief rows
 nest `audit` and `provenance` under `governance`. Full rows put `audit` and
 `provenance` at the row level. `--with-status` is an alias for
 `--with-governance`. `--brief` applies to JSON output.
@@ -132,7 +134,8 @@ bytes and report how the selected services display the skill, including
 anything they hide, shorten, or name differently.
 With no selection, `validate` checks all directories under the skills root,
 including unregistered skills. It reports display warnings for enabled,
-applicable hosts. Use `--host <HOST>` to check a particular host.
+applicable hosts. Use `validate --host <HOST>` to preview how that host would
+display the skill even when it is disabled or outside the skill's host list.
 
 For consistent display, use UTF-8 without a BOM and open the file with a
 YAML block between `---` lines. Set `name` to the folder name, using lowercase
@@ -267,8 +270,10 @@ creates `skills/<NAME>/SKILL.md` and registers `[skills.<NAME>]` with
 passed). It holds `my-skills.toml.edit-lock` for the whole operation without
 taking the state lock (`--dry-run` checks lock availability and writes nothing).
 
-Descriptions longer than 1,024 characters are saved in full and produce a
-Codex display warning, available in `warnings` with `--json`.
+`new` saves long descriptions in full and warns when a selected service
+would shorten them. The selection is the explicit `--host` list, or the
+enabled targets when no host is specified. JSON includes any warnings in
+`warnings`.
 
 All checks run before writing. They cover skill and group name rules
 (`invalid_name`), a non-blank `--description` (`usage`), active-registry write policy
@@ -343,9 +348,10 @@ Both `doctor` and `doctor --quick` report catalog description cost per enabled
 host. Text output prints a `Catalog:` summary line (or `Catalog: no enabled hosts`),
 and JSON attaches `catalog: {skills, description_chars, longest, invalid}` to
 each enabled host row (`longest` lists up to two `{name, chars}` entries).
-Counts measure Unicode characters across wanted skills; missing or malformed
-descriptions count as `0` characters and increment `invalid` without appearing
-in `longest`. Disabled hosts and reports without a loaded manifest omit
+Counts measure Unicode characters across wanted skills. Skills without a
+readable YAML description count as `0` characters and are left out of
+`longest`. JSON retains the `invalid` key for this count. Disabled hosts and
+reports without a loaded manifest omit
 `catalog`.
 
 Each built-in host row includes `configured_mode` (`link`, `copy`, or `null`

@@ -1,3 +1,6 @@
+//! Exact snapshots of current Rust diagnostics. The v0.4.1 Python oracle
+//! was removed when the validation contract changed.
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -226,7 +229,14 @@ fn host_configuration_controls_limits_and_kept_fields() {
                 suffix: "…",
                 extra_field: None,
             }),
-            frontmatter_keep_fields: &["name", "description", "custom"],
+            frontmatter_keep_fields: &[
+                "name",
+                "description",
+                "custom",
+                "license",
+                "compatibility",
+                "metadata",
+            ],
             ..CLAUDE.skill_display
         },
         ..CLAUDE

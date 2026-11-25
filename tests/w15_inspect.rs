@@ -125,7 +125,7 @@ fn status_unions_names_and_groups_with_existing_disabled_skill_labels() {
 }
 
 #[test]
-fn validate_warns_once_for_extra_fields_and_separately_for_allowed_tools() {
+fn validate_reports_ignored_fields_for_each_target_host() {
     let fixture = Fixture::repo();
     let mut manifest = fs::read_to_string(fixture.manifest()).unwrap();
     manifest = manifest.replace(
@@ -144,10 +144,9 @@ fn validate_warns_once_for_extra_fields_and_separately_for_allowed_tools() {
     assert_eq!(
         result["skills"][0]["warnings"],
         json!([
-            "'allowed-tools' has inconsistent host support and may be ignored",
             "Claude Code ignores these YAML fields: foo. If you want Claude Code to see that information, put it in a supported field or the skill body.",
-            "Codex ignores these YAML fields: foo. If you want Codex to see that information, put it in a supported field or the skill body.",
-            "Antigravity CLI ignores these YAML fields: foo. If you want Antigravity CLI to see that information, put it in a supported field or the skill body.",
+            "Codex ignores these YAML fields: allowed-tools, foo. If you want Codex to see that information, put it in a supported field or the skill body.",
+            "Antigravity CLI ignores these YAML fields: allowed-tools, foo. If you want Antigravity CLI to see that information, put it in a supported field or the skill body.",
         ])
     );
     let explicit = output(
@@ -159,8 +158,7 @@ fn validate_warns_once_for_extra_fields_and_separately_for_allowed_tools() {
     assert_eq!(
         explicit["skills"][0]["warnings"],
         json!([
-            "'allowed-tools' has inconsistent host support and may be ignored",
-            "Codex ignores these YAML fields: foo. If you want Codex to see that information, put it in a supported field or the skill body.",
+            "Codex ignores these YAML fields: allowed-tools, foo. If you want Codex to see that information, put it in a supported field or the skill body.",
         ])
     );
 }
@@ -209,7 +207,9 @@ fn doctor_reports_catalog_cost_in_characters_in_both_modes() {
 fn doctor_counts_missing_and_malformed_metadata_without_failing() {
     let fixture = fixture();
     let mut manifest = fs::read_to_string(fixture.manifest()).unwrap();
-    manifest.push_str("\n[skills.missing]\n[skills.malformed]\nhosts = ['codex']\n");
+    manifest.push_str(
+        "\n[skills.missing]\n[skills.malformed]\nhosts = ['codex']\n[skills.no-description]\n",
+    );
     fs::write(fixture.manifest(), manifest).unwrap();
     let malformed = fixture.canonical("malformed");
     fs::create_dir(&malformed).unwrap();
@@ -218,15 +218,35 @@ fn doctor_counts_missing_and_malformed_metadata_without_failing() {
         "---\ndescription: {broken\n---\n",
     )
     .unwrap();
+    fs::create_dir(fixture.canonical("no-description")).unwrap();
+    fs::write(
+        fixture.canonical("no-description").join("SKILL.md"),
+        "---\nname: no-description\n---\nBody.\n",
+    )
+    .unwrap();
     for mode in ["--quick", "--no-update-check"] {
         let report = output(fixture.command().args(["doctor", mode, "--json"]), 0);
         let hosts = report["hosts"].as_array().unwrap();
-        for (name, skills, chars, invalid) in [("claude", 3, 26, 1), ("codex", 3, 21, 2)] {
+        for (name, skills, chars, invalid) in [("claude", 4, 26, 2), ("codex", 4, 21, 3)] {
             let catalog = &hosts.iter().find(|host| host["name"] == name).unwrap()["catalog"];
             assert_eq!(catalog["skills"], skills);
             assert_eq!(catalog["description_chars"], chars);
             assert_eq!(catalog["invalid"], invalid);
             assert_eq!(catalog["longest"][0]["name"], "beta");
         }
+        let result = fixture.command().args(["doctor", mode]).assert().success();
+        let text = std::str::from_utf8(&result.get_output().stdout).unwrap();
+        let catalog = text
+            .lines()
+            .find(|line| line.starts_with("Catalog: "))
+            .unwrap();
+        assert!(catalog.contains(
+            "claude 4 skills / 26 chars (longest: beta 21, alpha 5) (2 without a description)"
+        ));
+        assert!(
+            catalog
+                .contains("codex 4 skills / 21 chars (longest: beta 21) (3 without a description)")
+        );
+        assert!(!catalog.contains("invalid"));
     }
 }

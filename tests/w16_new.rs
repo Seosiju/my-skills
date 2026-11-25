@@ -512,6 +512,61 @@ fn blank_description_errors_share_one_prefix_and_lengths_only_warn() {
 }
 
 #[test]
+fn long_description_warnings_follow_the_explicit_or_enabled_hosts() {
+    let fixture = fixture();
+    let description = "가".repeat(1600);
+    let claude = "Claude Code shows a shortened description (1600 characters). It keeps the first 1535 characters and adds \"…\". If you want the full text to appear, keep it to 1536 characters or fewer.";
+    let codex = "Codex shows a shortened description (1600 characters). It keeps the first 1021 characters and adds \"...\". If you want the full text to appear, keep it to 1024 characters or fewer.";
+    let base = ["draft", "--description", &description, "--dry-run"];
+    for (hosts, expected) in [
+        (&[][..], json!([claude, codex])),
+        (&["--host", "claude"][..], json!([claude])),
+        (&["--host", "codex"][..], json!([codex])),
+        (&["--host", "agy"][..], Value::Null),
+        (&["--host", "agy", "--host", "claude"][..], json!([claude])),
+    ] {
+        let result = new_json(&fixture, &[&base[..], hosts].concat(), 0);
+        assert_eq!(result["warnings"], expected, "{hosts:?}: {result}");
+    }
+
+    let manifest = fs::read_to_string(fixture.manifest()).unwrap().replace(
+        "[targets.codex]\nenabled = true",
+        "[targets.codex]\nenabled = false",
+    );
+    fs::write(fixture.manifest(), manifest).unwrap();
+    assert_eq!(new_json(&fixture, &base, 0)["warnings"], json!([claude]));
+    assert_eq!(
+        new_json(&fixture, &[&base[..], &["--host", "codex"]].concat(), 0)["warnings"],
+        json!([codex])
+    );
+    assert!(!fixture.canonical("draft").exists());
+}
+
+#[test]
+fn new_uses_codex_whitespace_rules_without_changing_the_saved_description() {
+    let fixture = fixture();
+    let description = format!(
+        "{} \t\u{a0}{}{}",
+        "a".repeat(500),
+        " ".repeat(100),
+        "b".repeat(500)
+    );
+    let output = new_json(
+        &fixture,
+        &["draft", "--host", "codex", "--description", &description],
+        0,
+    );
+    assert!(output.get("warnings").is_none(), "{output}");
+    let text = fs::read_to_string(fixture.canonical("draft").join("SKILL.md")).unwrap();
+    assert_eq!(
+        parse_frontmatter(&text).unwrap().0["description"],
+        YamlValue::String(description)
+    );
+    let validation = support_h::json(fixture.command().args(["validate", "draft", "--json"]));
+    assert_eq!(validation["skills"][0]["warnings"], json!([]));
+}
+
+#[test]
 fn new_quotes_scalar_like_names_and_preserves_line_separators_in_descriptions() {
     let fixture = fixture();
     let description = "One # heading\u{85}Two\u{2028}Three\u{2029}Four";

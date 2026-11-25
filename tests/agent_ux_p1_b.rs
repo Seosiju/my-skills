@@ -201,8 +201,8 @@ fn validate_shares_the_gate_and_respects_host_and_group_selection() {
     let warnings = rows[0]["warnings"].as_array().unwrap();
     assert_eq!(warnings.len(), 3);
     for text in [
-        "inconsistent host support",
-        "Claude Code shows a shortened",
+        "Codex ignores these YAML fields: allowed-tools.",
+        "Claude Code shows a shortened description (2000 characters).",
         "Codex shows a shortened",
     ] {
         assert!(
@@ -226,7 +226,9 @@ fn validate_shares_the_gate_and_respects_host_and_group_selection() {
     assert_eq!(narrowed["skills"][0]["errors"], json!([]));
     assert_eq!(
         narrowed["skills"][0]["warnings"],
-        json!(["'allowed-tools' has inconsistent host support and may be ignored"])
+        json!([
+            "Antigravity CLI ignores these YAML fields: allowed-tools. If you want Antigravity CLI to see that information, put it in a supported field or the skill body."
+        ])
     );
 
     let doctor = read_json(

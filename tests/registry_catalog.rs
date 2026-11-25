@@ -47,18 +47,31 @@ fn skills_table_shows_per_host_status_columns_without_summary() {
 }
 
 #[test]
-fn skills_table_includes_invalid_rows_without_failing() {
+fn skills_table_labels_rows_without_a_readable_description() {
     let fixture = catalog();
     fixture.write_manifest(&format!(
-        "{CATALOG}\n[skills.broken]\nenabled = true\nhosts = [\"claude\"]\n"
+        "{CATALOG}\n[skills.broken]\nenabled = true\nhosts = [\"claude\"]\n[skills.no-frontmatter]\n[skills.no-description]\n"
     ));
+    for (name, content) in [
+        ("no-frontmatter", "Body text."),
+        (
+            "no-description",
+            "---\nname: no-description\n---\nBody text.",
+        ),
+    ] {
+        fs::create_dir(fixture.canonical(name)).unwrap();
+        fs::write(fixture.canonical(name).join("SKILL.md"), content).unwrap();
+    }
     fixture
         .command()
         .arg("skills")
         .assert()
         .success()
         .stderr("")
-        .stdout(predicate::str::contains("broken (invalid)"))
+        .stdout(predicate::str::contains("broken (no description)"))
+        .stdout(predicate::str::contains("no-frontmatter (no description)"))
+        .stdout(predicate::str::contains("no-description (no description)"))
+        .stdout(predicate::str::contains("(invalid)").not())
         .stdout(predicate::str::contains("alpha").and(predicate::str::contains("gamma")));
 }
 
@@ -89,7 +102,7 @@ fn skills_json_filters_by_host_and_enabled_state() {
 }
 
 #[test]
-fn skills_json_includes_invalid_row_error() {
+fn skills_json_includes_metadata_read_errors_without_inventing_a_description() {
     let fixture = catalog();
     fixture.write_manifest(&format!(
         "{CATALOG}\n[skills.broken]\nenabled = true\nhosts = [\"claude\"]\n"
@@ -107,11 +120,12 @@ fn skills_json_includes_invalid_row_error() {
         ["alpha", "broken", "gamma"]
     );
     assert_eq!(rows[1]["status"], json!({"claude": "MISSING"}));
+    assert_eq!(rows[1]["description"], "");
     assert!(
-        rows[1]["description"]
+        rows[1]["error"]
             .as_str()
             .unwrap()
-            .starts_with("invalid: ")
+            .starts_with("Could not read skill metadata:")
     );
     assert!(rows[1]["error"].as_str().unwrap().contains("SKILL.md"));
 }
