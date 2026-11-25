@@ -11,7 +11,6 @@ fn repo() -> Fixture {
     let fixture = Fixture::repo();
     fixture.write_manifest(
         "[defaults]\ninstall_mode = 'link'\n\
-         [audit]\nthreshold = 'medium'\n\
          [skills.alpha]\ngroup = 'test-batch'\n[skills.beta]\ngroup = 'test-batch'\n",
     );
     for name in ["alpha", "beta"] {
@@ -135,35 +134,30 @@ fn group_validation_failure_prevents_a_good_skills_copy_update() {
 }
 
 #[test]
-fn explicit_sync_audits_fresh_links_across_hosts_without_yes() {
+fn explicit_sync_validates_fresh_links_across_hosts_without_yes() {
     let fixture = repo();
     fixture
         .command()
         .args(["install", "alpha", "--host", "codex", "--yes"])
         .assert()
         .success();
-    skill(
-        &fixture.registry.join("skills"),
-        "alpha",
-        "A synthetic test skill.",
-        "![Example](https://example.invalid/remote.png)",
-    );
+    break_alpha(&fixture);
     let state = fs::read(fixture.state()).unwrap();
     fixture
         .command()
         .args(["sync", "alpha"])
         .assert()
         .code(1)
-        .stdout(contains("AUDIT BLOCKED"))
-        .stdout(contains("markdown-remote-image"));
-    let preview = support_h::json(
-        fixture
-            .command()
-            .args(["sync", "alpha", "--dry-run", "--json"]),
-    );
+        .stdout(contains("SKILL.md not found"));
+    let preview = fixture
+        .command()
+        .args(["sync", "alpha", "--dry-run", "--json"])
+        .assert()
+        .code(1);
+    let preview: Value = serde_json::from_slice(&preview.get_output().stdout).unwrap();
     assert_eq!(preview["blocked"], true);
-    assert_eq!(preview["audit"]["blocked"], true);
-    assert_eq!(preview["block_reasons"][0]["kind"], "audit");
+    assert_eq!(preview["applicable"], false);
+    assert_eq!(preview["block_reasons"][0]["kind"], "validation");
     assert_eq!(state, fs::read(fixture.state()).unwrap());
 }
 
@@ -185,7 +179,13 @@ fn converting_a_live_link_to_copy_checks_the_snapshot_before_replacing_it() {
         ])
         .assert()
         .code(1)
-        .stdout(contains("[BLOCKED] alpha: validation failed"));
+        .stdout(contains("[BLOCKED] alpha: validation failed"))
+        .stdout(contains("SKILL.md not found"));
+    assert_eq!(state, fs::read(fixture.state()).unwrap());
+    assert!(matches!(
+        link::entry_kind(&fixture.host("claude").join("alpha")).unwrap(),
+        EntryKind::Link(_)
+    ));
     fixture
         .command()
         .args([
@@ -253,7 +253,7 @@ fn sync_previews_validate_the_files_the_copy_will_keep() {
 }
 
 #[test]
-fn mixed_modes_report_validation_and_audit_once_per_skill() {
+fn mixed_modes_report_validation_once_per_skill() {
     let fixture = repo();
     fixture
         .command()
@@ -261,28 +261,6 @@ fn mixed_modes_report_validation_and_audit_once_per_skill() {
         .assert()
         .success();
     let state = fs::read(fixture.state()).unwrap();
-    skill(
-        &fixture.registry.join("skills"),
-        "alpha",
-        "A fixture skill.",
-        "![Remote](https://example.invalid/fixture.png)",
-    );
-    fixture
-        .command()
-        .args(["sync", "alpha", "--yes"])
-        .assert()
-        .code(1)
-        .stdout(contains("alpha: blocked").count(1))
-        .stdout(contains("markdown-remote-image").count(1));
-    let preview =
-        support_h::json(
-            fixture
-                .command()
-                .args(["sync", "alpha", "--dry-run", "--json", "--yes"]),
-        );
-    assert_eq!(preview["audit"]["skills"].as_array().unwrap().len(), 1);
-    assert_eq!(preview["block_reasons"].as_array().unwrap().len(), 1);
-
     break_alpha(&fixture);
     fixture
         .command()
@@ -320,7 +298,7 @@ fn mixed_modes_report_validation_and_audit_once_per_skill() {
 }
 
 #[test]
-fn convert_to_copy_preview_reports_audit_block() {
+fn convert_to_copy_preserves_skill_content_with_remote_image() {
     let fixture = repo();
     let before = fs::read(fixture.state()).unwrap();
     skill(
@@ -341,16 +319,21 @@ fn convert_to_copy_preview_reports_audit_block() {
             "--dry-run",
         ])
         .assert()
-        .code(1)
-        .stdout(contains("AUDIT WOULD BLOCK"))
-        .stdout(contains("markdown-remote-image"));
+        .success();
+    assert_eq!(fs::read(fixture.state()).unwrap(), before);
     fixture
         .command()
         .args([
             "convert", "alpha", "--to", "copy", "--host", "claude", "--yes",
         ])
         .assert()
-        .code(1)
-        .stdout(contains("AUDIT BLOCKED"));
-    assert_eq!(fs::read(fixture.state()).unwrap(), before);
+        .success();
+    assert_eq!(
+        fs::read(fixture.host("claude").join("alpha/SKILL.md")).unwrap(),
+        fs::read(fixture.canonical("alpha").join("SKILL.md")).unwrap()
+    );
+    assert_eq!(
+        link::entry_kind(&fixture.host("claude").join("alpha")).unwrap(),
+        EntryKind::Dir
+    );
 }

@@ -4,7 +4,6 @@ use std::fs;
 use std::path::Path;
 
 use assert_cmd::Command;
-use my_skills::check::audit::{AuditPolicy, run_audit};
 use predicates::prelude::*;
 use support_h::{Fixture, external, link_dir, plain, skill};
 
@@ -194,15 +193,25 @@ fn import_enable_registers_skill_present_only_in_local_overlay() {
 }
 
 #[test]
-fn import_validation_block_does_not_modify_manifest() {
+fn import_missing_skill_file_does_not_modify_manifest() {
     let fixture = Fixture::repo();
     let source = external(&fixture, "# Example\n");
-    fs::write(
-        source.join("reference.txt"),
-        "-----BEGIN PRIVATE KEY-----\nexample\n-----END PRIVATE KEY-----\n",
-    )
-    .unwrap();
-    assert_blocked(&fixture, &source, "validation failed", true);
+    fs::remove_file(source.join("SKILL.md")).unwrap();
+    let original = fs::read(fixture.manifest()).unwrap();
+
+    import(&fixture, &source)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "is not an Agent Skill (no SKILL.md)",
+        ));
+    assert_eq!(fs::read(fixture.manifest()).unwrap(), original);
+    assert_eq!(
+        fs::read_dir(fixture.registry.join("skills"))
+            .unwrap()
+            .count(),
+        0
+    );
 }
 
 #[test]
@@ -229,7 +238,7 @@ fn import_rejects_source_symlink_without_copy_or_registration() {
     let fixture = Fixture::repo();
     let source = external(&fixture, "# Example\n");
     link_dir(&fixture.root.join("elsewhere"), &source.join("refs"));
-    assert_blocked(&fixture, &source, "  symlink: refs", true);
+    assert_blocked(&fixture, &source, "  symlink: refs");
 }
 
 #[test]
@@ -238,16 +247,13 @@ fn import_rejects_symlinked_source_root_without_registration() {
     let source = external(&fixture, "# Example\n");
     let alias = fixture.root.join("source-link");
     link_dir(&source, &alias);
-    assert_blocked(&fixture, &alias.join(""), "  symlink: .", true);
+    assert_blocked(&fixture, &alias.join(""), "  symlink: .");
 }
 
-fn assert_blocked(fixture: &Fixture, source: &Path, message: &str, skip_audit: bool) {
+fn assert_blocked(fixture: &Fixture, source: &Path, message: &str) {
     let original = fs::read(fixture.manifest()).unwrap();
-    let mut cmd = import(fixture, source);
-    if skip_audit {
-        cmd.arg("--skip-audit");
-    }
-    cmd.assert()
+    import(fixture, source)
+        .assert()
         .code(1)
         .stdout(predicate::str::contains(message))
         .stderr("\nNothing was imported (fix the source first).\n");
@@ -312,35 +318,21 @@ fn import_and_validate_accept_binary_assets() {
         .assert()
         .success()
         .stdout("[OK] brand\n");
-    fixture
-        .command()
-        .args(["audit", "brand"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("nul-byte").not());
 }
 
 #[test]
-fn import_still_blocks_unexpected_nul_bytes() {
+fn import_preserves_files_containing_nul_bytes() {
+    let fixture = Fixture::repo();
+    let source = external(&fixture, "# Brand\n");
+    let bytes = b"Plain text with a NUL byte\0\n";
     for file in ["fake.png", "notes", "notes.md"] {
-        let fixture = Fixture::repo();
-        let source = external(&fixture, "# Brand\n");
-        fs::write(source.join(file), b"Plain text with a NUL byte\0\n").unwrap();
-
-        let audit = run_audit(&source, &AuditPolicy::default()).unwrap();
-        assert!(
-            audit
-                .findings
-                .iter()
-                .any(|finding| finding.rule_id == "nul-byte" && finding.file == file),
-            "{file}: {:?}",
-            audit.findings
-        );
-        assert_blocked(
-            &fixture,
-            &source,
-            &format!("security: {file}: file contains a NUL byte"),
-            false,
+        fs::write(source.join(file), bytes).unwrap();
+    }
+    import(&fixture, &source).assert().success();
+    for file in ["fake.png", "notes", "notes.md"] {
+        assert_eq!(
+            fs::read(fixture.canonical("brand").join(file)).unwrap(),
+            bytes
         );
     }
 }
@@ -438,34 +430,6 @@ fn import_warns_about_malformed_frontmatter_and_keeps_the_bytes() {
 }
 
 #[test]
-fn import_enforces_audit_threshold_and_explicit_skip() {
-    let fixture = Fixture::repo();
-    fixture.write_manifest("\n[audit]\nthreshold = \"low\"\n");
-    let source = external(
-        &fixture,
-        "# Brand\n\n![Badge](https://example.invalid/badge.png)\n",
-    );
-    import(&fixture, &source)
-        .assert()
-        .code(1)
-        .stdout(predicate::str::contains("AUDIT BLOCKED"))
-        .stderr("\nNothing was imported (audit blocked).\n");
-    assert_eq!(
-        fs::read_dir(fixture.registry.join("skills"))
-            .unwrap()
-            .count(),
-        0
-    );
-    import(&fixture, &source)
-        .arg("--skip-audit")
-        .assert()
-        .success()
-        .stdout(predicate::str::starts_with(
-            "WARN: audit skipped by explicit --skip-audit\n",
-        ));
-}
-
-#[test]
 fn import_refuses_force_over_canonical_link() {
     let fixture = Fixture::repo();
     let source = external(&fixture, "# New\n");
@@ -521,7 +485,6 @@ fn import_refuses_to_copy_machine_local_skill_data() {
     );
     let original = fs::read(fixture.manifest()).unwrap();
     import(&fixture, &source)
-        .arg("--skip-audit")
         .assert()
         .code(1)
         .stdout(predicate::str::contains(

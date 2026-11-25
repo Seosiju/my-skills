@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 This project follows a GitHub-first release flow. Git tags and GitHub Releases
 are the release source of truth while PyPI publishing remains undecided.
 
+## [Unreleased]
+
+### Removed
+
+- Removed the `audit` command, `--skip-audit` flags, and audit-based findings and refusals across skill workflows. Existing manifests and state can still be read. `skills --with-governance` still reports provenance.
+- Removed binary signature and NUL-byte checks and encoding notices for non-UTF-8 supporting files.
+
 ## [1.3.2] - 2026-11-25
 
 ### Changed

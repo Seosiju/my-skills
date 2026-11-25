@@ -136,9 +136,36 @@ fn share_apply_imports_registers_and_adopts_source() {
         json!({"claude": "FRESH", "codex": "MISSING"})
     );
     assert_eq!(row["provenance"]["trust_tier"], "imported-local");
+    assert_eq!(row["provenance"]["source_type"], "host");
+    assert!(row["provenance"].get("last_audit_result_hash").is_none());
+}
+
+#[test]
+fn catalog_ignores_shared_provenance_from_another_registry() {
+    let source = Fixture::repo();
+    host_skill(&source, "example");
+    share(&source)
+        .args(["example", "--enable"])
+        .assert()
+        .success();
+
+    let local = Fixture::repo();
+    local.write_manifest("[skills.example]\n");
+    skill(
+        &local.registry.join("skills"),
+        "example",
+        "A locally authored skill.",
+        "# Local example\n",
+    );
+    let catalog = json(
+        local
+            .command()
+            .env("XDG_STATE_HOME", source.root.join("state"))
+            .args(["skills", "--with-governance", "--json"]),
+    );
     assert_eq!(
-        row["provenance"]["last_audit_result_hash"],
-        record.last_audit_result_hash
+        catalog["skills"][0]["provenance"],
+        json!({"source_type": "canonical", "trust_tier": "local-authored"})
     );
 }
 
@@ -215,21 +242,6 @@ fn share_apply_disable_registers_disabled_skill() {
 }
 
 #[test]
-fn share_apply_records_manifest_audit_policy() {
-    let fixture = Fixture::repo();
-    fixture.write_manifest("\n[audit]\nprofile = \"permissive\"\n");
-    host_skill(&fixture, "brand");
-    share(&fixture)
-        .args(["brand", "--enable"])
-        .assert()
-        .success();
-    let state = my_skills::drive::state::State::load(Some(&fixture.state())).unwrap();
-    let record = state.get("brand", "claude").unwrap();
-    assert_eq!(record.audit_profile, "permissive");
-    assert_eq!(record.audit_threshold, "none");
-}
-
-#[test]
 fn share_rejects_links_in_apply_and_plan() {
     let fixture = Fixture::repo();
     let brand = host_skill(&fixture, "brand");
@@ -244,7 +256,7 @@ fn share_rejects_links_in_apply_and_plan() {
     let before = fs::read(fixture.manifest()).unwrap();
     for (name, link) in [("brand", "refs"), ("linked", ".")] {
         share(&fixture)
-            .args([name, "--enable", "--skip-audit"])
+            .args([name, "--enable"])
             .assert()
             .code(1)
             .stdout(format!(
@@ -271,7 +283,7 @@ fn share_rejects_links_in_apply_and_plan() {
 }
 
 #[test]
-fn share_enforces_audit_threshold_and_explicit_skip() {
+fn share_plan_ignores_remote_images_in_skill_content() {
     let fixture = Fixture::repo();
     fixture.write_manifest("\n[audit]\nthreshold = \"low\"\n");
     skill(
@@ -281,21 +293,13 @@ fn share_enforces_audit_threshold_and_explicit_skip() {
         "# Example\n\n![Badge](https://example.invalid/badge.png)\n",
     );
     let plan = json(share(&fixture).args(["--plan", "--json"]));
-    assert_eq!(plan["candidates"][0]["recommended"], "skip");
+    let candidate = &plan["candidates"][0];
+    assert_eq!(candidate["recommended"], "share-enable");
+    assert_eq!(candidate["risks"], json!([]));
     share(&fixture)
         .args(["brand", "--enable"])
         .assert()
-        .code(1)
-        .stdout(predicate::str::contains(
-            "[BLOCKED] brand: validation failed",
-        ));
-    share(&fixture)
-        .args(["brand", "--enable", "--skip-audit"])
-        .assert()
-        .success()
-        .stdout(predicate::str::starts_with(
-            "WARN: audit skipped by explicit --skip-audit\n",
-        ));
+        .success();
 }
 
 #[test]

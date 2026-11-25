@@ -7,7 +7,6 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::Result;
-use crate::check::audit::{self, AuditPolicy, Severity};
 use crate::check::frontmatter::{Mapping, Node, parse_document};
 use crate::drive::plan::{status_of, wants};
 use crate::drive::state::State;
@@ -42,24 +41,13 @@ struct Summary {
 
 #[derive(Serialize)]
 struct Governance {
-    audit: Audit,
     provenance: Provenance,
-}
-
-#[derive(Serialize)]
-struct Audit {
-    status: &'static str,
-    profile: String,
-    threshold: &'static str,
-    result_hash: String,
-    findings: String,
 }
 
 #[derive(Serialize)]
 struct Provenance {
     source_type: String,
     trust_tier: &'static str,
-    last_audit_result_hash: String,
 }
 
 pub(crate) fn rows(
@@ -71,9 +59,7 @@ pub(crate) fn rows(
     selected: Option<&[String]>,
     with_governance: bool,
 ) -> Result<Catalog> {
-    let policy = with_governance
-        .then(|| audit::policy_from_settings(&manifest.audit))
-        .transpose()?;
+    let skills_root = manifest.skills_dir();
     let mut skills = Vec::new();
     for skill in manifest.skills.values() {
         if enabled.is_some_and(|enabled| enabled != skill.enabled)
@@ -91,11 +77,7 @@ pub(crate) fn rows(
                 ))
             })
             .collect::<Result<_>>()?;
-        let governance = policy
-            .as_ref()
-            .map(|policy| governance(manifest, skill, state, policy))
-            .transpose()?;
-        let directory = manifest.skill_dir(&skill.name);
+        let directory = skills_root.join(&skill.name);
         let (description, error) = match metadata(&directory) {
             Ok(meta) => (
                 field(&meta, "description").map_or_else(String::new, Node::python_string),
@@ -117,7 +99,7 @@ pub(crate) fn rows(
             description,
             path: display_path(&Path::new(&manifest.skills_root).join(&skill.name)),
             canonical_path: display_path(&directory),
-            governance,
+            governance: with_governance.then(|| governance(skill, state, &skills_root)),
             error,
         });
     }
@@ -190,31 +172,17 @@ fn supports(hosts: &[String], host: &str) -> bool {
     hosts.is_empty() || hosts.iter().any(|candidate| candidate == host)
 }
 
-fn governance(
-    manifest: &Manifest,
-    skill: &Skill,
-    state: &State,
-    policy: &AuditPolicy,
-) -> Result<Governance> {
-    let result = audit::run_audit(&manifest.skill_dir(&skill.name), policy)?;
+fn governance(skill: &Skill, state: &State, skills_root: &Path) -> Governance {
     let records = || {
-        state.records().filter(|record| {
-            record.skill == skill.name && !record.last_audit_result_hash.is_empty()
-        })
+        state
+            .records()
+            .filter(|record| record.skill == skill.name && record.belongs_to(skills_root))
     };
     let record = records()
         .find(|record| record.source_type == "host")
         .or_else(|| records().next());
-    let result_hash = result.result_hash();
     let source_type = record.map_or("canonical", |item| item.source_type.as_str());
-    Ok(Governance {
-        audit: Audit {
-            status: if result.blocked() { "blocked" } else { "ok" },
-            threshold: result.threshold.map_or("none", Severity::label),
-            profile: result.profile,
-            findings: result.findings.len().to_string(),
-            result_hash: result_hash.clone(),
-        },
+    Governance {
         provenance: Provenance {
             source_type: source_type.into(),
             trust_tier: if source_type == "host" {
@@ -222,10 +190,8 @@ fn governance(
             } else {
                 "local-authored"
             },
-            last_audit_result_hash: record
-                .map_or(result_hash, |item| item.last_audit_result_hash.clone()),
         },
-    })
+    }
 }
 
 impl Catalog {
@@ -263,7 +229,7 @@ impl Catalog {
         let mut headers = vec!["SKILL".into(), "ENABLED".into()];
         headers.extend(status_hosts.iter().map(|host| host.to_uppercase()));
         if include_governance {
-            headers.extend(["AUDIT".into(), "TRUST".into()]);
+            headers.push("TRUST".into());
         }
         let rows = self.skills.iter().map(|row| {
             let summary = &row.summary;
@@ -281,10 +247,11 @@ impl Catalog {
                 }
             }));
             if include_governance {
-                let (audit, trust) = row.governance.as_ref().map_or(("-", "-"), |info| {
-                    (info.audit.status, info.provenance.trust_tier)
-                });
-                cells.extend([audit.into(), trust.into()]);
+                let trust = row
+                    .governance
+                    .as_ref()
+                    .map_or("-", |info| info.provenance.trust_tier);
+                cells.push(trust.into());
             }
             cells
         });

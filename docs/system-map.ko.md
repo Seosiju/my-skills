@@ -27,8 +27,7 @@
 | **state.json** | 기기마다 있는 설치 기록. 어느 연결을 언제, 어떤 해시로 만들었는지 적는다. |
 | **활성 레지스트리** | CLI가 기본으로 쓰는 레지스트리. 경로를 `~/.config/my-skills/root`에 저장한다. |
 | **hook** | 레지스트리 `.git/hooks`에 설치되는 스크립트 다섯 개. 커밋하거나 pull할 때 CLI를 부른다. |
-| **검증** (validate) | 스킬이 호스트마다 어떻게 보이는지 경고로 알려 준다. `SKILL.md`가 없거나 보안 감사에 걸리면 차단한다. |
-| **감사** (audit) | 스킬 안의 위험한 패턴(원격 이미지, 위험한 명령 등)을 찾는다. 기준을 넘으면 연결을 막는다. |
+| **검증** (validate) | 스킬이 호스트마다 어떻게 보이는지 경고로 알려 준다. `SKILL.md`가 없으면 차단한다. |
 | **그룹** | 매니페스트의 `group = "이름"`. 명령에 `--group 이름`을 주면 그룹의 스킬을 한꺼번에 고른다. |
 
 ---
@@ -186,8 +185,7 @@ flowchart TD
   F --> G["같은 실제 경로를 쓰는 대상 묶기<br/>안 고른 쪽을 깨뜨리면 막음"]
   G --> H["copy 대상은 검사용 snapshot 만들기"]
   H --> I["검증: frontmatter, 호스트 규칙"]
-  I --> J["보안 감사"]
-  J --> K{"--dry-run인가?"}
+  I --> K{"--dry-run인가?"}
   K -- 예 --> P["계획만 출력하고 끝<br/>--json이면 blocked · applicable"]
   K -- 아니오 --> M{"막힌 항목이 있거나,<br/>여러 호스트인데 --yes가 없나?"}
   M -- 예 --> X2["아무것도 쓰지 않고 종료"]
@@ -198,7 +196,7 @@ flowchart TD
 ```
 
 - **미리보기와 적용:** 미리보기는 항상 `--dry-run --json`이다. 적용할 때는 `--dry-run`만 빼면 된다.
-- **명시 `sync`의 검사 범위:** `sync <스킬>`이나 `--group`처럼 대상을 명시하면, 그대로 연결될 스킬은 이미 FRESH인 link라도 검증하고 감사한다. 꺼져서 제거만 남은 스킬은 검사하지 않고 연결만 정리한다.
+- **명시 `sync`의 검사 범위:** `sync <스킬>`이나 `--group`처럼 대상을 명시하면, 그대로 연결될 스킬은 이미 FRESH인 link라도 검증한다. 꺼져서 제거만 남은 스킬은 검사하지 않고 연결만 정리한다.
 - **인자 없는 `sync`:** hook이 쓰는 방식이다. 바뀔 항목만 검사한다.
 - 코드: `src/commands/connect.rs`(흐름), `src/drive/plan.rs`(계획), `src/drive/apply.rs`(적용과 되돌림), `src/drive/lock.rs`(잠금), `src/drive/state.rs`(기록).
 
@@ -276,7 +274,7 @@ flowchart TD
   cli --> commands["commands/<br/>명령별 흐름 · 출력 · exit code"]
   commands --> registry["registry/<br/>정본 쪽"]
   commands --> drive["drive/<br/>연결 쪽"]
-  commands --> check["check/<br/>검증 · 보안 감사"]
+  commands --> check["check/<br/>양식과 호스트별 표시 검증"]
   commands --> git["git/<br/>hook"]
   commands --> update["update.rs<br/>자기 업데이트"]
   registry --> drive
@@ -300,7 +298,7 @@ flowchart TD
 | 명령 | 흐름 (commands/) | 실제 일을 하는 곳 |
 | --- | --- | --- |
 | `install`, `sync`, `uninstall`, `convert`, `bootstrap` | `connect.rs` | `drive/plan.rs`, `drive/apply.rs`, `drive/lock.rs`, `drive/state.rs`, `check/` |
-| `status`, `validate`, `audit`, `set-root`, `data-path` | `inspect.rs` | `drive/plan.rs`, `check/`, `registry/root.rs`, `platform/data.rs` |
+| `status`, `validate`, `set-root`, `data-path` | `inspect.rs` | `drive/plan.rs`, `check/`, `registry/root.rs`, `platform/data.rs` |
 | `skills`, `enable`, `disable`, `share`, `import`, `init-registry`, `new` | `registry.rs` | `registry/catalog.rs`, `registry/edit.rs`, `registry/share.rs`, `registry/seeds.rs` |
 | `resolve` | `resolve.rs` | `drive/state.rs`, `drive/link.rs`, `registry/root.rs` |
 | `diff` | `diff.rs` | `drive/diff.rs`, `drive/plan.rs` |
@@ -328,7 +326,6 @@ flowchart TD
 | | `diff.rs` | 정본과 호스트 복사본의 파일 단위 비교 |
 | `check/` | `frontmatter.rs` | SKILL.md 머리말(YAML) 해석 |
 | | `validate.rs` | 형식과 호스트 규칙 검증. pre-commit과 `validate`가 같은 판정을 쓴다 |
-| | `audit/` | 보안 규칙(`builtin_rules.yaml`)과 분석기 |
 | `git/` | `hooks.rs` | hook 설치·상태 확인, pre-commit 검증, post-commit에서 무엇을 sync할지 판단 |
 | `platform/` | `paths.rs`, `data.rs` | 홈·설정·상태·데이터 폴더 위치, Windows 경로 표시 |
 | (루트) | `update.rs` | GitHub Releases에서 받아 SHA-256을 확인하고 실행 파일을 교체한다 |
@@ -340,11 +337,11 @@ flowchart TD
 | 막는 사고 | 장치 | 위치 |
 | --- | --- | --- |
 | 에이전트 둘이 동시에 쓰다가 설치 기록이 사라짐 | 쓰기 명령 전체를 `state.json.lock` 하나로 줄 세움 | `drive/lock.rs` |
-| 검사한 내용과 복사한 내용이 다름 | copy는 검사 snapshot 하나로 검증·감사·복사·해시 | `drive/apply.rs`, `commands/connect.rs` |
+| 검사한 내용과 복사한 내용이 다름 | copy는 검사 snapshot 하나로 검증·복사·해시 | `drive/apply.rs`, `commands/connect.rs` |
 | 호스트에서 직접 고친 내용을 덮어씀 | DRIFTED·CONFLICT면 덮어쓰지 않음. 교체 직전에 다시 해시 | `drive/plan.rs`, `drive/apply.rs` |
 | 다른 레지스트리의 연결을 지움 | 설치 기록의 출처로 소유를 확인(FOREIGN) | `drive/state.rs` |
 | 테스트용 저장소에 실수로 씀 | 활성 레지스트리가 아니면 쓰기 거부 | `registry/root.rs` |
-| 깨진·위험한 스킬이 퍼짐 | 검증과 보안 감사. 커밋 때는 pre-commit | `check/`, `git/hooks.rs` |
+| `SKILL.md`가 빠진 스킬이 퍼짐 | 검증에서 차단한다. 커밋 때는 pre-commit에서 검사한다. | `check/`, `git/hooks.rs` |
 | 한 호스트만 바꾸다 경로를 같이 쓰는 다른 호스트를 깨뜨림 | 공유 대상 검사(`shared_destination`) | `drive/plan.rs` |
 | hook이 엉뚱한 상태에서 sync | worktree·rebase 중·미커밋 변경이면 hook이 쉼 | `git/hooks.rs`, `commands/hooks.rs` |
 | 업데이트 중 실행 파일이 망가짐 | 체크섬 확인, 백업 후 교체, 실패하면 복구 | `update.rs` |

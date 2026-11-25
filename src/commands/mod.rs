@@ -10,7 +10,7 @@ pub mod connect; // integrator: install, sync, uninstall, convert, bootstrap
 pub mod diff; // wave14 stream B: read-only canonical vs host comparison
 pub mod doctor; // stream G
 pub mod hooks; // stream G
-pub mod inspect; // integrator: validate, audit, status, set-root, data-path
+pub mod inspect; // integrator: validate, status, set-root, data-path
 pub mod registry; // stream H: init-registry, skills, share, enable, disable, import
 pub mod resolve; // wave15 S2: read-only name/path -> canonical lookup
 pub mod update; // stream I

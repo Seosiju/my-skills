@@ -798,7 +798,6 @@ dependencies = [
  "junction",
  "predicates",
  "pulldown-cmark",
- "regex",
  "semver",
  "serde",
  "serde_json",

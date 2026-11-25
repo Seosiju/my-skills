@@ -15,12 +15,12 @@ in `my-skills.toml` or `my-skills.local.toml`. Precedence for new connections:
 3. `[defaults] install_mode`
 
 Existing connections keep their recorded mode until converted with `convert`.
-Copy installs, refreshes, fallbacks, and `convert --to copy` validate, audit,
+Copy installs, refreshes, fallbacks, and `convert --to copy` validate
 and stage from one check snapshot per skill (so a canonical edit after checking
 leaves the installed copy `STALE`), and updates/conversions re-hash the host
 copy right before replacing it so a late host edit returns `CONFLICT` instead of
 being overwritten. Both real and `--dry-run` `convert --to copy` enforce the
-validation and audit gates before replacing a link. If multiple hosts share the
+validation checks before replacing a link. If multiple hosts share the
 same physical destination path, select every sharing host (or omit `--host`)
 for `update`, `convert`, or `uninstall`; single-host writes there block with
 `SHARED_DESTINATION` (exit `1`).
@@ -71,4 +71,4 @@ agy -p '/skills' --output-format json
 ```
 
 Preserve unmanaged AGY skills: compare and back them up outside its discovery
-path before migration. Do not force replacement or bypass audit automatically.
+path before migration. Confirm before forcing replacement.

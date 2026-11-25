@@ -52,14 +52,6 @@ pub struct InstallRecord {
     pub source_url: String,
     #[serde(default)]
     pub source_revision: String,
-    #[serde(default)]
-    pub last_audit_at: String,
-    #[serde(default)]
-    pub last_audit_result_hash: String,
-    #[serde(default)]
-    pub audit_profile: String,
-    #[serde(default)]
-    pub audit_threshold: String,
     /// New in v1. Absent for v0.4.1 records.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link_kind: Option<LinkKind>,
