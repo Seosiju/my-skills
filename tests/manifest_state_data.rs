@@ -9,8 +9,8 @@ use my_skills::drive::link::LinkKind;
 use my_skills::drive::state::{State, default_state_path};
 use my_skills::platform::data::skill_data_path;
 use my_skills::registry::manifest::{
-    AuditSettings, CliOverrides, Defaults, InstallMode, LOCAL_MANIFEST_FILE, MANIFEST_FILE,
-    expand_path, load_manifest, selected_skills,
+    CliOverrides, Defaults, InstallMode, LOCAL_MANIFEST_FILE, MANIFEST_FILE, expand_path,
+    load_manifest, selected_skills,
 };
 use serde_json::{Value, json};
 use tempfile::tempdir;
@@ -74,15 +74,6 @@ fn manifest_merges_main_local_and_cli_by_key() {
                 install_mode: InstallMode::Link,
                 collision: "replace".into(),
                 verify_after_install: false,
-            }
-        );
-        assert_eq!(
-            local.audit,
-            AuditSettings {
-                enabled: false,
-                profile: "local-profile".into(),
-                threshold: Some("high".into()),
-                disabled_rules: vec!["local-rule".into(), "other-rule".into()],
             }
         );
         assert_eq!(local.targets["claude"].path, root.join("home/local-target"));
@@ -176,7 +167,6 @@ fn manifest_uses_lenient_defaults_for_wrong_types() {
         assert_eq!(manifest.schema_version, 1);
         assert_eq!(manifest.skills_root, "skills");
         assert_eq!(manifest.defaults, Defaults::default());
-        assert_eq!(manifest.audit, AuditSettings::default());
         let claude = &manifest.targets["claude"];
         assert_eq!(claude.path, root.join("home/.claude/skills"));
         assert!(claude.enabled);
@@ -214,7 +204,6 @@ fn manifest_uses_lenient_defaults_for_wrong_types() {
         .unwrap();
         assert_eq!(override_values.skills_root, "base-skills");
         assert_eq!(override_values.defaults.collision, "error");
-        assert_eq!(override_values.audit.threshold, None);
 
         fs::write(
             root.join(LOCAL_MANIFEST_FILE),
@@ -223,7 +212,6 @@ fn manifest_uses_lenient_defaults_for_wrong_types() {
         .unwrap();
         let whole_tables = load_manifest(root, &CliOverrides::default()).unwrap();
         assert_eq!(whole_tables.defaults.collision, "skip");
-        assert_eq!(whole_tables.audit.threshold.as_deref(), Some("high"));
         assert_eq!(
             whole_tables.targets["claude"].path,
             root.join("home/base-target")
@@ -614,7 +602,7 @@ fn state_uses_default_path_and_loads_a_missing_file_as_empty() {
 }
 
 #[test]
-fn state_loads_v041_fixture_and_saves_identical_bytes() {
+fn state_loads_v041_fixture_and_discards_audit_fields_on_save() {
     let root = tempdir().unwrap();
     let input_path = root.path().join("input.json");
     fs::write(&input_path, LEGACY_STATE).unwrap();
@@ -638,12 +626,23 @@ fn state_loads_v041_fixture_and_saves_identical_bytes() {
             .all(|record| record.link_kind.is_none() && record.fallback_reason.is_none())
     );
     output.save().unwrap();
-    let written = fs::read(&output_path).unwrap();
-    assert_eq!(
-        serde_json::from_slice::<Value>(&written).unwrap(),
-        serde_json::from_slice::<Value>(LEGACY_STATE).unwrap()
-    );
-    assert_eq!(written, LEGACY_STATE);
+    let mut legacy: Value = serde_json::from_slice(LEGACY_STATE).unwrap();
+    for record in legacy["installs"].as_array_mut().unwrap() {
+        let fields = record.as_object_mut().unwrap();
+        for name in [
+            "last_audit_at",
+            "last_audit_result_hash",
+            "audit_profile",
+            "audit_threshold",
+        ] {
+            assert!(
+                fields.remove(name).is_some(),
+                "legacy fixture is missing {name}"
+            );
+        }
+    }
+    let written: Value = serde_json::from_slice(&fs::read(&output_path).unwrap()).unwrap();
+    assert_eq!(written, legacy);
     assert_eq!(State::load(Some(&output_path)).unwrap(), output);
 }
 
@@ -665,14 +664,7 @@ fn state_ignores_unknown_fields_defaults_legacy_metadata_and_keeps_new_fields() 
     assert_eq!(link.link_kind, Some(LinkKind::Junction));
     assert_eq!(link.fallback_reason, None);
     assert_eq!(link.source_type, "canonical");
-    assert!(
-        link.source_url.is_empty()
-            && link.source_revision.is_empty()
-            && link.last_audit_at.is_empty()
-            && link.last_audit_result_hash.is_empty()
-            && link.audit_profile.is_empty()
-            && link.audit_threshold.is_empty()
-    );
+    assert!(link.source_url.is_empty() && link.source_revision.is_empty());
 
     let mut copy = link;
     copy.host = "codex".into();

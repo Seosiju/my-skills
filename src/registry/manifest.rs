@@ -46,26 +46,6 @@ impl Default for Defaults {
     }
 }
 
-/// `[audit]` table, passed to `audit::policy_from_settings`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AuditSettings {
-    pub enabled: bool,
-    pub profile: String,
-    pub threshold: Option<String>,
-    pub disabled_rules: Vec<String>,
-}
-
-impl Default for AuditSettings {
-    fn default() -> Self {
-        AuditSettings {
-            enabled: true,
-            profile: "default".into(),
-            threshold: None,
-            disabled_rules: Vec::new(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Target {
     pub name: String,
@@ -98,7 +78,7 @@ pub struct Manifest {
     pub defaults: Defaults,
     /// Explicit CLI `--mode` override, which takes precedence over target and default modes.
     pub cli_install_mode: Option<InstallMode>,
-    pub audit: AuditSettings,
+    pub(crate) ignored_legacy_audit: bool,
     /// Built-in hosts and declared targets with paths, sorted by name.
     pub targets: BTreeMap<String, Target>,
     pub skills: BTreeMap<String, Skill>,
@@ -187,17 +167,6 @@ pub fn load_manifest(root: &Path, cli: &CliOverrides) -> Result<Manifest> {
     }
     defaults.verify_after_install = values.boolean("verify_after_install", true);
 
-    let values = root_values.table("audit");
-    let audit = AuditSettings {
-        enabled: values.boolean("enabled", true),
-        profile: values.string("profile").unwrap_or("default").into(),
-        threshold: values
-            .string("threshold")
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned),
-        disabled_rules: values.strings("disabled_rules"),
-    };
-
     let skills_root = cli
         .skills_root
         .as_deref()
@@ -217,7 +186,7 @@ pub fn load_manifest(root: &Path, cli: &CliOverrides) -> Result<Manifest> {
         skills_root: skills_root.into(),
         defaults,
         cli_install_mode: cli.install_mode,
-        audit,
+        ignored_legacy_audit: main.contains_key("audit") || local.contains_key("audit"),
         targets: resolve_targets(root_values.table("targets"), &main_path, &local_path, cli)?,
         skills: resolve_skills(root_values.table("skills")),
     })

@@ -5,11 +5,18 @@ All notable changes to this project will be documented in this file.
 This project follows a GitHub-first release flow. Git tags and GitHub Releases
 are the release source of truth while PyPI publishing remains undecided.
 
+## [Unreleased]
+
+### Removed
+
+- Removed the `audit` command, `--skip-audit` flags, and audit-based findings and refusals across skill workflows. Existing manifests and state can still be read. `skills --with-governance` still reports provenance.
+- Removed binary signature and NUL-byte checks and encoding notices for non-UTF-8 supporting files.
+
 ## [1.3.2] - 2026-11-25
 
 ### Changed
 
-- my-skills no longer refuses to connect a skill because of its `SKILL.md` content. A missing `SKILL.md` and security audit policy still block. Everything else is now a notice. That includes the 768-character description rule (it had no basis in any host), missing body-link files, name and description rules, a UTF-8 BOM, and missing or unreadable frontmatter.
+- Skill format problems became notices. A missing `SKILL.md` still blocks. The notices cover the 768-character description rule (it had no basis in any host), missing body-link files, name and description rules, a UTF-8 BOM, and missing or unreadable frontmatter.
 - `validate` and connection commands tell you, per targeted host, how the skill will appear: not shown (and why), shown cut at N characters, or shown under a different name. The host rules were measured on Claude Code 2.1.318, Codex 0.172.0, and agy 1.5.16 and live in the host definitions. Fixing anything is optional.
 - Body-link notices use a CommonMark parser (`pulldown-cmark`), so links inside code, autolinks, and URIs with a scheme are not reported.
 - `my-skills new` writes the recommended format that every host shows in full: frontmatter present, `name` equal to the folder name, a description of 1,024 characters or fewer, values safely quoted, UTF-8 without a BOM. Long descriptions are kept, with a notice for hosts that would cut them.
@@ -116,19 +123,18 @@ are the release source of truth while PyPI publishing remains undecided.
   skipped/blocked/failed before completion), `fallback_reason`, and `error`.
   Early configuration failures (`unknown_skill`, `state_busy`, `sync --json --check`)
   still emit `{"error": ...}` with exit `2`; post-plan refusals (validation,
-  audit, `needs_yes`, `inactive_registry`, incompatible shared destinations, or
-  late audit config failures) return the applied document with `applied: false`
-  (`needs_yes`, `inactive_registry`, and post-plan config failures exit `2`;
-  late copy-edit conflicts add `kind: "conflict"` and exit `1`).
+  `needs_yes`, `inactive_registry`, or incompatible shared destinations) return the applied document with `applied: false`
+  (`needs_yes` and `inactive_registry` exit `2`. Late copy-edit conflicts add
+  `kind: "conflict"` and exit `1`).
 - **Deliberate behaviour change in explicit `sync <SKILL>` / `--group`:**
-  explicitly selecting skills by name or `--group` now validates and audits all
+  explicitly selecting skills by name or `--group` now validates all
   wanted skills on the selected hosts, including zero-action `FRESH` links. A
   broken skill with an already-`FRESH` link now fails with exit `1` and can
   block the batch. Disabled skills whose only planned action is `REMOVE`
   (prune) bypass those checks unless `--all` puts them in scope to connect.
   Bare `sync` (including hook-triggered sync) continues to check only the
   create/update skill set, and `sync --check` stays drift-only without running
-  validation or audit.
+  validation.
 - **Deliberate behaviour change in frontmatter warnings:** `validate` and host
   checks during `install` and `sync` previews no longer warn about standard
   optional Agent Skills fields (`license`, `compatibility`, and `metadata`).
@@ -137,9 +143,9 @@ are the release source of truth while PyPI publishing remains undecided.
   combined warning per skill listing all affected hosts.
 - Staged copy checks and late-edit protection: copy creation, refresh, link
   fallback, and `convert --to copy` build one private check snapshot per
-  copied skill for validation, audit, and both recorded hashes, then stage from
+  copied skill for validation and both recorded hashes, then stage from
   that snapshot onto the destination volume. `install`, `sync`, and
-  `convert --to copy` previews also validate and audit planned copies from that
+  `convert --to copy` previews also validate planned copies from that
   filtered snapshot view. If the canonical skill is edited after the snapshot
   check, the originally checked bytes are installed and the copy is left
   `STALE`; if the installed copy is edited before an update or conversion
@@ -158,8 +164,7 @@ are the release source of truth while PyPI publishing remains undecided.
   peer is removed.
 - `validate_selected` drops host rows in `validation[]` and `block_reasons`
   that only repeat skill-level errors or warnings.
-- Real and `--dry-run` `convert --to copy` now run validation and the registry
-  audit gate on the copy snapshot before replacing a link.
+- Real and `--dry-run` `convert --to copy` now validate the copy snapshot before replacing a link.
 - `post-commit`, `post-merge`, `post-rewrite`, and `post-checkout` hooks are
   now no-ops inside linked Git worktrees (`git worktree add`).
 - Committed updates, conversions, removals, `share`, and `import` print a
@@ -185,15 +190,14 @@ are the release source of truth while PyPI publishing remains undecided.
   registry source `flag`. A path without `my-skills.toml` is a usage error
   (exit `2`). Pass the path directly to `set-root` or `init-registry`, which
   reject combinations with `--root`.
-- `install`, `sync`, `uninstall`, `enable`, `disable`, `audit`, and `validate`
+- `install`, `sync`, `uninstall`, `enable`, `disable`, and `validate`
   accept multiple skill names (`SKILL...`) and repeatable `--group` selections.
   An explicit `sync` selection limits pruning to the selected skills and
   preserves managed orphans. `enable` and `disable` apply each selection in
   one atomic manifest edit.
 - `skills --json` adds `canonical_path` and `group`. Repeatable `--group`
   filters the catalog. `--brief` returns compact JSON rows and retains `error`
-  when present. With `--with-governance` it nests `audit` and `provenance`
-  under `governance`. In a synthetic ten-skill registry, `--brief` reduced
+  when present. With `--with-governance` it nests `provenance` under `governance`. In a synthetic ten-skill registry, `--brief` reduced
   stdout from 4,098 to 1,978 bytes (51.7%).
 - `validate --host <HOST>` checks that host's constraints. `validate --json`
   reports `registry`, overall `ok`, and per-skill `ok`, `errors`, and `warnings`.
@@ -221,7 +225,7 @@ are the release source of truth while PyPI publishing remains undecided.
 ### Changed
 
 - **Deliberate behaviour change in `validate`.** It now applies the pre-commit
-  gate, including host limits and the manifest audit policy. A description
+  gate, including host limits. A description
   that exceeds an applicable host's 768-character limit now fails validation.
 - `skills --with-governance` is the new name for `--with-status`. The old flag
   remains an alias.
@@ -236,10 +240,10 @@ are the release source of truth while PyPI publishing remains undecided.
 - Structured fields in `install --dry-run --json` and `sync --dry-run --json`:
   `registry` (`{path, source}`), `dry_run`, `blocked`, `applicable` (whether
   the same command without `--dry-run` would exit `0`, including `--yes` and
-  active-registry checks), `block_reasons` (`validation`, `audit`, `needs_yes`,
+  active-registry checks), `block_reasons` (`validation`, `needs_yes`,
   `inactive_registry`, or a lowercased block action such as `block_drift` or
   `block_foreign`), and `validation` (`[{skill, host, ok, errors, warnings}]`),
-  while keeping the existing `actions` and `audit` keys.
+  while keeping the existing `actions` key.
 - `registry` (`{path, source}`) metadata in `skills --json` and
   `share --plan|--dry-run --json`.
 - Cross-registry connection ownership protection (`FOREIGN` status and
@@ -262,13 +266,12 @@ are the release source of truth while PyPI publishing remains undecided.
   run from the active registry, run `my-skills set-root <path>`, or set
   `MY_SKILLS_ROOT=<path>` for one command. Read-only commands still run against
   the cwd registry with a stderr note.
-- **Deliberate behaviour change — `sync --dry-run` validation and audit
-  parity:** `sync --dry-run` now runs the same validation and audit checks as a
+- **Deliberate behaviour change — `sync --dry-run` validation parity:** `sync --dry-run` now runs the same validation checks as a
   real `sync`, and exits `1` when validation fails (matching
-  `install --dry-run`; otherwise `0` even when audit, plan items, `--yes`, or
+  `install --dry-run`; otherwise `0` even when plan items, `--yes`, or
   an inactive cwd registry would refuse the real run). Use `sync --check` when
   you need a non-zero exit code for any out-of-date state.
-- Read-only and preview commands (`validate`, `audit`, `status`, `skills`,
+- Read-only and preview commands (`validate`, `status`, `skills`,
   `data-path`, `share --plan`/`--dry-run`, `sync --check`, every `--dry-run`,
   and usage errors) never write the active-registry cache. Only the first real
   write from a registry — including `bootstrap` (unless `--dry-run` or
@@ -281,18 +284,14 @@ are the release source of truth while PyPI publishing remains undecided.
   stderr.
 - JSON output (`skills --json`, `share --plan|--dry-run --json`, and dry-run
   JSON) now emits plain UTF-8 instead of `\uXXXX` escapes (roughly 45% smaller
-  for non-ASCII descriptions). Audit `result_hash` fingerprints are unchanged.
+  for non-ASCII descriptions).
 
 ### Fixed
 
 - `sync` no longer prunes or overwrites copy or link connections installed by
   another registry on the same machine, and `sync --check` no longer treats
   `FOREIGN` records on hosts a skill does not target as drift.
-- `audit.skipped` in dry-run JSON is now `true` only when an audit gate runs
-  with `--skip-audit` (or `[audit] enabled = false`), not when no writes
-  required auditing or validation stopped early; `sync --dry-run --skip-audit`
-  now prints the skipped-audit warning in text output.
-- Windows paths in JSON and CLI output (`doctor`, `skills`, `share`, `audit`,
+- Windows paths in JSON and CLI output (`doctor`, `skills`, `share`,
   `install`/`sync --dry-run`, `hooks`, stderr notes, manifest errors,
   `data-path`, and `update --dry-run`) strip the `\\?\` verbatim prefix and use
   consistent `\` separators.
@@ -311,8 +310,7 @@ are the release source of truth while PyPI publishing remains undecided.
 ### Fixed
 
 - Skills can bundle common font and image assets whose file signatures match
-  their extensions without triggering NUL-byte errors during import, validation,
-  audit, or pre-commit checks.
+  their extensions during import and installation.
 
 ## [1.0.1] - 2026-11-24
 
@@ -329,7 +327,7 @@ are the release source of truth while PyPI publishing remains undecided.
   manifest, and `bootstrap --dry-run` describes the hook step the way the real
   run does.
 - Windows output: hook install paths no longer mix `/` and `\`, `set-root` no
-  longer shows the `\\?\` prefix, and audit reports use `/` in file paths.
+  longer shows the `\\?\` prefix.
 
 ## [1.0.0] - 2026-11-24
 
@@ -428,22 +426,9 @@ are the release source of truth while PyPI publishing remains undecided.
   imports default to disabled unless `--enable` is passed, and re-importing an
   existing registered skill preserves its hosts and local-overlay separation.
 - `import` now rejects source directories that contain symlinks, preventing the
-  copy step from pulling files outside the audited source tree.
-- **Breaking:** `validate` — and the always-on validation that runs before
-  `install`, `sync`, `import`, and `share` — now applies the full audit
-  analyzer set with a fixed internal policy. Skills that previously passed
-  may now be reported:
-  - Absolute user/home paths in any file are now **errors** (previously
-    warnings, and previously only checked in `SKILL.md`).
-  - Audit-only rules (prompt injection, dangerous command patterns,
-    credential/network dataflow) now surface as `validate` **errors**.
-  - MEDIUM-severity rules (e.g. network senders) now surface as warnings.
-- `share --plan` no longer lists the same finding twice; validation- and
-  audit-derived entries are de-duplicated by file and message.
+  copy step from pulling files outside the source tree.
 - Runtime and system artifacts (`__pycache__`, `.git`, `.omc`, `.DS_Store`)
-  are now ignored consistently by content hashing, validation scanning,
-  audit, and install copies. A stray `.pyc` file in a skill directory no
-  longer breaks `validate`, `audit --all`, or `install`.
+  are now ignored consistently by content hashing and install copies.
 
 ### Fixed
 
@@ -459,15 +444,8 @@ are the release source of truth while PyPI publishing remains undecided.
   output keeps its contract for agent consumers).
 - A state file written by a newer my-skills version, or with malformed
   records, is now rejected with a clear message instead of a raw traceback.
-- `share` now honors the manifest audit policy when evaluating candidates
-  (previously it always used the default policy).
 - Package description no longer claims Gemini CLI support; supported hosts
   are Claude Code, Codex, and Hermes.
-
-### Removed
-
-- Internal `security.py` module; its rules now live in the audit analyzers
-  (user-visible effects are listed under "Changed").
 
 ## [0.1.0] - 2026-06-30
 

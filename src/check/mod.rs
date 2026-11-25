@@ -1,5 +1,4 @@
-//! Checks: Agent Skills validation and the security audit.
+//! Checks: Agent Skills validation.
 
-pub mod audit;
 pub mod frontmatter;
 pub mod validate;

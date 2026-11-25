@@ -5,8 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use my_skills::check::audit::{AuditPolicy, run_audit};
-use my_skills::check::validate::compose_validation;
+use my_skills::check::validate::validate_skill;
 use my_skills::platform::paths;
 use serde_json::Value;
 use support_g::Fixture;
@@ -60,20 +59,15 @@ fn seed_skills(registry: &Path) -> Vec<PathBuf> {
 }
 
 #[test]
-fn repo_seed_skills_pass_validation_and_audit() {
+fn repo_seed_skills_pass_validation() {
     let fixture = repo_fixture();
-    let policy = AuditPolicy::default();
     for path in seed_skills(&fixture.registry) {
-        let validation = compose_validation(&path);
-        let audit = run_audit(&path, &policy)
-            .unwrap_or_else(|error| panic!("audit failed for {}: {error}", path.display()));
+        let validation = validate_skill(&path);
         assert!(
-            validation.ok() && !audit.blocked(),
-            "{}: validation errors: {:?}; audit blocked: {}; audit findings: {:?}",
+            validation.ok(),
+            "{}: validation errors: {:?}",
             path.display(),
-            validation.errors,
-            audit.blocked(),
-            audit.findings
+            validation.errors
         );
     }
 }
@@ -193,10 +187,6 @@ fn repo_manifest_supports_read_only_cli_commands() {
         let plan = cli_stdout(
             &mut by_env(),
             &["install", "my-skills", "--host", host, "--dry-run"],
-        );
-        assert!(
-            plan.lines().any(|line| line == "Audit: passed") && !plan.contains("AUDIT WOULD BLOCK"),
-            "expected audit to pass for {host}:\n{plan}"
         );
         assert!(
             plan.lines().any(|line| line.split_whitespace().take(4).eq([

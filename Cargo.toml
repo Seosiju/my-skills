@@ -22,16 +22,14 @@ clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-# YAML for SKILL.md frontmatter (D) and audit rules (E). Chosen 2026-11-23:
-# actively maintained; serde_yaml is deprecated. YAML 1.2, so PyYAML 1.1
-# scalars (yes/no/on/off) parse as strings: streams D/E handle parity.
+# YAML 1.2 for SKILL.md frontmatter. PyYAML 1.1 scalars (yes/no/on/off)
+# parse as strings.
 yaml-rust2 = "0.13"
 sha2 = "0.10"
 similar = "2"
 walkdir = "2"
 toml = "0.8"
 dirs = "6"
-regex = "1"
 pulldown-cmark = { version = "0.13", default-features = false }
 cap-fs-ext = "4"
 cap-std = "4"

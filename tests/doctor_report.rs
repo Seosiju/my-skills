@@ -519,10 +519,6 @@ fn sample_record(host: &str, mode: InstallMode) -> InstallRecord {
         source_type: "canonical".into(),
         source_url: String::new(),
         source_revision: String::new(),
-        last_audit_at: String::new(),
-        last_audit_result_hash: String::new(),
-        audit_profile: String::new(),
-        audit_threshold: String::new(),
         link_kind: None,
         fallback_reason: None,
     }

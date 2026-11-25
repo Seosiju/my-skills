@@ -106,7 +106,7 @@ impl Drive {
         let items = plan::plan_sync(&manifest, &state, &scope, None).unwrap();
         for item in &items {
             assert!(!item.action.is_block(), "unexpected block: {item:?}");
-            apply::apply(item, &mut state, None).unwrap();
+            apply::apply(item, &mut state).unwrap();
         }
         items
     }
@@ -303,7 +303,7 @@ fn disabled_and_missing_target_installs_are_never_touched() {
     let item =
         plan::plan_install_one(&manifest, skill, "custom", &state, InstallMode::Copy).unwrap();
     assert_eq!(item.action, Action::Create);
-    apply::apply(&item, &mut state, None).unwrap();
+    apply::apply(&item, &mut state).unwrap();
     let record = state.get("alpha", "custom").unwrap();
     let copy_path = drive.host_dir("custom").join("alpha/SKILL.md");
     let contents = fs::read(&copy_path).unwrap();
@@ -372,7 +372,7 @@ fn copy_mode_install_then_convert_to_link() {
     let plan = plan::plan_convert(&manifest, &state, &skills, &hosts, InstallMode::Link).unwrap();
     assert!(plan.iter().all(|i| i.action == Action::Convert), "{plan:?}");
     for item in &plan {
-        let outcome = apply::apply(item, &mut state, None).unwrap();
+        let outcome = apply::apply(item, &mut state).unwrap();
         assert!(matches!(outcome, Outcome::Converted(Connection::Link(_))));
     }
     assert_eq!(drive.status("alpha", "claude"), Status::Fresh);

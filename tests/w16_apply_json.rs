@@ -10,10 +10,7 @@ use support_h::{Fixture, skill};
 
 fn registry() -> Fixture {
     let fixture = Fixture::repo();
-    fixture.write_manifest(
-        "[audit]\nthreshold = 'medium'\n\
-         [skills.alpha]\n[skills.beta]\n[skills.retired]\n",
-    );
+    fixture.write_manifest("[skills.alpha]\n[skills.beta]\n[skills.retired]\n");
     let manifest = fixture.manifest();
     let text = fs::read_to_string(&manifest).unwrap().replace(
         "[targets.codex]\n",
@@ -136,7 +133,7 @@ fn install_and_sync_report_creates_updates_prunes_and_noops() {
 }
 
 #[test]
-fn validation_audit_and_confirmation_blocks_return_the_batch_document() {
+fn validation_and_confirmation_blocks_return_the_batch_document() {
     let fixture = registry();
     for command in ["install", "sync"] {
         fs::remove_file(fixture.canonical("alpha").join("SKILL.md")).unwrap();
@@ -153,18 +150,6 @@ fn validation_audit_and_confirmation_blocks_return_the_batch_document() {
                 .any(|reason| reason["kind"] == "validation")
         );
         assert_eq!(row(&invalid, "beta", "claude")["result"], "blocked");
-
-        skill(
-            &fixture.registry.join("skills"),
-            "alpha",
-            "A fixture skill.",
-            "![Remote](https://example.invalid/fixture.png)",
-        );
-        let audit = result(&fixture, &[command, "alpha", "--yes"], 1);
-        assert_eq!(audit["applied"], false);
-        assert_eq!(audit["audit"]["blocked"], true);
-        assert_eq!(audit["block_reasons"][0]["kind"], "audit");
-        assert_summary(&audit, [0, 0, 0, 0, 2, 0]);
 
         skill(
             &fixture.registry.join("skills"),
@@ -295,7 +280,7 @@ fn configuration_errors_use_the_existing_error_document() {
 }
 
 #[test]
-fn dry_run_json_keeps_the_wave15_bytes() {
+fn dry_run_json_keeps_the_remaining_preview_fields() {
     let fixture = registry();
     let canonical = display_path(&fixture.canonical("alpha"));
     let expected = json!({
@@ -305,15 +290,6 @@ fn dry_run_json_keeps_the_wave15_bytes() {
             "skill": "alpha", "source": canonical,
         }],
         "applicable": true,
-        "audit": {
-            "blocked": false,
-            "skills": [{
-                "blocked": false, "findings": [], "path": canonical, "profile": "default",
-                "result_hash": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-                "skill": "alpha", "threshold": "medium",
-            }],
-            "skipped": false,
-        },
         "blocked": false, "block_reasons": [],
         "dry_run": true, "registry": {"path": display_path(&fixture.registry), "source": "env"},
         "validation": [

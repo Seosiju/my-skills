@@ -10,9 +10,8 @@ use cap_std::fs::{Dir, OpenOptions};
 use serde::Serialize;
 use tempfile::{Builder, TempDir};
 
-use crate::check::audit::{self, AuditGateResult, AuditPolicy, Severity};
 use crate::check::frontmatter::Node;
-use crate::check::validate::{compose_validation, validate_name};
+use crate::check::validate::{validate_name, validate_skill};
 use crate::drive::apply::{CleanupWarning, remove_real_dir, utc_now};
 use crate::drive::hash::hash_directory;
 use crate::drive::link::{EntryKind, entry_kind, remove_link};
@@ -29,7 +28,6 @@ pub(crate) enum Failure {
     Config(Error),
     Link(PathBuf),
     Validation(Vec<String>),
-    Audit(AuditGateResult),
     Blocked(String),
 }
 
@@ -82,7 +80,6 @@ impl Risk {
 
 pub(crate) fn plan_share(manifest: &Manifest, host: &str) -> Result<SharePlan> {
     let source_root = host_root(manifest, host)?;
-    let policy = audit::policy_from_settings(&manifest.audit)?;
     let children = match fs::read_dir(source_root) {
         Ok(children) => children,
         Err(err)
@@ -119,7 +116,7 @@ pub(crate) fn plan_share(manifest: &Manifest, host: &str) -> Result<SharePlan> {
                 ) => {}
             _ => continue,
         }
-        candidates.push(plan_candidate(manifest, host, &source, &policy, &state)?);
+        candidates.push(plan_candidate(manifest, host, &source, &state)?);
     }
     Ok(SharePlan {
         from_host: host.into(),
@@ -132,19 +129,13 @@ fn plan_candidate(
     manifest: &Manifest,
     host: &str,
     source: &Path,
-    policy: &AuditPolicy,
     state: &State,
 ) -> Result<Candidate> {
     let (name, description, hash, mut risks) = match open_source(source) {
         Ok(dir) => match visit(&dir, source, Path::new(""), None) {
             Ok(()) => {
                 let (name, description) = candidate_metadata(source);
-                (
-                    name,
-                    description,
-                    hash_directory(source)?,
-                    risks(source, policy, false)?,
-                )
+                (name, description, hash_directory(source)?, risks(source))
             }
             Err(failure) => unsafe_candidate(source, failure)?,
         },
@@ -203,7 +194,7 @@ fn unsafe_candidate(
         Failure::Link(path) => format!("share source contains symlink: {}", display_path(&path)),
         Failure::Blocked(message) => message,
         Failure::Config(err) => return Err(err),
-        Failure::Validation(_) | Failure::Audit(_) => unreachable!("classifying source entries"),
+        Failure::Validation(_) => unreachable!("classifying source entries"),
     };
     Ok((
         basename(source).into(),
@@ -276,44 +267,15 @@ fn invalid_registration_name(name: &str) -> Option<String> {
         .map(|error| format!("invalid registry skill name {name:?}: {error}"))
 }
 
-fn risks(source: &Path, policy: &AuditPolicy, skip_audit: bool) -> Result<Vec<Risk>> {
-    let validation = compose_validation(source);
+fn risks(source: &Path) -> Vec<Risk> {
+    let validation = validate_skill(source);
     let mut risks: Vec<_> = validation.errors.into_iter().map(Risk::error).collect();
     risks.extend(validation.warnings.into_iter().map(|message| Risk {
         severity: "warning",
         message,
         blocks: false,
     }));
-    if !skip_audit {
-        let result = audit::run_audit(source, policy)?;
-        for finding in result.findings {
-            let blocks = finding.severity == Severity::Critical
-                || result
-                    .threshold
-                    .is_some_and(|threshold| finding.severity >= threshold);
-            let identity = format!("{}: {}", finding.file, finding.message);
-            if let Some(existing) = risks
-                .iter_mut()
-                .find(|risk| risk_identity(&risk.message) == identity)
-            {
-                existing.blocks |= blocks;
-            } else {
-                risks.push(Risk {
-                    severity: finding.severity.label(),
-                    message: format!("{}: {identity}", finding.rule_id),
-                    blocks,
-                });
-            }
-        }
-    }
-    Ok(risks)
-}
-
-fn risk_identity(message: &str) -> &str {
-    message
-        .split_once(": ")
-        .filter(|(_, rest)| rest.contains(": "))
-        .map_or(message, |(_, rest)| rest)
+    risks
 }
 
 pub(crate) struct ImportOutcome {
@@ -331,22 +293,12 @@ pub(crate) fn import(
     source: &Path,
     enable: bool,
     force: bool,
-    skip_audit: bool,
     dry_run: bool,
-    on_audit_skip: impl FnOnce(),
 ) -> Operation<ImportOutcome> {
     let snapshot = Snapshot::new(manifest, source)?;
-    let validation = compose_validation(&snapshot.source);
+    let validation = validate_skill(&snapshot.source);
     if !validation.ok() {
         return Err(Failure::Validation(validation.errors));
-    }
-    let policy = audit::policy_from_settings(&manifest.audit)?;
-    let gate = audit::audit_skills(std::slice::from_ref(&snapshot.source), &policy, skip_audit)?;
-    if gate.blocked() {
-        return Err(Failure::Audit(gate));
-    }
-    if gate.skipped {
-        on_audit_skip();
     }
     let (name, _) = candidate_metadata(&snapshot.source);
     if let Some(error) = invalid_registration_name(&name) {
@@ -409,7 +361,6 @@ pub(crate) fn share(
     skill: &str,
     enabled: bool,
     force: bool,
-    skip_audit: bool,
 ) -> Operation<ShareOutcome> {
     let registry_root = &resolution.root;
     let manifest = &load_manifest(registry_root, &CliOverrides::default())?;
@@ -436,9 +387,8 @@ pub(crate) fn share(
     }
     let source = root.join(skill);
     let snapshot = Snapshot::new(manifest, &source)?;
-    let policy = audit::policy_from_settings(&manifest.audit)?;
     let (name, _) = candidate_metadata(&snapshot.source);
-    let errors = risks(&snapshot.source, &policy, skip_audit)?
+    let errors = risks(&snapshot.source)
         .into_iter()
         .filter(|risk| risk.blocks)
         .map(|risk| risk.message)
@@ -462,7 +412,7 @@ pub(crate) fn share(
         )));
     }
     if old.status(&hash) == "identical" {
-        let validation = compose_validation(&canonical);
+        let validation = validate_skill(&canonical);
         if !validation.ok() {
             return Err(Failure::Blocked(format!(
                 "{name}: canonical validation failed after import: {}",
@@ -477,20 +427,11 @@ pub(crate) fn share(
         &enabled_hosts(manifest),
         edit_lock,
     )?;
-    let audit = audit::run_audit(
-        if old.status(&hash) == "identical" {
-            &canonical
-        } else {
-            &snapshot.source
-        },
-        &policy,
-    )?;
     if name != skill
         && let Some(reason) = foreign_record_reason(manifest, &state, &name, host)
     {
         return Err(Failure::Blocked(format!("{name}: {reason}")));
     }
-    let now = utc_now();
     state.put(InstallRecord {
         skill: name.clone(),
         host: host.into(),
@@ -499,14 +440,10 @@ pub(crate) fn share(
         destination: display_path(&source),
         source_hash: hash.clone(),
         installed_hash: hash.clone(),
-        installed_at: now.clone(),
+        installed_at: utc_now(),
         source_type: "host".into(),
         source_url: display_path(&source),
         source_revision: hash.clone(),
-        last_audit_at: now,
-        last_audit_result_hash: audit.result_hash(),
-        audit_profile: audit.profile,
-        audit_threshold: audit.threshold.map_or("none", Severity::label).into(),
         link_kind: None,
         fallback_reason: None,
     });

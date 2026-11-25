@@ -45,7 +45,7 @@ const SEED_FILES: [File<'static>; 10] = [
     seed_file!("my-skills/references/hosts.md"),
     seed_file!("my-skills/references/json-and-dry-run.md"),
     seed_file!("my-skills/references/setup.md"),
-    seed_file!("my-skills/references/share-and-audit.md"),
+    seed_file!("my-skills/references/sharing.md"),
     seed_file!("my-jira/SKILL.md"),
     seed_file!("my-jira/config.example.json"),
 ];

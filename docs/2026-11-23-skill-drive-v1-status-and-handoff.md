@@ -4,6 +4,8 @@
 > 상태: Rust v1 기능 구현과 배포, §7 A~I, K, L 완료, J 보류. Windows PC는 H에서, 맥은 G(2026-11-24)에서 Rust 판과 link로 전환했다. 맥이 push한 레지스트리 변경을 Windows가 post-merge로 받는 것까지 확인했다(G 6.1).
 > 설계 문서: `docs/2026-11-23-skill-drive-rust-v1-spec.md` (이하 "스펙")
 > 작업 지시서와 보고서: `docs/tasks/2026-11-23-rust-v1/`
+>
+> 현재 CLI에서는 보안 감사 기능이 제거되었다. 이 문서의 릴리스 및 감사 기록은 당시 동작을 보여 준다. 현재 명령과 출력 계약은 [reference.md](reference.md)를 따른다.
 
 이 문서는 병렬로 진행한 작업을 하나로 모은 기록이다. 포함한 작업은 Codex stream A~I, 통합 담당 Claude, 독립 감사 세션(agy)이다.
 무엇이 어떻게 진행됐는지, 지금 어디에 있는지, 다음에 무엇을 어떤 순서로 해야 하는지를 적는다.
@@ -260,14 +262,14 @@ agy·Codex·Claude가 다음 지향점(상시 카탈로그 비용, 편집 완료
   |---|---|
   | `runtime.rs`, `manifest.rs`, `manifest_edit.rs`, `catalog.rs`, `seeds.rs`, `sharing.rs` | `registry/root.rs`, `registry/manifest.rs`, `registry/edit.rs`, `registry/catalog.rs`, `registry/seeds.rs`, `registry/share.rs` |
   | `hosts.rs`, `link.rs`, `plan.rs`, `install.rs`, `state.rs`, `hash.rs`, `ignore.rs` | `drive/hosts.rs`, `drive/link.rs`, `drive/plan.rs`, `drive/apply.rs`, `drive/state.rs`, `drive/hash.rs`, `drive/ignore.rs` |
-  | `frontmatter.rs`, `validate.rs`, `audit/` | `check/frontmatter.rs`, `check/validate.rs`, `check/audit/` |
+  | `frontmatter.rs`, `validate.rs` | `check/frontmatter.rs`, `check/validate.rs` |
   | `hooks.rs` | `git/hooks.rs` |
   | `self_update.rs` | `update.rs` |
   | `paths.rs`, `data.rs` | `platform/paths.rs`, `platform/data.rs` |
 
-- **테스트와 시드 경로**: `tests/fixtures/shared`와 `tests/golden/audit`에 테스트 데이터가 있다. `tests/audit_parity.rs`는 남아 있는 golden 데이터를 읽는다. Python 패키지의 `builtin_rules.yaml`과 직접 비교하던 테스트는 §7 D에서 제거했다.
+- **테스트와 시드 경로**: `tests/fixtures/shared`와 `tests/golden/validate`에 검증 테스트 데이터가 있다.
   `tests/golden/*/generate.py`는 v0.4.1으로 golden 데이터를 생성했던 이력이다. 현재 테스트는 저장된 데이터를 사용한다. `src/registry/seeds.rs`는 같은 저장소 루트의 `skills/`에서 시드를 포함한다.
-- **import의 dry-run**: 검증과 audit를 위해 레지스트리 안에 임시 staging 폴더와 편집 잠금을 잠깐 만들었다가 지운다. 영구적인 쓰기는 하지 않는다. 2026-11-24에 이를 없애 보았으나(메모리 검사, 레지스트리 밖 staging) 지원 파일 참조의 `..` 해석이 위치에 따라 달라져 미리보기와 실제 import의 판정이 어긋났으므로 이 동작을 유지한다.
+- **import의 dry-run**: 검증을 위해 레지스트리 안에 임시 staging 폴더와 편집 잠금을 잠깐 만들었다가 지운다. 영구적인 쓰기는 하지 않는다. 2026-11-24에 이를 없애 보았으나(메모리 검사, 레지스트리 밖 staging) 지원 파일 참조의 `..` 해석이 위치에 따라 달라져 미리보기와 실제 import의 판정이 어긋났으므로 이 동작을 유지한다.
 - 스펙의 열린 질문: Q1(Windows 경로와 junction 발견)은 H에서 확인했다(스펙 §12, §13). Q3(Windows state 경로)은 옮기지 않기로, Q5(코드 서명)는 서명하지 않기로 정했다. Q6(audit 규칙)은 YAML을 유지하고, Q7(0.4.x 이전 안내)은 v0.4.2로 끝났다(2026-11-24, 스펙 §13).
 - 이 작업과 무관한 다른 도구의 worktree가 `git worktree list`에 `prunable`로 남아 있다.
 

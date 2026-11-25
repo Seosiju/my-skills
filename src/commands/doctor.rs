@@ -38,6 +38,8 @@ struct Report {
     hooks_error: Option<String>,
     connections: Connections,
     full_validation: Option<FullValidation>,
+    #[serde(skip)]
+    ignored_legacy_audit: bool,
 }
 
 #[derive(Default, Serialize)]
@@ -224,6 +226,7 @@ impl Report {
             hooks: hook_status,
             hooks_error,
             connections,
+            ignored_legacy_audit: manifest.as_ref().is_some_and(|m| m.ignored_legacy_audit),
             full_validation: manifest
                 .as_ref()
                 .filter(|_| !args.quick)
@@ -249,6 +252,9 @@ impl Report {
         }
         if let Some(warning) = &self.registry.warning {
             println!("warning: {warning}");
+        }
+        if self.ignored_legacy_audit {
+            println!("warning: legacy [audit] settings are ignored");
         }
         if let Some(skills) = &self.skills {
             println!(
