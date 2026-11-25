@@ -35,7 +35,7 @@ fn repo() -> Fixture {
 }
 
 fn break_alpha(fixture: &Fixture) {
-    fs::write(fixture.canonical("alpha").join("SKILL.md"), "Invalid.").unwrap();
+    fs::remove_file(fixture.canonical("alpha").join("SKILL.md")).unwrap();
 }
 
 #[test]
@@ -80,11 +80,16 @@ fn explicit_sync_checks_a_fresh_link_even_with_no_writes() {
     assert_eq!(json["block_reasons"][0]["kind"], "validation");
     assert_eq!(json["block_reasons"][0]["skill"], "alpha");
     assert_eq!(json["validation"][0]["ok"], false);
-    assert_eq!(state, fs::read(fixture.state()).unwrap());
     assert_eq!(
-        fs::read_to_string(fixture.host("claude").join("alpha/SKILL.md")).unwrap(),
-        "Invalid."
+        json["validation"][0]["errors"],
+        serde_json::json!(["SKILL.md not found"])
     );
+    assert_eq!(state, fs::read(fixture.state()).unwrap());
+    assert!(!fixture.host("claude").join("alpha/SKILL.md").exists());
+    assert!(matches!(
+        link::entry_kind(&fixture.host("claude").join("alpha")).unwrap(),
+        EntryKind::Link(_)
+    ));
 }
 
 #[test]
@@ -218,29 +223,33 @@ fn sync_previews_validate_the_files_the_copy_will_keep() {
         .command()
         .args(["sync", "beta", "--host", "claude", "--dry-run", "--json"])
         .assert()
-        .code(1);
+        .success();
     let report: Value = serde_json::from_slice(&preview.get_output().stdout).unwrap();
-    assert_eq!(report["blocked"], true);
-    assert_eq!(report["applicable"], false);
+    assert_eq!(report["blocked"], false);
+    assert_eq!(report["applicable"], true);
+    assert_eq!(report["block_reasons"], serde_json::json!([]));
     assert!(
-        report["block_reasons"]
+        report["validation"][0]["warnings"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|reason| reason["kind"] == "validation"
-                && reason["message"]
-                    .as_str()
-                    .unwrap()
-                    .contains("__pycache__/fixture.md"))
+            .any(|warning| warning.as_str().unwrap().contains("__pycache__/fixture.md"))
     );
+    let destination = fixture.host("claude").join("beta");
+    assert!(!destination.exists());
+    assert_eq!(fs::read(fixture.state()).unwrap(), before);
     fixture
         .command()
         .args(["sync", "beta", "--host", "claude", "--yes"])
         .assert()
-        .code(1)
-        .stdout(contains("__pycache__/fixture.md"));
-    assert!(!fixture.host("claude").join("beta").exists());
-    assert_eq!(fs::read(fixture.state()).unwrap(), before);
+        .success()
+        .stdout(contains("__pycache__/fixture.md").count(1));
+    assert_eq!(
+        fs::read(destination.join("SKILL.md")).unwrap(),
+        fs::read(source.join("SKILL.md")).unwrap()
+    );
+    assert!(!destination.join("__pycache__").exists());
+    assert_ne!(fs::read(fixture.state()).unwrap(), before);
 }
 
 #[test]

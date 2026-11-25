@@ -47,18 +47,31 @@ fn skills_table_shows_per_host_status_columns_without_summary() {
 }
 
 #[test]
-fn skills_table_includes_invalid_rows_without_failing() {
+fn skills_table_labels_rows_without_a_readable_description() {
     let fixture = catalog();
     fixture.write_manifest(&format!(
-        "{CATALOG}\n[skills.broken]\nenabled = true\nhosts = [\"claude\"]\n"
+        "{CATALOG}\n[skills.broken]\nenabled = true\nhosts = [\"claude\"]\n[skills.no-frontmatter]\n[skills.no-description]\n"
     ));
+    for (name, content) in [
+        ("no-frontmatter", "Body text."),
+        (
+            "no-description",
+            "---\nname: no-description\n---\nBody text.",
+        ),
+    ] {
+        fs::create_dir(fixture.canonical(name)).unwrap();
+        fs::write(fixture.canonical(name).join("SKILL.md"), content).unwrap();
+    }
     fixture
         .command()
         .arg("skills")
         .assert()
         .success()
         .stderr("")
-        .stdout(predicate::str::contains("broken (invalid)"))
+        .stdout(predicate::str::contains("broken (no description)"))
+        .stdout(predicate::str::contains("no-frontmatter (no description)"))
+        .stdout(predicate::str::contains("no-description (no description)"))
+        .stdout(predicate::str::contains("(invalid)").not())
         .stdout(predicate::str::contains("alpha").and(predicate::str::contains("gamma")));
 }
 
@@ -89,7 +102,7 @@ fn skills_json_filters_by_host_and_enabled_state() {
 }
 
 #[test]
-fn skills_json_includes_invalid_row_error() {
+fn skills_json_includes_metadata_read_errors_without_inventing_a_description() {
     let fixture = catalog();
     fixture.write_manifest(&format!(
         "{CATALOG}\n[skills.broken]\nenabled = true\nhosts = [\"claude\"]\n"
@@ -107,13 +120,64 @@ fn skills_json_includes_invalid_row_error() {
         ["alpha", "broken", "gamma"]
     );
     assert_eq!(rows[1]["status"], json!({"claude": "MISSING"}));
+    assert_eq!(rows[1]["description"], "");
     assert!(
-        rows[1]["description"]
+        rows[1]["error"]
             .as_str()
             .unwrap()
-            .starts_with("invalid: ")
+            .starts_with("Could not read skill metadata:")
     );
     assert!(rows[1]["error"].as_str().unwrap().contains("SKILL.md"));
+}
+
+#[test]
+fn skills_keeps_legacy_yaml_scalar_descriptions_in_the_catalog() {
+    let fixture = catalog();
+    for (name, yaml) in [("alpha", "false"), ("beta", "0"), ("gamma", "0123")] {
+        fs::write(
+            fixture.canonical(name).join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: {yaml}\n---\nBody.\n"),
+        )
+        .unwrap();
+    }
+    let data = json(fixture.command().args(["skills", "--json"]));
+    let rows = data["skills"].as_array().unwrap();
+    for (row, (name, description)) in
+        rows.iter()
+            .zip([("alpha", "False"), ("beta", "0"), ("gamma", "83")])
+    {
+        assert_eq!(row["name"], name);
+        assert_eq!(row["description"], description);
+        assert!(row.get("error").is_none(), "{row}");
+    }
+    assert_eq!(rows.len(), 3);
+    fixture
+        .command()
+        .arg("skills")
+        .assert()
+        .success()
+        .stdout("SKILL  ENABLED  CLAUDE   CODEX\n-----  -------  -------  -------\nalpha  yes      missing  missing\nbeta   no       -        missing\ngamma  yes      missing  missing\n");
+}
+
+#[test]
+fn skills_catalog_keeps_the_dev_1_3_1_output_for_explicit_null() {
+    let fixture = catalog();
+    fs::write(
+        fixture.canonical("alpha").join("SKILL.md"),
+        "---\nname: alpha\ndescription: null\n---\nBody.\n",
+    )
+    .unwrap();
+    let data = json(fixture.command().args(["skills", "alpha", "--json"]));
+    let row = &data["skills"][0];
+    assert_eq!(row["name"], "alpha");
+    assert_eq!(row["description"], "None");
+    assert!(row.get("error").is_none(), "{row}");
+    fixture
+        .command()
+        .args(["skills", "alpha"])
+        .assert()
+        .success()
+        .stdout("SKILL  ENABLED  CLAUDE   CODEX\n-----  -------  -------  -------\nalpha  yes      missing  missing\n");
 }
 
 #[test]

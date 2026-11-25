@@ -101,10 +101,10 @@ pub(crate) fn rows(
                 field(&meta, "description").map_or_else(String::new, Node::python_string),
                 None,
             ),
-            Err(err) => {
-                let error = format!("invalid skill metadata for {}: {err}", skill.name);
-                (format!("invalid: {error}"), Some(error))
-            }
+            Err(err) => (
+                String::new(),
+                Some(format!("Could not read skill metadata: {err}")),
+            ),
         };
         skills.push(Row {
             summary: Summary {
@@ -129,7 +129,8 @@ pub(crate) struct CatalogCost {
     pub(crate) skills: usize,
     pub(crate) description_chars: usize,
     pub(crate) longest: Vec<DescriptionLength>,
-    pub(crate) invalid: usize,
+    #[serde(rename = "invalid")]
+    pub(crate) without_description: usize,
 }
 
 #[derive(Serialize)]
@@ -163,9 +164,7 @@ pub(crate) fn costs(
         let description_chars = metadata(&manifest.skill_dir(&skill.name))
             .ok()
             .and_then(|meta| match field(&meta, "description") {
-                Some(Node::String(description)) if !description.is_empty() => {
-                    Some(description.chars().count())
-                }
+                Some(Node::String(text)) if !text.trim().is_empty() => Some(text.chars().count()),
                 _ => None,
             });
         for (_, cost) in targets {
@@ -180,7 +179,7 @@ pub(crate) fn costs(
                     .sort_by(|a, b| b.chars.cmp(&a.chars).then_with(|| a.name.cmp(&b.name)));
                 cost.longest.truncate(2);
             } else {
-                cost.invalid += 1;
+                cost.without_description += 1;
             }
         }
     }
@@ -268,8 +267,8 @@ impl Catalog {
         }
         let rows = self.skills.iter().map(|row| {
             let summary = &row.summary;
-            let name = if row.error.is_some() {
-                format!("{} (invalid)", summary.name)
+            let name = if row.description.trim().is_empty() {
+                format!("{} (no description)", summary.name)
             } else {
                 summary.name.clone()
             };

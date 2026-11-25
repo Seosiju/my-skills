@@ -23,7 +23,7 @@ pub enum Value {
 }
 
 /// Parse failure. The message text mirrors v0.4.1 `FrontmatterError`;
-/// validation turns it into an error string.
+/// validation reports it as a warning.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
 pub struct FrontmatterError(pub String);
@@ -46,18 +46,21 @@ pub(crate) fn python_whitespace(c: char) -> bool {
 }
 
 pub(crate) fn parse_document(text: &str) -> Result<(Mapping, String), FrontmatterError> {
-    parse_document_with_comments(text, None)
+    let (yaml, body) = split_document(text)?.ok_or_else(|| {
+        FrontmatterError(
+            if text.is_empty() {
+                "file is empty: no frontmatter found"
+            } else {
+                "missing opening '---': frontmatter must start on the first line"
+            }
+            .into(),
+        )
+    })?;
+    Ok((load_yaml(&yaml, None)?, body))
 }
 
-pub(crate) fn parse_document_with_comments(
-    text: &str,
-    commented_fields: Option<&mut Vec<(String, String)>>,
-) -> Result<(Mapping, String), FrontmatterError> {
-    if text.is_empty() {
-        return Err(FrontmatterError(
-            "file is empty: no frontmatter found".into(),
-        ));
-    }
+/// Return the YAML block and Markdown body independently of YAML parsing.
+pub(crate) fn split_document(text: &str) -> Result<Option<(String, String)>, FrontmatterError> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let text = text.replace("\r\n", "\n");
     // Python splitlines also recognizes Unicode line separators and a bare CR.
@@ -70,17 +73,15 @@ pub(crate) fn parse_document_with_comments(
     });
     let delimiter = |line: &str| line.trim_matches(python_whitespace) == "---";
     if !lines.next().is_some_and(delimiter) {
-        return Err(FrontmatterError(
-            "missing opening '---': frontmatter must start on the first line".into(),
-        ));
+        return Ok(None);
     }
     let mut yaml = Vec::new();
     for line in lines.by_ref() {
         if delimiter(line) {
-            return Ok((
-                load_yaml(&yaml.join("\n"), commented_fields)?,
+            return Ok(Some((
+                yaml.join("\n"),
                 lines.collect::<Vec<_>>().join("\n"),
-            ));
+            )));
         }
         yaml.push(line);
     }
@@ -812,16 +813,24 @@ fn keys_equal(left: &Rc<Node>, right: &Rc<Node>) -> bool {
     compare(left, right) || compare(right, left)
 }
 
-fn load_yaml(
+#[derive(Default)]
+pub(crate) struct YamlDiagnostics {
+    pub(crate) commented_fields: Vec<(String, String)>,
+    pub(crate) plain_name: Option<String>,
+    pub(crate) name_may_be_quoted: bool,
+    pub(crate) description_may_be_quoted: bool,
+}
+
+pub(crate) fn load_yaml(
     source: &str,
-    commented_fields: Option<&mut Vec<(String, String)>>,
+    diagnostics: Option<&mut YamlDiagnostics>,
 ) -> Result<Mapping, FrontmatterError> {
     let mut parser = Parser::new_from_str(source);
     let mut frames: Vec<Frame> = Vec::new();
     let mut anchors = HashMap::new();
-    let check_comments =
-        commented_fields.is_some() && (source.contains(" #") || source.contains("\t#"));
+    let check_comments = diagnostics.is_some() && (source.contains(" #") || source.contains("\t#"));
     let mut plain_scalars = Vec::new();
+    let mut collection_spans = Vec::new();
     let mut root = None;
     let mut document_start = None;
     if let Some((index, c)) = source.chars().enumerate().find(|&(_, c)| {
@@ -860,13 +869,16 @@ fn load_yaml(
                 continue;
             }
             Event::Scalar(text, style, anchor, tag) => {
-                let plain = (check_comments && style == TScalarStyle::Plain && !text.is_empty())
-                    .then(|| text.clone());
+                let plain =
+                    (diagnostics.is_some() && style == TScalarStyle::Plain && !text.is_empty())
+                        .then(|| text.clone());
                 let node = Rc::new(
                     resolve_scalar(text, style, tag.as_ref())
                         .ok_or_else(|| unsupported_tag(source, mark, tag.as_ref()))?,
                 );
-                if let Some(value) = plain {
+                if let Some(value) = plain
+                    && (check_comments || !matches!(*node, Node::String(_) | Node::Null))
+                {
                     plain_scalars.push((Rc::clone(&node), index, value));
                 }
                 (node, anchor)
@@ -905,8 +917,13 @@ fn load_yaml(
             Event::MappingEnd | Event::SequenceEnd => {
                 let frame = frames.pop().expect("end event has an open collection");
                 let anchor = frame.anchor;
+                let end = index;
                 index = frame.start;
-                (Rc::new(frame.finish(source)?), anchor)
+                let node = Rc::new(frame.finish(source)?);
+                if diagnostics.is_some() {
+                    collection_spans.push((Rc::clone(&node), index, end));
+                }
+                (node, anchor)
             }
             Event::Alias(id) => {
                 let value: &Located = anchors.get(&id).ok_or_else(|| {
@@ -949,17 +966,38 @@ fn load_yaml(
     match root.as_ref().map(|item| item.node.as_ref()) {
         None | Some(Node::Null) => Ok(Vec::new()),
         Some(Node::Map(mapping)) => {
-            if let Some(commented_fields) = commented_fields {
+            if let Some(diagnostics) = diagnostics {
                 for (key, effective_value) in mapping {
                     // Follow the effective scalar through aliases, merges, and overrides.
-                    if let Node::String(field) = key.as_ref()
-                        && matches!(field.as_str(), "name" | "description")
-                        && let Some((_, index, value)) = plain_scalars
-                            .iter()
-                            .find(|(node, _, _)| Rc::ptr_eq(node, effective_value))
-                        && has_inline_comment(source, *index, value)
+                    let Node::String(field) = key.as_ref() else {
+                        continue;
+                    };
+                    let may_be_quoted = match field.as_str() {
+                        "name" => &mut diagnostics.name_may_be_quoted,
+                        "description" => &mut diagnostics.description_may_be_quoted,
+                        _ => continue,
+                    };
+                    if let Some((_, index, value)) = plain_scalars
+                        .iter()
+                        .find(|(node, _, _)| Rc::ptr_eq(node, effective_value))
                     {
-                        commented_fields.push((field.clone(), value.clone()));
+                        if check_comments && has_inline_comment(source, *index, value) {
+                            diagnostics
+                                .commented_fields
+                                .push((field.clone(), value.clone()));
+                        }
+                        if field == "name"
+                            && !matches!(effective_value.as_ref(), Node::Null | Node::String(_))
+                        {
+                            // Codex reads plain scalars into its string-valued name as written.
+                            diagnostics.plain_name = Some(value.clone());
+                        }
+                    }
+                    if let Some((_, start, end)) = collection_spans
+                        .iter()
+                        .find(|(node, _, _)| Rc::ptr_eq(node, effective_value))
+                    {
+                        *may_be_quoted = may_quote_collection(source, *start, *end);
                     }
                 }
             }
@@ -970,6 +1008,27 @@ fn load_yaml(
             node.type_name()
         ))),
     }
+}
+
+fn may_quote_collection(source: &str, start: usize, end: usize) -> bool {
+    // Codex may quote an inline value containing a colon followed by space.
+    // Use the parsed value's own span, including the origin of a YAML alias.
+    let Some((start, '[' | '{')) = source.char_indices().nth(start) else {
+        return false;
+    };
+    let Some((end, ']' | '}')) = source.char_indices().nth(end) else {
+        return false;
+    };
+    let line_prefix = source[..start].rsplit('\n').next().unwrap_or_default();
+    let Some((_, before_value)) = line_prefix.split_once(':') else {
+        return false;
+    };
+    let value = &source[start..end];
+    before_value.starts_with(char::is_whitespace)
+        && !value.contains('\n')
+        && value
+            .match_indices(':')
+            .any(|(index, _)| value[index + 1..].starts_with(char::is_whitespace))
 }
 
 fn has_inline_comment(source: &str, index: usize, value: &str) -> bool {

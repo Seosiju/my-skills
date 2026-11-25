@@ -18,6 +18,15 @@ When a task needs to inspect or modify a user's registry, run `my-skills doctor`
 first and read the `Registry:` line. If it points somewhere unexpected, ask for
 or set the intended registry with `my-skills set-root <path>` before writing.
 
+Skills in a user's registry are the user's own content. The tool exists to store
+and deliver them as written. Tool development, tests, and release checks never
+edit them to suit the tool. Only the seed skills under this repo's `skills/`
+belong to the tool. If a user skill has a content problem (for example, a
+`validate` warning), tell the owner what agents actually see and let them
+decide. Ask that as its own question, not bundled with other approvals. The
+release check (`scripts/hub-check.py`) judges only whether the hub delivers
+skills, so content findings appear there as notes, not failures.
+
 Development commands:
 
 ```bash

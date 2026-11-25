@@ -139,11 +139,7 @@ fn install_and_sync_report_creates_updates_prunes_and_noops() {
 fn validation_audit_and_confirmation_blocks_return_the_batch_document() {
     let fixture = registry();
     for command in ["install", "sync"] {
-        fs::write(
-            fixture.canonical("alpha").join("SKILL.md"),
-            "Missing frontmatter.",
-        )
-        .unwrap();
+        fs::remove_file(fixture.canonical("alpha").join("SKILL.md")).unwrap();
         let invalid = result(&fixture, &[command, "alpha", "beta", "--yes"], 1);
         assert_eq!(invalid["applied"], false);
         assert_eq!(invalid["blocked"], true);

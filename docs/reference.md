@@ -114,38 +114,46 @@ string when guidance is available and `null` otherwise.
 
 `skills --json` includes the absolute `canonical_path` and the manifest `group`
 (or `null`) in each row. Repeatable `--group` matches any of the supplied groups
-and combines with the host and enabled-state filters.
+and combines with the host and enabled-state filters. JSON represents YAML
+description values as text, including scalar values such as `false` as
+`"False"`. Text output labels skills with an empty or unavailable catalog
+description as `(no description)`.
 
 `skills --json --brief` returns the top-level `registry` and `skills` keys.
 Each row has `name`, `enabled`, `hosts`, `group`, and `status`, plus `error`
-if skill metadata is missing or invalid. With `--with-governance`, brief rows
+if skill metadata could not be read. With `--with-governance`, brief rows
 nest `audit` and `provenance` under `governance`. Full rows put `audit` and
 `provenance` at the row level. `--with-status` is an alias for
 `--with-governance`. `--brief` applies to JSON output.
 
 ### Validation and audit
 
-`validate` runs the same gate as pre-commit and doctor's full validation. This
-includes standard validation, the fixed security floor, applicable enabled
-host limits, and manifest audit policy. With no selection, it checks all
-directories under the skills root, including unregistered skills. Use
-`--host <HOST>` to check only the named host's constraints. An over-limit
-description fails validation. Standard optional Agent Skills fields
-(`license`, `compatibility`, and `metadata`) do not emit unsupported-field
-warnings; `allowed-tools` / `allowed_tools` keep their single dedicated warning,
-and any other unsupported fields emit one combined warning per skill listing all
-affected hosts.
+`validate` shares the pre-commit and full `doctor` gate. A missing
+`SKILL.md` and blocking security findings can fail the gate. Content
+diagnostics are warnings. `install` and `sync` deliver the existing skill
+bytes and report how the selected services display the skill, including
+anything they hide, shorten, or name differently.
+With no selection, `validate` checks all directories under the skills root,
+including unregistered skills. It reports display warnings for enabled,
+applicable hosts. Use `validate --host <HOST>` to preview how that host would
+display the skill even when it is disabled or outside the skill's host list.
+
+For consistent display, use UTF-8 without a BOM and open the file with a
+YAML block between `---` lines. Set `name` to the folder name, using lowercase
+alphanumeric words separated by single hyphens (up to 64 characters). Include
+a description of 1,024 characters or fewer and quote values that contain YAML
+syntax such as ` #`.
 
 ```json
 {
   "registry": {"path": "/path/to/registry", "source": "flag"},
-  "ok": false,
+  "ok": true,
   "skills": [
     {
       "skill": "example",
-      "ok": false,
-      "errors": ["codex description exceeds 768 characters"],
-      "warnings": []
+      "ok": true,
+      "errors": [],
+      "warnings": ["Codex does not show this skill because its description is missing or empty. If you want it to appear, add a description to the YAML frontmatter."]
     }
   ]
 }
@@ -263,10 +271,13 @@ creates `skills/<NAME>/SKILL.md` and registers `[skills.<NAME>]` with
 passed). It holds `my-skills.toml.edit-lock` for the whole operation without
 taking the state lock (`--dry-run` checks lock availability and writes nothing).
 
-All checks run before writing: skill and group name rules (`invalid_name`),
-non-blank `--description` within `1024` characters and within the smallest
-`description_max_chars` of the targeted or enabled built-in hosts (`768`
-characters; `--description` errors emit `usage`), active-registry write policy
+`new` saves long descriptions in full and warns when a selected service
+would shorten them. The selection is the explicit `--host` list, or the
+enabled targets when no host is specified. JSON includes any warnings in
+`warnings`.
+
+All checks run before writing. They cover skill and group name rules
+(`invalid_name`), a non-blank `--description` (`usage`), active-registry write policy
 (re-checked under `edit-lock`, with conditional active-root caching so a newer
 `set-root` is not overwritten), any existing `skills/<NAME>` entry (`already_exists`,
 including a file or broken link), base or `my-skills.local.toml` registration
@@ -338,10 +349,10 @@ Both `doctor` and `doctor --quick` report catalog description cost per enabled
 host. Text output prints a `Catalog:` summary line (or `Catalog: no enabled hosts`),
 and JSON attaches `catalog: {skills, description_chars, longest, invalid}` to
 each enabled host row (`longest` lists up to two `{name, chars}` entries).
-Counts measure Unicode characters across wanted skills; missing or malformed
-descriptions count as `0` characters and increment `invalid` without appearing
-in `longest`. Disabled hosts and reports without a loaded manifest omit
-`catalog`.
+Counts measure Unicode characters in nonblank YAML strings across wanted
+skills. Other description values and missing descriptions count as `0`
+characters and are left out of `longest`. JSON retains the `invalid` key for
+this count. Disabled hosts and reports without a loaded manifest omit `catalog`.
 
 Each built-in host row includes `configured_mode` (`link`, `copy`, or `null`
 when the manifest is unavailable) and `connections: {link, copy, fallback}`

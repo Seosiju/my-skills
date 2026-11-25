@@ -2,7 +2,8 @@
 """End-to-end hub verification for my-skills across Claude Code, Codex, and agy.
 
 Runs real headless agents to verify:
-  1. Real registry visibility + `my-skills validate` (read-only)
+  1. Real registry visibility (read-only). `my-skills validate` findings in the
+     user's skills are shown as notes for the owner and never fail the check.
   2. Sandbox edit (v1 -> v2) reflected via post-commit hook
   3. Sandbox new skill (`my-skills new` -> enable -> commit) visible to all agents
   4. Sandbox disable (`my-skills disable` -> commit) removed from all agents
@@ -1116,19 +1117,27 @@ def run_row1_real(
         if missing:
             preview = ", ".join(missing[:4]) + (f" 외 {len(missing) - 4}개" if len(missing) > 4 else "")
             reasons.append(f"누락 {len(missing)}/{len(expected)}개 ({preview})")
-        if validate_issues:
-            reasons.append(f"validate 문제 {len(validate_issues)}건 ({validate_issues[0]})")
+        # Row 1 judges only whether the hub delivers the skills. Content
+        # findings in the user's own skills are notes for the owner and never
+        # fail the check: the hub adapts to skills, not the other way round.
+        note = (
+            f"참고: 스킬 내용 경고 {len(validate_issues)}건, 스킬 주인이 판단 ({validate_issues[0]})"
+            if validate_issues
+            else ""
+        )
 
         if reasons:
             results[agent] = CellResult(
                 "실패",
                 reason="; ".join(reasons),
+                note=note,
                 details={"expected": len(expected), "missing": missing, "validate_issues": validate_issues},
             )
         else:
             results[agent] = CellResult(
                 "통과",
-                details={"expected": len(expected), "validate_issues": []},
+                note=note,
+                details={"expected": len(expected), "validate_issues": validate_issues},
             )
 
     meta = {
@@ -1830,7 +1839,7 @@ def main(argv: list[str] | None = None) -> int:
         row1, row1_meta = run_row1_real(
             selected_agents, agent_cmds, my_skills_bin, real_env, neutral_dir, log_dir
         )
-        rows.append(("1", "저장소 스킬 표시 + validate (실제, 읽기 전용)", row1))
+        rows.append(("1", "저장소 스킬이 다 보이나 (실제, 읽기 전용)", row1))
 
         if args.real_only:
             na = {a: CellResult("해당없음", note="--real-only") for a in ALL_AGENTS}
@@ -1926,7 +1935,7 @@ def main(argv: list[str] | None = None) -> int:
     has_failure = any(
         cells[a].status == "실패" for _, _, cells in rows for a in ALL_AGENTS
     )
-    return 1 if has_failure or row1_meta.get("validate_issues") else 0
+    return 1 if has_failure else 0
 
 
 if __name__ == "__main__":

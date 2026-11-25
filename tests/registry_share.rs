@@ -28,7 +28,7 @@ fn share_plan_json_lists_host_candidates_and_risks() {
     let source = host_skill(&fixture, "brand");
     let bad = fixture.host("claude").join("bad");
     fs::create_dir(&bad).unwrap();
-    fs::write(bad.join("SKILL.md"), "# No frontmatter\n").unwrap();
+    fs::write(bad.join("SKILL.md"), "---\ndescription: [unclosed\n---\n").unwrap();
     let original = fs::read(fixture.manifest()).unwrap();
     let plan = json(share(&fixture).args(["--plan", "--json"]));
     let candidates = plan["candidates"].as_array().unwrap();
@@ -37,9 +37,13 @@ fn share_plan_json_lists_host_candidates_and_risks() {
     assert_eq!(candidates.len(), 2);
     assert_eq!(candidates[0]["name"], "bad");
     assert_eq!(candidates[0]["canonical_status"], "missing");
-    assert_eq!(candidates[0]["recommended"], "skip");
-    assert_eq!(candidates[0]["choices"], json!(["skip"]));
-    assert_eq!(candidates[0]["risks"][0]["severity"], "error");
+    assert_eq!(candidates[0]["recommended"], "share-enable");
+    assert_eq!(
+        candidates[0]["choices"],
+        json!(["share-enable", "share-disable", "skip"])
+    );
+    assert_eq!(candidates[0]["risks"].as_array().unwrap().len(), 1);
+    assert_eq!(candidates[0]["risks"][0]["severity"], "warning");
     assert!(
         candidates[0]["risks"][0]["message"]
             .as_str()
