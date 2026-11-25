@@ -23,7 +23,7 @@ pub enum Value {
 }
 
 /// Parse failure. The message text mirrors v0.4.1 `FrontmatterError`;
-/// validation turns it into an error string.
+/// validation reports it as a warning.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
 pub struct FrontmatterError(pub String);
@@ -46,18 +46,21 @@ pub(crate) fn python_whitespace(c: char) -> bool {
 }
 
 pub(crate) fn parse_document(text: &str) -> Result<(Mapping, String), FrontmatterError> {
-    parse_document_with_comments(text, None)
+    let (yaml, body) = split_document(text)?.ok_or_else(|| {
+        FrontmatterError(
+            if text.is_empty() {
+                "file is empty: no frontmatter found"
+            } else {
+                "missing opening '---': frontmatter must start on the first line"
+            }
+            .into(),
+        )
+    })?;
+    Ok((load_yaml(&yaml, None)?, body))
 }
 
-pub(crate) fn parse_document_with_comments(
-    text: &str,
-    commented_fields: Option<&mut Vec<(String, String)>>,
-) -> Result<(Mapping, String), FrontmatterError> {
-    if text.is_empty() {
-        return Err(FrontmatterError(
-            "file is empty: no frontmatter found".into(),
-        ));
-    }
+/// Return the YAML block and Markdown body independently of YAML parsing.
+pub(crate) fn split_document(text: &str) -> Result<Option<(String, String)>, FrontmatterError> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let text = text.replace("\r\n", "\n");
     // Python splitlines also recognizes Unicode line separators and a bare CR.
@@ -70,17 +73,15 @@ pub(crate) fn parse_document_with_comments(
     });
     let delimiter = |line: &str| line.trim_matches(python_whitespace) == "---";
     if !lines.next().is_some_and(delimiter) {
-        return Err(FrontmatterError(
-            "missing opening '---': frontmatter must start on the first line".into(),
-        ));
+        return Ok(None);
     }
     let mut yaml = Vec::new();
     for line in lines.by_ref() {
         if delimiter(line) {
-            return Ok((
-                load_yaml(&yaml.join("\n"), commented_fields)?,
+            return Ok(Some((
+                yaml.join("\n"),
                 lines.collect::<Vec<_>>().join("\n"),
-            ));
+            )));
         }
         yaml.push(line);
     }
@@ -812,7 +813,7 @@ fn keys_equal(left: &Rc<Node>, right: &Rc<Node>) -> bool {
     compare(left, right) || compare(right, left)
 }
 
-fn load_yaml(
+pub(crate) fn load_yaml(
     source: &str,
     commented_fields: Option<&mut Vec<(String, String)>>,
 ) -> Result<Mapping, FrontmatterError> {

@@ -1,18 +1,15 @@
-//! Agent Skills standard validation. Stream D. Mirrors v0.4.1
-//! `validation.py`. (v0.4.1 `checks.compose_validation`, which adds audit
-//! findings, is wired up by the integrator once stream E lands.)
+//! Skill format and host display diagnostics. Security gates are applied separately.
+
+mod links;
 
 use std::collections::BTreeSet;
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::{fs, io};
 
-use crate::check::frontmatter::{Mapping, Node, parse_document_with_comments, python_whitespace};
-use crate::drive::hosts::{CODEX, HostConfig};
+use crate::check::frontmatter::{FrontmatterError, Mapping, Node, load_yaml, split_document};
+use crate::drive::hosts::{HostConfig, MissingDescription};
 
 const MAX_NAME_LEN: usize = 64;
-const MAX_DESCRIPTION_LEN: usize = 1024;
-const BOM_MESSAGE: &str =
-    "SKILL.md starts with a UTF-8 BOM. Codex rejects this file. Save it as UTF-8 without a BOM.";
 const OPTIONAL_FIELDS: &[&str] = &[
     "license",
     "compatibility",
@@ -58,12 +55,12 @@ pub fn validate_name(name: &str) -> Vec<String> {
     errors
 }
 
-/// Standard validation without a specific target host.
+/// Content diagnostics without a specific target host.
 pub fn validate_skill(path: &Path) -> ValidationResult {
     validate(path, &[])
 }
 
-/// Standard validation with host-specific length limits and field warnings.
+/// Content diagnostics with display warnings for a specific host.
 pub fn validate_skill_for_host(path: &Path, host: &HostConfig) -> ValidationResult {
     validate(path, &[host])
 }
@@ -84,154 +81,202 @@ fn validate(path: &Path, hosts: &[&HostConfig]) -> ValidationResult {
         warnings: Vec::new(),
     };
     let skill_md = path.join("SKILL.md");
-    if !skill_md.is_file() {
-        result.errors.push("SKILL.md not found".into());
-        return result;
-    }
-    let text = match fs::read_to_string(skill_md) {
-        Ok(text) => text,
-        Err(error) => {
-            result
-                .errors
-                .push(format!("could not read SKILL.md: {error}"));
-            return result;
-        }
-    };
-    if text.starts_with('\u{feff}') {
-        if hosts.iter().any(|host| host.name == CODEX.name) {
-            result.errors.push(BOM_MESSAGE.into());
+    let text = match fs::metadata(&skill_md).and_then(|metadata| {
+        if metadata.is_file() {
+            fs::read_to_string(skill_md)
         } else {
-            result.warnings.push(BOM_MESSAGE.into());
+            Err(io::ErrorKind::NotFound.into())
         }
-    }
-    let initial_errors = result.errors.len();
-    let mut commented_fields = Vec::new();
-    let (metadata, body) = match parse_document_with_comments(&text, Some(&mut commented_fields)) {
-        Ok(parsed) => parsed,
+    }) {
+        Ok(text) => text,
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+            ) =>
+        {
+            result.errors.push("SKILL.md not found".into());
+            return result;
+        }
         Err(error) => {
-            result.errors.push(error.0);
+            result.warnings.push(format!(
+                "my-skills could not read SKILL.md: {error}. If you want it checked, make sure the file is readable UTF-8."
+            ));
             return result;
         }
     };
 
-    for (field, value) in commented_fields {
-        const PREVIEW_LEN: usize = 48;
-        let mut chars = value.chars();
-        let mut preview: String = chars.by_ref().take(PREVIEW_LEN).collect();
-        if chars.next().is_some() {
-            preview.push('…');
+    let mut readable_hosts = Vec::new();
+    for &host in hosts {
+        if text.starts_with('\u{feff}') && !host.skill_display.accepts_bom {
+            result.warnings.push(format!(
+                "{} does not show this skill because SKILL.md starts with a UTF-8 BOM. If you want it to appear, save the file as UTF-8 without a BOM.",
+                host.display_name
+            ));
+        } else {
+            readable_hosts.push(host);
         }
-        result.warnings.push(format!(
-            "A YAML comment cuts off '{field}'. Agents see {preview:?}. Put the full value in quotes."
-        ));
     }
 
-    if let Some(name) = get(&metadata, "name").filter(|name| name.truthy()) {
-        let name = name.python_string();
-        result.errors.extend(validate_name(&name));
-        if name != result.skill {
-            result.errors.push(format!(
-                "directory name '{}' does not match frontmatter name '{name}'",
-                result.skill
-            ));
+    let (yaml, body) = match split_document(&text) {
+        Ok(Some(document)) => document,
+        Ok(None) => {
+            for host in readable_hosts {
+                if host.skill_display.requires_frontmatter {
+                    result.warnings.push(format!(
+                        "{} does not show this skill because SKILL.md has no YAML frontmatter. If you want it to appear, add a description in a YAML block between '---' lines at the top.",
+                        host.display_name
+                    ));
+                } else {
+                    result.warnings.push(format!(
+                        "{} uses the first body line as the description because SKILL.md has no YAML frontmatter. If you want a different description, add one in a YAML block at the top.",
+                        host.display_name
+                    ));
+                }
+            }
+            links::warn_missing(path, &text, &mut result.warnings);
+            return result;
         }
-    } else {
-        result
-            .errors
-            .push("frontmatter is missing required field 'name'".into());
-    }
-
-    let description_length = if let Some(description) =
-        get(&metadata, "description").filter(|description| description.truthy())
-    {
-        let length = description.python_string().chars().count();
-        if length > MAX_DESCRIPTION_LEN {
-            result.errors.push(format!(
-                "description exceeds {MAX_DESCRIPTION_LEN} characters ({length})"
-            ));
+        Err(error) => {
+            warn_frontmatter(error, &mut result);
+            return result;
         }
-        length
-    } else {
-        result
-            .errors
-            .push("frontmatter is missing required field 'description'".into());
-        0
     };
 
-    if get(&metadata, "allowed-tools").is_some() || get(&metadata, "allowed_tools").is_some() {
-        result
-            .warnings
-            .push("'allowed-tools' has inconsistent host support and may be ignored".into());
-    }
-
-    let mut remaining = body.as_str();
-    // Match Python's \]\(([^)]+)\) even in image links and code spans.
-    while let Some((_, rest)) = remaining.split_once("](") {
-        let Some((reference, rest)) = rest.split_once(')') else {
-            break;
-        };
-        remaining = rest;
-        let reference = reference.trim_matches(python_whitespace);
-        if ["http://", "https://", "#", "mailto:"]
-            .iter()
-            .any(|prefix| reference.starts_with(prefix))
-        {
-            continue;
+    let mut commented_fields = Vec::new();
+    match load_yaml(&yaml, Some(&mut commented_fields)) {
+        Ok(metadata) => {
+            for (field, value) in commented_fields {
+                const PREVIEW_LEN: usize = 48;
+                let mut chars = value.chars();
+                let mut preview: String = chars.by_ref().take(PREVIEW_LEN).collect();
+                if chars.next().is_some() {
+                    preview.push('…');
+                }
+                result.warnings.push(format!(
+                    "A YAML comment cuts off '{field}'. Agents see {preview:?}. If you want the full value to appear, put it in quotes."
+                ));
+            }
+            if get(&metadata, "allowed-tools").is_some()
+                || get(&metadata, "allowed_tools").is_some()
+            {
+                result.warnings.push(
+                    "'allowed-tools' has inconsistent host support and may be ignored".into(),
+                );
+            }
+            host_diagnostics(&metadata, &readable_hosts, &mut result);
         }
-        let clean = reference
-            .split(['#', '?'])
-            .next()
-            .unwrap_or_default()
-            .trim_matches(python_whitespace);
-        if !clean.is_empty() && !clean.starts_with('/') && !path.join(clean).exists() {
-            result
-                .errors
-                .push(format!("referenced supporting file not found: {reference}"));
-        }
+        Err(error) => warn_frontmatter(error, &mut result),
     }
-
-    if result.errors.len() == initial_errors {
-        host_diagnostics(&metadata, description_length, hosts, &mut result);
-    }
+    links::warn_missing(path, &body, &mut result.warnings);
     result
 }
 
-fn host_diagnostics(
-    metadata: &Mapping,
-    description_length: usize,
-    hosts: &[&HostConfig],
-    result: &mut ValidationResult,
-) {
-    let mut warned_hosts = Vec::new();
-    let mut extra = BTreeSet::new();
+fn warn_frontmatter(error: FrontmatterError, result: &mut ValidationResult) {
+    result.warnings.push(format!(
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. {error}"
+    ));
+}
+
+fn host_diagnostics(metadata: &Mapping, hosts: &[&HostConfig], result: &mut ValidationResult) {
+    let name = field_text(metadata, "name");
+    let description = field_text(metadata, "description");
     for host in hosts {
-        if description_length > host.description_max_chars {
-            result.errors.push(format!(
-                "{} description exceeds {} characters",
-                host.name, host.description_max_chars
+        let service = host.display_name;
+        let display = &host.skill_display;
+        if let Some(name) = &name {
+            let length = name.chars().count();
+            if let Some(limit) = display.name_limit
+                && length > limit
+            {
+                result.warnings.push(format!(
+                    "{service} does not show this skill because its name is {length} characters. If you want it to appear, use a name of {limit} characters or fewer."
+                ));
+                continue;
+            }
+        }
+
+        if description.is_none() && display.missing_description == MissingDescription::Hidden {
+            result.warnings.push(format!(
+                "{service} does not show this skill because its description is missing or empty. If you want it to appear, add a description to the YAML frontmatter."
+            ));
+            continue;
+        }
+
+        if let Some(name) = &name
+            && name != &result.skill
+        {
+            let folder = &result.skill;
+            let (shown, source) = if display.uses_folder_name {
+                (folder, "the folder name")
+            } else {
+                (name, "the YAML name")
+            };
+            result.warnings.push(format!(
+                "{service} lists this skill as {shown:?} using {source}. The folder is {folder:?} and the YAML name is {name:?}. If you want the same name across services, make the two names match."
             ));
         }
-        let mut fields = metadata
+
+        if let Some(description) = &description {
+            let extra_length = display
+                .description_limit
+                .and_then(|limit| limit.extra_field)
+                .and_then(|field| field_text(metadata, field))
+                .map_or(0, |extra| extra.chars().count());
+            if let Some(warning) =
+                description_warning(host, description.chars().count() + extra_length)
+            {
+                result.warnings.push(warning);
+            }
+        } else {
+            let message = match display.missing_description {
+                MissingDescription::FirstBodyLine => "uses the first body line as the description",
+                MissingDescription::Blank => "shows an empty description",
+                MissingDescription::Hidden => unreachable!("hidden skill"),
+            };
+            result.warnings.push(format!(
+                "{service} {message} because the YAML description is missing or empty. If you want a custom description, add one to the YAML frontmatter."
+            ));
+        }
+
+        let fields: BTreeSet<_> = metadata
             .iter()
             .filter(|(key, _)| {
                 !matches!(&**key, Node::String(key)
-                if OPTIONAL_FIELDS.contains(&key.as_str())
-                    || host.frontmatter_keep_fields.contains(&key.as_str()))
+                    if OPTIONAL_FIELDS.contains(&key.as_str())
+                        || display.frontmatter_keep_fields.contains(&key.as_str()))
             })
             .map(|(key, _)| key.python_string())
-            .peekable();
-        if fields.peek().is_some() {
-            warned_hosts.push(host.name);
-            extra.extend(fields);
+            .collect();
+        if !fields.is_empty() {
+            let fields = fields.into_iter().collect::<Vec<_>>().join(", ");
+            result.warnings.push(format!(
+                "{service} ignores these YAML fields: {fields}. If you want {service} to see that information, put it in a supported field or the skill body."
+            ));
         }
     }
-    if !warned_hosts.is_empty() {
-        result.warnings.push(format!(
-            "{} may ignore unsupported frontmatter fields: {}",
-            warned_hosts.join(", "),
-            extra.into_iter().collect::<Vec<_>>().join(", ")
-        ));
+}
+
+pub(crate) fn description_warning(host: &HostConfig, length: usize) -> Option<String> {
+    let limit = host.skill_display.description_limit?;
+    if length <= limit.max_chars {
+        return None;
     }
+    let subject = limit.extra_field.map_or_else(
+        || "description".to_owned(),
+        |field| format!("description and {field} combined"),
+    );
+    let visible = limit.max_chars - limit.suffix.chars().count();
+    Some(format!(
+        "{} shows a shortened {subject} ({length} characters). It keeps the first {visible} characters and adds {:?}. If you want the full text to appear, keep it to {} characters or fewer.",
+        host.display_name, limit.suffix, limit.max_chars
+    ))
+}
+
+fn field_text(metadata: &Mapping, name: &str) -> Option<String> {
+    get(metadata, name)
+        .filter(|node| node.truthy())
+        .map(Node::python_string)
 }
 
 fn get<'a>(metadata: &'a Mapping, name: &str) -> Option<&'a Node> {
@@ -240,13 +285,17 @@ fn get<'a>(metadata: &'a Mapping, name: &str) -> Option<&'a Node> {
     })
 }
 
-/// v0.4.1 `checks.compose_validation`: standard validation plus a security
+/// Content diagnostics plus a security
 /// audit with every rule enabled. Findings at `High` or above become errors
 /// (`security: <file>: <message>`); lower findings become warnings.
 pub fn compose_validation(path: &Path) -> ValidationResult {
+    compose_validation_for_hosts(path, &[])
+}
+
+fn compose_validation_for_hosts(path: &Path, hosts: &[&HostConfig]) -> ValidationResult {
     use crate::check::audit::{AuditPolicy, Severity, run_audit};
 
-    let mut result = validate_skill(path);
+    let mut result = validate(path, hosts);
     let policy = AuditPolicy {
         enabled: true,
         profile: "default".into(),
@@ -295,7 +344,6 @@ pub fn gate_validation(
     use crate::check::audit::{policy_from_settings, run_audit};
     use crate::registry::manifest::AuditSettings;
 
-    let mut result = compose_validation(path);
     let skill = manifest.and_then(|m| m.skills.get(name));
     let hosts = crate::drive::hosts::ALL
         .into_iter()
@@ -308,22 +356,7 @@ pub fn gate_validation(
             only_host.map_or(enabled && listed, |name| name == host.name)
         })
         .collect::<Vec<_>>();
-    if !hosts.is_empty() {
-        let check = validate(path, &hosts);
-        for error in check.errors {
-            if error == BOM_MESSAGE {
-                result.warnings.retain(|warning| warning != BOM_MESSAGE);
-            }
-            if !result.errors.contains(&error) {
-                result.errors.push(error);
-            }
-        }
-        for warning in check.warnings {
-            if !result.warnings.contains(&warning) {
-                result.warnings.push(warning);
-            }
-        }
-    }
+    let mut result = compose_validation_for_hosts(path, &hosts);
 
     let settings = manifest.map_or_else(AuditSettings::default, |m| m.audit.clone());
     match policy_from_settings(&settings) {
@@ -366,8 +399,7 @@ mod compose_tests {
     }
 
     #[test]
-    fn matches_v041_compose_validation() {
-        // Expected values printed by v0.4.1 `checks.compose_validation`.
+    fn compose_validation_keeps_the_security_floor_and_allows_content() {
         let good = compose_validation(&fixture("good-skill"));
         assert!(
             good.errors.is_empty() && good.warnings.is_empty(),
@@ -384,11 +416,12 @@ mod compose_tests {
         );
 
         let bad = compose_validation(&fixture("bad-name"));
+        assert_eq!(bad.errors, Vec::<String>::new());
+        let codex = validate_skill_for_host(&fixture("bad-name"), &crate::drive::hosts::CODEX);
         assert_eq!(
-            bad.errors,
-            vec![
-                "name must be lowercase alphanumeric words separated by single hyphens (no leading, trailing, or consecutive hyphens)",
-                "directory name 'bad-name' does not match frontmatter name 'Bad--Name'",
+            codex.warnings,
+            [
+                "Codex lists this skill as \"Bad--Name\" using the YAML name. The folder is \"bad-name\" and the YAML name is \"Bad--Name\". If you want the same name across services, make the two names match."
             ]
         );
     }

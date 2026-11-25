@@ -294,6 +294,9 @@ pub fn import(args: &ImportArgs) -> ExitCode {
         Ok(result) => {
             let name = result.name;
             let canonical = display_path(&result.canonical);
+            for warning in &result.warnings {
+                println!("  warn: {warning}");
+            }
             if args.dry_run {
                 println!("Dry run — {name} passed validation and audit; nothing written");
                 if result.identical {
@@ -393,7 +396,6 @@ fn print_hint(name: &str, enabled: bool) {
 
 const NEW_DESCRIPTION_PLACEHOLDER: &str =
     "TODO: replace this with what the skill does and when an agent should use it.";
-const NEW_MAX_DESCRIPTION: usize = 1024;
 /// Every `--description` validation message starts with this, so the JSON error
 /// maps to `usage`.
 pub const NEW_DESCRIPTION_ERROR: &str = "invalid --description: ";
@@ -408,6 +410,8 @@ struct NewOutput {
     canonical_path: String,
     created: Vec<String>,
     next: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     dry_run: bool,
 }
@@ -443,13 +447,6 @@ fn create_new_skill(args: &NewArgs) -> Result<()> {
         }
         Some(text) => text,
     };
-    let length = description.chars().count();
-    if length > NEW_MAX_DESCRIPTION {
-        return Err(Error::Manifest(format!(
-            "{NEW_DESCRIPTION_ERROR}exceeds {NEW_MAX_DESCRIPTION} characters ({length})"
-        )));
-    }
-
     let resolution = root::resolve_root(None, false)?;
     if let Some(refusal) = resolution.write_refusal() {
         return Err(Error::Manifest(refusal));
@@ -499,29 +496,12 @@ fn create_new_skill(args: &NewArgs) -> Result<()> {
     }
     share::ensure_outside_hosts(&manifest_path, share::target_paths(&manifest))?;
     share::ensure_outside_hosts(&canonical_dir, share::target_paths(&manifest))?;
-    // The draft must pass `validate` for every host it can reach: the named
-    // hosts, or else the enabled targets.
-    let reachable: Vec<&str> = if hosts.is_empty() {
-        manifest
-            .targets
-            .values()
-            .filter(|target| target.enabled)
-            .map(|target| target.name.as_str())
-            .collect()
-    } else {
-        hosts.iter().map(String::as_str).collect()
-    };
-    if let Some(config) = reachable
-        .iter()
-        .filter_map(|host| crate::drive::hosts::get_host(host))
-        .min_by_key(|config| config.description_max_chars)
-        .filter(|config| length > config.description_max_chars)
-    {
-        return Err(Error::Manifest(format!(
-            "{NEW_DESCRIPTION_ERROR}exceeds {} characters for {} ({length})",
-            config.description_max_chars, config.name
-        )));
-    }
+    let warnings = crate::check::validate::description_warning(
+        &crate::drive::hosts::CODEX,
+        description.chars().count(),
+    )
+    .into_iter()
+    .collect();
 
     let canonical_dir_text = display_path(&canonical_dir);
     let canonical_path_text = display_path(&canonical_path);
@@ -539,6 +519,7 @@ fn create_new_skill(args: &NewArgs) -> Result<()> {
         canonical_dir: canonical_dir_text,
         canonical_path: canonical_path_text,
         dry_run: args.dry_run,
+        warnings,
     };
 
     if !args.dry_run {
@@ -586,6 +567,9 @@ fn create_new_skill(args: &NewArgs) -> Result<()> {
             format!(", hosts {}", hosts.join(", "))
         }
     );
+    for warning in &output.warnings {
+        println!("  warn: {warning}");
+    }
     println!("Next:");
     for (index, step) in output.next.iter().enumerate() {
         println!("  {}. {step}", index + 1);
@@ -597,10 +581,15 @@ fn create_new_skill(args: &NewArgs) -> Result<()> {
 }
 
 fn new_skill_text(name: &str, description: &str) -> String {
-    // A JSON string is also a valid YAML double-quoted scalar.
-    let description = serde_json::to_string(description).expect("a string is serializable");
+    // Quoting also keeps names such as "off" and "0123" as strings.
+    let name_yaml = serde_json::to_string(name).expect("a string is serializable");
+    let description = serde_json::to_string(description)
+        .expect("a string is serializable")
+        .replace('\u{85}', "\\u0085")
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029");
     format!(
-        "---\nname: {name}\ndescription: {description}\n---\n\n\
+        "---\nname: {name_yaml}\ndescription: {description}\n---\n\n\
          # {name}\n\n\
          ## When to use\n\n\
          Describe the requests and situations that should trigger this skill.\n\n\

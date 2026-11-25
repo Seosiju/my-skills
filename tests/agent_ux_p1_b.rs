@@ -88,7 +88,7 @@ fn host<'a>(report: &'a Value, field: &str, value: &str) -> &'a Value {
 }
 
 #[test]
-fn validate_reports_bom_at_the_effective_host_severity() {
+fn validate_warns_about_bom_only_for_the_effective_codex_host() {
     let fixture = fixture();
     let check = |skill, host| {
         let mut command = fixture.command();
@@ -114,51 +114,52 @@ fn validate_reports_bom_at_the_effective_host_severity() {
     }
 
     let (code, codex) = check("example", None);
-    assert_eq!(code, 1);
-    let message = codex["errors"][0].as_str().unwrap();
+    assert_eq!(code, 0);
+    let message = codex["warnings"][0].as_str().unwrap();
     assert!(message.contains("UTF-8 BOM"));
-    assert!(message.contains("Codex rejects this file"));
+    assert!(message.contains("Codex does not show this skill"));
     assert!(message.contains("UTF-8 without a BOM"));
-    assert_eq!(codex["errors"], json!([message]));
-    assert_eq!(codex["warnings"], json!([]));
+    assert_eq!(codex["errors"], json!([]));
+    assert_eq!(codex["warnings"], json!([message]));
 
     for (name, host) in [("other", None), ("example", Some("claude"))] {
         let (code, claude) = check(name, host);
         assert_eq!(code, 0);
         assert_eq!(claude["errors"], json!([]));
-        assert_eq!(claude["warnings"], json!([message]));
+        assert_eq!(claude["warnings"], json!([]));
     }
 
     let (code, explicit_codex) = check("other", Some("codex"));
-    assert_eq!(code, 1);
-    assert_eq!(explicit_codex["errors"], json!([message]));
-    assert_eq!(explicit_codex["warnings"], json!([]));
+    assert_eq!(code, 0);
+    assert_eq!(explicit_codex["errors"], json!([]));
+    assert_eq!(explicit_codex["warnings"], json!([message]));
 
     fixture.write(
         "skills/example/SKILL.md",
         &format!("\u{feff}{}\n[Reference](missing.md)\n", skill("example")),
     );
     let (code, missing_reference) = check("example", None);
-    assert_eq!(code, 1);
+    assert_eq!(code, 0);
+    assert_eq!(missing_reference["errors"], json!([]));
     assert_eq!(
-        missing_reference["errors"],
-        json!(["referenced supporting file not found: missing.md", message])
+        missing_reference["warnings"],
+        json!([
+            message,
+            "Referenced supporting file not found: missing.md. If you want the link to work, add the file or update the link."
+        ])
     );
-    assert_eq!(missing_reference["warnings"], json!([]));
 
     fixture.write(
         "skills/example/SKILL.md",
         &format!(
             "\u{feff}---\nname: example\ndescription: {}\n---\n",
-            "x".repeat(769)
+            "x".repeat(1100)
         ),
     );
     let (code, long_description) = check("example", Some("codex"));
-    assert_eq!(code, 1);
-    assert_eq!(
-        long_description["errors"],
-        json!([message, "codex description exceeds 768 characters"])
-    );
+    assert_eq!(code, 0);
+    assert_eq!(long_description["errors"], json!([]));
+    assert_eq!(long_description["warnings"], json!([message]));
 }
 
 #[test]
@@ -166,7 +167,7 @@ fn validate_shares_the_gate_and_respects_host_and_group_selection() {
     let fixture = fixture();
     let long = format!(
         "---\nname: example\ndescription: {}\nallowed-tools: Read\n---\n\n# Example\n",
-        "x".repeat(800)
+        "x".repeat(2000)
     );
     fixture.write("skills/example/SKILL.md", &long);
 
@@ -174,9 +175,9 @@ fn validate_shares_the_gate_and_respects_host_and_group_selection() {
         .command()
         .args(["validate", "example"])
         .assert()
-        .code(1)
-        .stdout(contains("[FAIL] example"))
-        .stdout(contains("codex description exceeds 768 characters"));
+        .success()
+        .stdout(contains("[OK] example"))
+        .stdout(contains("Codex shows a shortened description"));
 
     let selected = read_json(
         &fixture
@@ -185,36 +186,32 @@ fn validate_shares_the_gate_and_respects_host_and_group_selection() {
                 "validate", "other", "example", "--group", "checks", "--json",
             ])
             .assert()
-            .code(1),
+            .success(),
     );
     assert_eq!(
         selected["registry"],
         json!({"path": display_path(&fixture.registry), "source": "env"})
     );
-    assert_eq!(selected["ok"], false);
+    assert_eq!(selected["ok"], true);
     let rows = selected["skills"].as_array().unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0]["skill"], "example");
-    assert_eq!(rows[0]["ok"], false);
-    assert_eq!(
-        rows[0]["errors"],
-        json!([
-            "claude description exceeds 768 characters",
-            "codex description exceeds 768 characters"
-        ])
-    );
-    assert!(
-        rows[0]["warnings"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|warning| {
-                warning
-                    .as_str()
-                    .unwrap()
-                    .contains("inconsistent host support")
-            })
-    );
+    assert_eq!(rows[0]["ok"], true);
+    assert_eq!(rows[0]["errors"], json!([]));
+    let warnings = rows[0]["warnings"].as_array().unwrap();
+    assert_eq!(warnings.len(), 3);
+    for text in [
+        "inconsistent host support",
+        "Claude Code shows a shortened",
+        "Codex shows a shortened",
+    ] {
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.as_str().unwrap().contains(text)),
+            "{warnings:?}"
+        );
+    }
     assert_eq!(
         rows[1],
         json!({"skill": "other", "ok": true, "errors": [], "warnings": []})
@@ -224,11 +221,12 @@ fn validate_shares_the_gate_and_respects_host_and_group_selection() {
             .command()
             .args(["validate", "example", "--host", "agy", "--json"])
             .assert()
-            .code(1),
+            .success(),
     );
+    assert_eq!(narrowed["skills"][0]["errors"], json!([]));
     assert_eq!(
-        narrowed["skills"][0]["errors"],
-        json!(["agy description exceeds 768 characters"])
+        narrowed["skills"][0]["warnings"],
+        json!(["'allowed-tools' has inconsistent host support and may be ignored"])
     );
 
     let doctor = read_json(
@@ -238,10 +236,7 @@ fn validate_shares_the_gate_and_respects_host_and_group_selection() {
             .assert()
             .success(),
     );
-    assert_eq!(
-        doctor["full_validation"]["failures"][0]["errors"],
-        selected["skills"][0]["errors"]
-    );
+    assert_eq!(doctor["full_validation"]["failures"], json!([]));
     fixture.write(
         "skills/example/SKILL.md",
         &format!(
@@ -255,6 +250,17 @@ fn validate_shares_the_gate_and_respects_host_and_group_selection() {
             .args(["validate", "example", "--json"])
             .assert()
             .code(1),
+    );
+    let doctor = read_json(
+        &fixture
+            .command()
+            .args(["doctor", "--no-update-check", "--json"])
+            .assert()
+            .success(),
+    );
+    assert_eq!(
+        doctor["full_validation"]["failures"][0]["errors"],
+        audit["skills"][0]["errors"]
     );
     assert!(
         audit["skills"][0]["errors"]

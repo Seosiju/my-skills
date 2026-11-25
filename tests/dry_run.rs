@@ -429,7 +429,7 @@ fn import_dry_run_writes_no_root_cache_and_respects_edit_lock() {
 }
 
 #[test]
-fn import_dry_run_rejects_escaping_supporting_reference_like_real_import() {
+fn import_dry_run_warns_about_a_missing_staged_reference_like_real_import() {
     let env = Env::new();
     let incoming = env.tmp.path().join("incoming/beta");
     fs::create_dir_all(incoming.join("sub")).unwrap();
@@ -440,7 +440,7 @@ fn import_dry_run_rejects_escaping_supporting_reference_like_real_import() {
     )
     .unwrap();
 
-    let expected_error = "referenced supporting file not found: sub/../../notes.txt";
+    let warning = "Referenced supporting file not found: sub/../../notes.txt";
     let before_manifest = env.manifest();
     let before_registry = listing(&env.root());
     let before_skills = listing(&env.root().join("skills"));
@@ -448,8 +448,8 @@ fn import_dry_run_rejects_escaping_supporting_reference_like_real_import() {
     env.cmd_in_registry_without_env()
         .args(["import", &incoming.display().to_string(), "--dry-run"])
         .assert()
-        .code(1)
-        .stdout(contains(expected_error));
+        .success()
+        .stdout(contains(warning));
     assert!(!env.root_cache().exists());
     assert!(!env.tmp.path().join("config").exists());
     assert_eq!(env.manifest(), before_manifest);
@@ -459,10 +459,12 @@ fn import_dry_run_rejects_escaping_supporting_reference_like_real_import() {
     env.cmd()
         .args(["import", &incoming.display().to_string()])
         .assert()
-        .code(1)
-        .stdout(contains(expected_error));
-    assert_eq!(env.manifest(), before_manifest);
-    assert_eq!(listing(&env.root().join("skills")), before_skills);
+        .success()
+        .stdout(contains(warning));
+    assert_eq!(
+        fs::read(env.root().join("skills/beta/SKILL.md")).unwrap(),
+        fs::read(incoming.join("SKILL.md")).unwrap()
+    );
 }
 
 #[cfg(windows)]

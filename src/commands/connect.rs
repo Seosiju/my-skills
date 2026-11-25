@@ -1049,9 +1049,12 @@ fn print_validation(checks: &[ValidationCheck<'_>], json: bool) {
             }
         }
         // With --json the warnings are already in `validation[].warnings`.
-        if check.host.is_some() && !json {
+        if !json {
             for warning in &check.warnings {
-                print(&format!("  warn: {warning}"));
+                // The separate audit report already prints security findings.
+                if !warning.starts_with("security: ") && printed.insert((check.skill, warning)) {
+                    print(&format!("  warn: {}: {warning}", check.skill));
+                }
             }
         }
     }

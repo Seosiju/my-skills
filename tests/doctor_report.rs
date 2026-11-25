@@ -385,8 +385,14 @@ fn doctor_connection_summary_and_full_validation_find_different_problems() {
         "{REGISTERED}[targets.claude]\nenabled = false\n[targets.agy]\nenabled = false\n[targets.codex]\npath = \"~/target\"\n[skills.broken]\nhosts = [\"codex\"]\n"
     ));
     fixture.write("skills/example/SKILL.md", &skill("example"));
-    fixture.write("skills/broken/SKILL.md", "pre-existing invalid content\n");
-    fixture.write("skills/disabled/SKILL.md", "also invalid, but disabled\n");
+    fixture.write(
+        "skills/broken/reference.txt",
+        "pre-existing skill without SKILL.md\n",
+    );
+    fixture.write(
+        "skills/disabled/reference.txt",
+        "disabled skill without SKILL.md\n",
+    );
     fixture.commit();
 
     let intended = fixture.base.join("home/target");
@@ -433,7 +439,10 @@ fn doctor_connection_summary_and_full_validation_find_different_problems() {
     assert_eq!(report["full_validation"]["checked"], 2);
     let failures = report["full_validation"]["failures"].as_array().unwrap();
     assert_eq!(failures.len(), 1);
-    assert_eq!(failures[0]["skill"], "broken");
+    assert_eq!(
+        failures[0],
+        json!({"skill": "broken", "errors": ["SKILL.md not found"]})
+    );
     let result = fixture
         .command()
         .args(["doctor", "--no-update-check"])
@@ -441,7 +450,7 @@ fn doctor_connection_summary_and_full_validation_find_different_problems() {
         .success();
     assert!(output(&result).contains("Connections: link 1 / copy 1 (fallback 1)"));
     assert!(output(&result).contains("Full validation: 2 checked, 1 failed"));
-    assert!(output(&result).contains("[FAIL] broken:"));
+    assert!(output(&result).contains("[FAIL] broken: SKILL.md not found"));
 }
 
 #[test]

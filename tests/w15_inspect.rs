@@ -145,7 +145,9 @@ fn validate_warns_once_for_extra_fields_and_separately_for_allowed_tools() {
         result["skills"][0]["warnings"],
         json!([
             "'allowed-tools' has inconsistent host support and may be ignored",
-            "claude, codex, agy may ignore unsupported frontmatter fields: foo",
+            "Claude Code ignores these YAML fields: foo. If you want Claude Code to see that information, put it in a supported field or the skill body.",
+            "Codex ignores these YAML fields: foo. If you want Codex to see that information, put it in a supported field or the skill body.",
+            "Antigravity CLI ignores these YAML fields: foo. If you want Antigravity CLI to see that information, put it in a supported field or the skill body.",
         ])
     );
     let explicit = output(
@@ -158,7 +160,7 @@ fn validate_warns_once_for_extra_fields_and_separately_for_allowed_tools() {
         explicit["skills"][0]["warnings"],
         json!([
             "'allowed-tools' has inconsistent host support and may be ignored",
-            "codex may ignore unsupported frontmatter fields: foo",
+            "Codex ignores these YAML fields: foo. If you want Codex to see that information, put it in a supported field or the skill body.",
         ])
     );
 }

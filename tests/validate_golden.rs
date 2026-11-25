@@ -5,7 +5,7 @@ use std::path::Path;
 use my_skills::check::validate::{
     ValidationResult, validate_name, validate_skill, validate_skill_for_host,
 };
-use my_skills::drive::hosts::{ALL, CLAUDE};
+use my_skills::drive::hosts::{ALL, CLAUDE, DescriptionLimit, SkillDisplay};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -171,7 +171,7 @@ fn plain_scalars_warn_about_inline_yaml_comments() {
         assert_eq!(
             result.warnings,
             [format!(
-                "A YAML comment cuts off '{field}'. Agents see {preview:?}. Put the full value in quotes."
+                "A YAML comment cuts off '{field}'. Agents see {preview:?}. If you want the full value to appear, put it in quotes."
             )],
             "{yaml:?}"
         );
@@ -219,14 +219,25 @@ fn host_configuration_controls_limits_and_kept_fields() {
     .unwrap();
     let host = my_skills::drive::hosts::HostConfig {
         name: "tiny",
-        description_max_chars: 1,
-        frontmatter_keep_fields: &["name", "description", "custom"],
+        display_name: "Tiny",
+        skill_display: SkillDisplay {
+            description_limit: Some(DescriptionLimit {
+                max_chars: 1,
+                suffix: "…",
+                extra_field: None,
+            }),
+            frontmatter_keep_fields: &["name", "description", "custom"],
+            ..CLAUDE.skill_display
+        },
         ..CLAUDE
     };
     let result = validate_skill_for_host(&path, &host);
-    assert_eq!(result.errors, ["tiny description exceeds 1 characters"]);
+    assert!(result.ok(), "{result:?}");
     assert_eq!(
         result.warnings,
-        ["tiny may ignore unsupported frontmatter fields: other"]
+        [
+            "Tiny shows a shortened description (2 characters). It keeps the first 0 characters and adds \"…\". If you want the full text to appear, keep it to 1 characters or fewer.",
+            "Tiny ignores these YAML fields: other. If you want Tiny to see that information, put it in a supported field or the skill body."
+        ]
     );
 }

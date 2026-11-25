@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
+use my_skills::check::frontmatter::{Value as YamlValue, parse_frontmatter};
 use my_skills::platform::paths::display_path;
 use predicates::str::contains;
 use serde_json::{Value, json};
@@ -81,7 +82,7 @@ fn text_output_creates_a_disabled_draft_and_lists_the_next_steps() {
         .unwrap()
         .replace(char::from(13), "");
     assert!(
-        skill.starts_with("---\nname: draft\ndescription: \"TODO: replace"),
+        skill.starts_with("---\nname: \"draft\"\ndescription: \"TODO: replace"),
         "{skill}"
     );
     let config = fixture.config();
@@ -173,6 +174,12 @@ fn the_new_skill_passes_validate_and_is_a_listed_disabled_skill() {
             .success()
             .stderr("");
     }
+    let text = fs::read_to_string(fixture.canonical("valid-one").join("SKILL.md")).unwrap();
+    assert_eq!(text.lines().next(), Some("---"));
+    assert_eq!(
+        parse_frontmatter(&text).unwrap().0["description"],
+        YamlValue::String("Has: colon, \"quotes\", and # hash.".into())
+    );
     let output = fixture
         .command()
         .args(["skills", "--json", "--brief", "valid-one"])
@@ -289,7 +296,7 @@ fn a_name_registered_in_either_manifest_is_a_conflict() {
 #[test]
 fn invalid_names_unknown_hosts_and_bad_descriptions_are_usage_errors() {
     let fixture = fixture();
-    for name in ["Bad", "bad_name", "bad--name", "bad-"] {
+    for name in ["Bad", "bad_name", "bad--name", "bad-", &"x".repeat(65)] {
         assert_conflict(&fixture, &[name], "invalid skill name");
     }
     assert_conflict(&fixture, &["fine", "--host", "mars"], "unknown host: mars");
@@ -311,8 +318,6 @@ fn invalid_names_unknown_hosts_and_bad_descriptions_are_usage_errors() {
         &["fine", "--description", "  "],
         "must not be empty",
     );
-    let long = "x".repeat(1025);
-    assert_conflict(&fixture, &["fine", "--description", &long], "exceeds 1024");
     // A new group is fine.
     new_json(&fixture, &["fine", "--group", "brand-new-group"], 0);
 }
@@ -444,46 +449,80 @@ fn first_discovery_caches_the_registry_but_an_explicit_root_never_does() {
 }
 
 #[test]
-fn description_errors_share_one_prefix_and_respect_the_host_limit() {
+fn blank_description_errors_share_one_prefix_and_lengths_only_warn() {
     let fixture = fixture();
     let manifest = fs::read(fixture.manifest()).unwrap();
     let before = tree(&fixture.registry);
-    for (args, needle) in [
-        (vec!["--description", "  "], "must not be empty"),
-        (vec!["--description", &"x".repeat(1025)], "exceeds 1024"),
-        (
-            vec!["--description", &"x".repeat(769)],
-            "exceeds 768 characters for claude (769)",
-        ),
-        (
-            vec!["--host", "codex", "--description", &"x".repeat(769)],
-            "exceeds 768 characters for codex (769)",
-        ),
+    for args in [
+        &["--description", "  "][..],
+        &["--host", "codex", "--description", "\t"][..],
     ] {
         let output = fixture
             .command()
             .args(["new", "draft"])
-            .args(&args)
+            .args(args)
             .args(["--json"])
             .assert()
             .code(2);
         let json: Value = serde_json::from_slice(&output.get_output().stdout).unwrap();
         let message = json["error"]["message"].as_str().unwrap();
         assert!(message.starts_with(PREFIX), "{message}");
-        assert!(message.contains(needle), "{message}");
+        assert_eq!(message, format!("{PREFIX}must not be empty"));
     }
     assert_eq!(fs::read(fixture.manifest()).unwrap(), manifest);
     assert_eq!(tree(&fixture.registry), before);
 
-    // Exactly at the limit, the draft is written and validates.
+    for (name, length) in [("fits", 800), ("edge", 1024), ("longer", 1025)] {
+        let description = "가".repeat(length);
+        let output = new_json(&fixture, &[name, "--description", &description], 0);
+        let expected = if length > 1024 {
+            json!([
+                "Codex shows a shortened description (1025 characters). It keeps the first 1021 characters and adds \"...\". If you want the full text to appear, keep it to 1024 characters or fewer."
+            ])
+        } else {
+            Value::Null
+        };
+        assert_eq!(output["warnings"], expected);
+        let text = fs::read_to_string(fixture.canonical(name).join("SKILL.md")).unwrap();
+        assert_eq!(
+            parse_frontmatter(&text).unwrap().0["description"],
+            YamlValue::String(description)
+        );
+        fixture
+            .command()
+            .args(["validate", name])
+            .assert()
+            .success();
+    }
     fixture
         .command()
-        .args(["new", "draft", "--description", &"x".repeat(768)])
+        .args([
+            "new",
+            "preview",
+            "--description",
+            &"x".repeat(1100),
+            "--dry-run",
+        ])
         .assert()
-        .success();
-    fixture
-        .command()
-        .args(["validate", "draft"])
-        .assert()
-        .success();
+        .success()
+        .stdout(contains(
+            "Codex shows a shortened description (1100 characters)",
+        ));
+    assert!(!fixture.canonical("preview").exists());
+}
+
+#[test]
+fn new_quotes_scalar_like_names_and_preserves_line_separators_in_descriptions() {
+    let fixture = fixture();
+    let description = "One # heading\u{85}Two\u{2028}Three\u{2029}Four";
+    for name in ["off", "0123"] {
+        new_json(&fixture, &[name, "--description", description], 0);
+        let text = fs::read_to_string(fixture.canonical(name).join("SKILL.md")).unwrap();
+        let metadata = parse_frontmatter(&text).unwrap().0;
+        assert_eq!(metadata["name"], YamlValue::String(name.into()));
+        assert_eq!(
+            metadata["description"],
+            YamlValue::String(description.into())
+        );
+    }
 }

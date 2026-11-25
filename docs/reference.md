@@ -125,27 +125,31 @@ nest `audit` and `provenance` under `governance`. Full rows put `audit` and
 
 ### Validation and audit
 
-`validate` runs the same gate as pre-commit and doctor's full validation. This
-includes standard validation, the fixed security floor, applicable enabled
-host limits, and manifest audit policy. With no selection, it checks all
-directories under the skills root, including unregistered skills. Use
-`--host <HOST>` to check only the named host's constraints. An over-limit
-description fails validation. Standard optional Agent Skills fields
-(`license`, `compatibility`, and `metadata`) do not emit unsupported-field
-warnings; `allowed-tools` / `allowed_tools` keep their single dedicated warning,
-and any other unsupported fields emit one combined warning per skill listing all
-affected hosts.
+`validate` shares the pre-commit and full `doctor` gate. A missing
+`SKILL.md` and blocking security findings can fail the gate. Content
+diagnostics are warnings. `install` and `sync` deliver the existing skill
+bytes and report how the selected services display the skill, including
+anything they hide, shorten, or name differently.
+With no selection, `validate` checks all directories under the skills root,
+including unregistered skills. It reports display warnings for enabled,
+applicable hosts. Use `--host <HOST>` to check a particular host.
+
+For consistent display, use UTF-8 without a BOM and open the file with a
+YAML block between `---` lines. Set `name` to the folder name, using lowercase
+alphanumeric words separated by single hyphens (up to 64 characters). Include
+a description of 1,024 characters or fewer and quote values that contain YAML
+syntax such as ` #`.
 
 ```json
 {
   "registry": {"path": "/path/to/registry", "source": "flag"},
-  "ok": false,
+  "ok": true,
   "skills": [
     {
       "skill": "example",
-      "ok": false,
-      "errors": ["codex description exceeds 768 characters"],
-      "warnings": []
+      "ok": true,
+      "errors": [],
+      "warnings": ["Codex does not show this skill because its description is missing or empty. If you want it to appear, add a description to the YAML frontmatter."]
     }
   ]
 }
@@ -263,10 +267,11 @@ creates `skills/<NAME>/SKILL.md` and registers `[skills.<NAME>]` with
 passed). It holds `my-skills.toml.edit-lock` for the whole operation without
 taking the state lock (`--dry-run` checks lock availability and writes nothing).
 
-All checks run before writing: skill and group name rules (`invalid_name`),
-non-blank `--description` within `1024` characters and within the smallest
-`description_max_chars` of the targeted or enabled built-in hosts (`768`
-characters; `--description` errors emit `usage`), active-registry write policy
+Descriptions longer than 1,024 characters are saved in full and produce a
+Codex display warning, available in `warnings` with `--json`.
+
+All checks run before writing. They cover skill and group name rules
+(`invalid_name`), a non-blank `--description` (`usage`), active-registry write policy
 (re-checked under `edit-lock`, with conditional active-root caching so a newer
 `set-root` is not overwritten), any existing `skills/<NAME>` entry (`already_exists`,
 including a file or broken link), base or `my-skills.local.toml` registration
