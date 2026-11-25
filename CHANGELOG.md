@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 This project follows a GitHub-first release flow. Git tags and GitHub Releases
 are the release source of truth while PyPI publishing remains undecided.
 
+## [Unreleased]
+
+### Fixed
+
+- `validate` flags a UTF-8 BOM in `SKILL.md` as an error for Codex targets and a warning for other targets.
+- `validate` warns when an inline YAML comment cuts off an unquoted `name` or `description` and shows the text agents see.
+
 ## [1.3.0] - 2026-11-25
 
 ### Added
