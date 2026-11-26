@@ -339,6 +339,7 @@ fn a_rebase_merge_or_cherry_pick_in_progress_is_a_no_op() {
         .write("skills/alpha/SKILL.md", &revision("alpha", 2));
     setup.fixture.git(&["add", "skills"]);
     setup.fixture.git(&["commit", "-qm", "alpha 2"]);
+    setup.install_hooks();
     let git_dir = setup.fixture.registry.join(".git");
     for marker in [
         "rebase-merge",
@@ -535,6 +536,7 @@ fn an_unregistered_draft_with_no_connection_is_not_reported() {
     );
     setup.fixture.git(&["add", "my-skills.toml"]);
     setup.fixture.git(&["commit", "-qm", "manifest"]);
+    setup.install_hooks();
     setup.run_post_commit().stderr("");
 }
 
