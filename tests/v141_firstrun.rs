@@ -1,6 +1,7 @@
 #[allow(dead_code)]
 mod support_g;
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
@@ -21,26 +22,30 @@ fn stderr_text(assertion: &assert_cmd::assert::Assert) -> String {
         .replace("\r\n", "\n")
 }
 
-fn normalized_lines(text: &str) -> Vec<&str> {
+fn object_keys(value: &Value) -> BTreeSet<String> {
+    value
+        .as_object()
+        .expect("expected JSON object")
+        .keys()
+        .cloned()
+        .collect()
+}
+
+fn normalized_lines(text: &str) -> Vec<String> {
     text.replace("\r\n", "\n")
         .lines()
-        .map(str::trim_end)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .map(|s| s.to_owned())
-        .collect::<Vec<_>>()
-        .leak()
-        .iter()
-        .map(String::as_str)
+        .map(|line| line.trim_end().to_owned())
         .collect()
 }
 
 /// T-B1: Unconfigured environment `skills` prints B2 error with exit code 2,
-/// and `skills --json` emits a JSON error whose message contains `New here?`.
+/// and `skills --json` emits a JSON error with the exact same key set and
+/// `code` as another config error from `skills --json`.
 #[test]
 fn t_b1_unconfigured_read_command_shows_b2_and_json_error() {
     let fixture = Fixture::isolated();
     let outside = fixture.base.join("outside");
+    let missing = fixture.base.join("does-not-exist");
 
     let result = fixture
         .command()
@@ -55,18 +60,32 @@ fn t_b1_unconfigured_read_command_shows_b2_and_json_error() {
     );
     assert_eq!(stderr, expected);
 
-    let json_result = fixture
+    let unconfigured_json = fixture
         .command()
         .env_remove("MY_SKILLS_ROOT")
         .current_dir(&outside)
         .args(["skills", "--json"])
         .assert()
         .code(2);
-    let payload: Value = serde_json::from_slice(&json_result.get_output().stdout).unwrap();
-    let message = payload["error"]["message"]
-        .as_str()
-        .or_else(|| payload["message"].as_str())
-        .unwrap_or_else(|| panic!("unexpected json error payload: {payload}"));
+    let payload: Value = serde_json::from_slice(&unconfigured_json.get_output().stdout).unwrap();
+
+    let other_config_json = fixture
+        .command()
+        .env("MY_SKILLS_ROOT", &missing)
+        .current_dir(&outside)
+        .args(["skills", "--json"])
+        .assert()
+        .code(2);
+    let reference: Value = serde_json::from_slice(&other_config_json.get_output().stdout).unwrap();
+
+    assert_eq!(object_keys(&payload), object_keys(&reference));
+    assert_eq!(
+        object_keys(&payload["error"]),
+        object_keys(&reference["error"])
+    );
+    assert_eq!(payload["error"]["code"], reference["error"]["code"]);
+    assert_eq!(payload["error"]["code"], "config");
+    let message = payload["error"]["message"].as_str().unwrap();
     assert!(
         message.contains("New here?"),
         "expected 'New here?' in JSON error message: {payload}"
@@ -74,7 +93,7 @@ fn t_b1_unconfigured_read_command_shows_b2_and_json_error() {
 }
 
 /// T-B2: Unconfigured environment `doctor` shows B3 block and `doctor --json`
-/// keeps its existing shape.
+/// keeps its existing `registry` object key set (including `warning`).
 #[test]
 fn t_b2_unconfigured_doctor_shows_b3_and_keeps_json_shape() {
     let fixture = Fixture::isolated();
@@ -104,15 +123,21 @@ fn t_b2_unconfigured_doctor_shows_b3_and_keeps_json_shape() {
         .assert()
         .success();
     let report: Value = serde_json::from_slice(&json_result.get_output().stdout).unwrap();
+    let expected_registry_keys: BTreeSet<String> = ["path", "source", "error", "warning"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    assert_eq!(object_keys(&report["registry"]), expected_registry_keys);
     assert!(report["registry"]["path"].is_null());
     assert!(report["registry"]["source"].is_null());
     assert!(report["registry"]["error"].is_null());
+    assert!(report["registry"]["warning"].is_null());
     assert_eq!(report["manifest"]["status"], "not_checked");
 }
 
 /// T-B3: Bare `my-skills` prints help + NEXT_STEPS when unconfigured, help only
-/// when a registry is configured via `MY_SKILLS_ROOT` or `--root`, and never
-/// writes the root cache.
+/// when a registry is configured via `MY_SKILLS_ROOT`, `--root`, or cwd
+/// discovery, and never writes the root cache.
 #[test]
 fn t_b3_bare_invocation_guidance_and_no_cache() {
     let fixture = Fixture::isolated();
@@ -151,10 +176,21 @@ fn t_b3_bare_invocation_guidance_and_no_cache() {
     assert_eq!(with_flag_out, with_env_out);
     assert!(!with_flag_out.contains("Next:"));
     assert!(!fixture.base.join("xdg-config").exists());
+
+    let from_cwd = fixture
+        .command()
+        .env_remove("MY_SKILLS_ROOT")
+        .current_dir(&fixture.registry)
+        .assert()
+        .success();
+    let from_cwd_out = stdout_text(&from_cwd);
+    assert_eq!(from_cwd_out, with_env_out);
+    assert!(!from_cwd_out.contains("Next:"));
+    assert!(!fixture.base.join("xdg-config").exists());
 }
 
-/// T-B4: Invalid `MY_SKILLS_ROOT` keeps existing error message for `skills`
-/// (M2) and prints help without `NEXT_STEPS` for bare `my-skills` (M4).
+/// T-B4: Invalid `MY_SKILLS_ROOT` keeps the exact existing error line for
+/// `skills` (M2) and prints help without `NEXT_STEPS` for bare `my-skills` (M4).
 #[test]
 fn t_b4_invalid_env_root_keeps_existing_error_and_omits_next_steps_on_bare() {
     let fixture = Fixture::isolated();
@@ -169,11 +205,13 @@ fn t_b4_invalid_env_root_keeps_existing_error_and_omits_next_steps_on_bare() {
         .assert()
         .code(2);
     let stderr = stderr_text(&skills);
-    assert!(
-        stderr.contains("MY_SKILLS_ROOT=") && stderr.contains("does not contain my-skills.toml"),
-        "unexpected stderr: {stderr}"
+    assert_eq!(
+        stderr,
+        format!(
+            "error: MY_SKILLS_ROOT={} does not contain my-skills.toml\n",
+            missing.display()
+        )
     );
-    assert!(!stderr.contains("Next:"));
 
     let bare = fixture
         .command()
@@ -187,8 +225,9 @@ fn t_b4_invalid_env_root_keeps_existing_error_and_omits_next_steps_on_bare() {
     assert!(!fixture.base.join("xdg-config").exists());
 }
 
-/// T-B5: `--help` and `--version` are unchanged, and `my-skills --json` exits 2
-/// with a JSON usage error.
+/// T-B5: `--help`, `-h`, and `--version` are unchanged; bare `my-skills` starts
+/// with exact `--help` stdout; `my-skills --json` exits 2 with the same JSON
+/// key set and `code` as another usage error.
 #[test]
 fn t_b5_help_version_and_bare_json_usage_error() {
     let fixture = Fixture::isolated();
@@ -204,6 +243,29 @@ fn t_b5_help_version_and_bare_json_usage_error() {
     let help_out = stdout_text(&help);
     assert!(help_out.contains("Usage:"));
     assert!(!help_out.contains("Next:"));
+
+    let bare = fixture
+        .command()
+        .env_remove("MY_SKILLS_ROOT")
+        .current_dir(&outside)
+        .assert()
+        .success();
+    let bare_out = stdout_text(&bare);
+    assert!(
+        bare_out.starts_with(&help_out),
+        "bare stdout did not start with exact --help stdout"
+    );
+
+    let short_help = fixture
+        .command()
+        .env_remove("MY_SKILLS_ROOT")
+        .current_dir(&outside)
+        .arg("-h")
+        .assert()
+        .success();
+    let short_help_out = stdout_text(&short_help);
+    assert!(short_help_out.contains("Usage:"));
+    assert!(!short_help_out.contains("Next:"));
 
     let version = fixture
         .command()
@@ -226,10 +288,22 @@ fn t_b5_help_version_and_bare_json_usage_error() {
         .assert()
         .code(2);
     let payload: Value = serde_json::from_slice(&bare_json.get_output().stdout).unwrap();
-    assert!(
-        payload["error"].is_object() || payload["message"].is_string(),
-        "expected JSON usage error: {payload}"
+
+    let other_usage_json = fixture
+        .command()
+        .env_remove("MY_SKILLS_ROOT")
+        .current_dir(&outside)
+        .args(["--json", "nosuchcmd"])
+        .assert()
+        .code(2);
+    let reference: Value = serde_json::from_slice(&other_usage_json.get_output().stdout).unwrap();
+
+    assert_eq!(object_keys(&payload), object_keys(&reference));
+    assert_eq!(
+        object_keys(&payload["error"]),
+        object_keys(&reference["error"])
     );
+    assert_eq!(payload["error"]["code"], reference["error"]["code"]);
 }
 
 fn repo_file(rel: &str) -> String {
@@ -269,7 +343,10 @@ fn t_b6_install_scripts_match_next_steps_exactly() {
 /// T-B7: Static checks on `scripts/install.sh` and `scripts/install.ps1`:
 /// - `"$HOME/..."` is printed literally (single quotes in sh, `@'...'@` in ps1)
 /// - the block comes after `Installed` and PATH output
-/// - the block is not inside `finally` or `trap`.
+/// - in `install.ps1`, the block is after the end of `try`/`finally`, preceded
+///   by a blank-line `Write-Output ''`, with no output statement after it
+/// - in `install.sh`, the `printf '\n%s\n'` block is after `trap` and is the
+///   last output statement.
 #[test]
 fn t_b7_install_scripts_static_placement_and_quoting() {
     let sh = repo_file("scripts/install.sh");
@@ -280,12 +357,36 @@ fn t_b7_install_scripts_static_placement_and_quoting() {
     let sh_trap_last = sh.rfind("trap ").unwrap();
     assert!(sh_trap_last < sh_block);
     assert!(sh[sh_block..].contains("\"$HOME/my-agent-skills\""));
+    let sh_after_open = &sh[sh_block + "printf '\\n%s\\n' '".len()..];
+    let sh_close = sh_after_open.find('\'').unwrap();
+    let sh_tail = sh_after_open[sh_close + 1..].trim();
+    assert!(
+        sh_tail.is_empty(),
+        "expected no statements after Next: block in install.sh, found: {sh_tail:?}"
+    );
 
     let ps1 = repo_file("scripts/install.ps1");
     let ps1_finally = ps1.find("} finally {").unwrap();
+    let ps1_finally_end = ps1[ps1_finally..]
+        .find("\n}\n")
+        .map(|offset| ps1_finally + offset + "\n}\n".len())
+        .expect("missing closing brace for finally block in scripts/install.ps1");
     let ps1_installed = ps1.find("Write-Output \"Installed $destination\"").unwrap();
     let ps1_path = ps1.find("Add $installDir to PATH").unwrap();
-    let ps1_block = ps1.find("Write-Output @'\nNext:").unwrap();
-    assert!(ps1_finally < ps1_installed && ps1_installed < ps1_path && ps1_path < ps1_block);
-    assert!(ps1[ps1_block..].contains("\"$HOME/my-agent-skills\""));
+    let ps1_blank_and_block = ps1.find("Write-Output ''\nWrite-Output @'\nNext:").expect(
+        "expected blank-line Write-Output '' immediately before Write-Output @' in install.ps1",
+    );
+    assert!(
+        ps1_finally_end <= ps1_installed
+            && ps1_installed < ps1_path
+            && ps1_path < ps1_blank_and_block
+    );
+    assert!(ps1[ps1_blank_and_block..].contains("\"$HOME/my-agent-skills\""));
+    let ps1_after_open = &ps1[ps1_blank_and_block + "Write-Output ''\nWrite-Output @'\n".len()..];
+    let ps1_close = ps1_after_open.find("\n'@").unwrap();
+    let ps1_tail = ps1_after_open[ps1_close + "\n'@".len()..].trim();
+    assert!(
+        ps1_tail.is_empty(),
+        "expected no statements after Next: block in install.ps1, found: {ps1_tail:?}"
+    );
 }
