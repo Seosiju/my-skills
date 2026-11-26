@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>my-skills system map</title>
+<style>
+:root {
+  color-scheme: light;
+  --color-paper:   oklch(98.5% 0.004 250);
+  --color-paper-2: oklch(96.5% 0.005 252);
+  --color-rule:    oklch(93% 0.007 255);
+  --color-rule-2:  oklch(83% 0.011 255);
+  --color-muted:   oklch(56% 0.013 255);
+  --color-neutral: oklch(46% 0.015 255);
+  --color-ink-2:   oklch(34% 0.018 257);
+  --color-ink:     oklch(24% 0.020 258);
+  --color-accent:  oklch(58% 0.20 256);
+  /* group A — warm amber for registry/ */
+  --color-g1:      oklch(68% 0.15 55);
+  --color-g1-ink:  oklch(52% 0.14 50);
+  --color-g1-tint: oklch(96.5% 0.015 60 / .52);
+  /* group B — accent blue for drive/ */
+  --color-g2:      oklch(58% 0.20 256 / .55);
+  --color-g2-ink:  oklch(48% 0.19 256);
+  --color-g2-tint: oklch(97% 0.012 256 / .52);
+  /* group C — sage green for check/ */
+  --color-g3:      oklch(62% 0.14 155);
+  --color-g3-ink:  oklch(46% 0.13 155);
+  --color-g3-tint: oklch(96.5% 0.016 155 / .52);
+  /* group D — neutral slate for Files on disk */
+  --color-g4:      oklch(72% 0.014 255);
+  --color-g4-ink:  oklch(42% 0.016 255);
+  --color-g4-tint: oklch(95.5% 0.007 255 / .55);
+  --font-display: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-body: ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --space-xs: 4px; --space-sm: 8px; --space-md: 16px; --space-lg: 24px; --space-xl: 40px; --space-2xl: 64px;
+  --radius-card: 10px; --radius-tile: 12px;
+  --color-veil: oklch(98.5% 0.004 250 / .78);
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --color-paper:   oklch(18% 0.012 255);
+  --color-paper-2: oklch(22% 0.014 255);
+  --color-rule:    oklch(24% 0.013 255);
+  --color-rule-2:  oklch(38% 0.018 255);
+  --color-muted:   oklch(65% 0.014 255);
+  --color-neutral: oklch(72% 0.012 255);
+  --color-ink-2:   oklch(85% 0.010 255);
+  --color-ink:     oklch(94% 0.008 255);
+  --color-accent:  oklch(70% 0.16 256);
+  --color-g1:      oklch(70% 0.14 55);
+  --color-g1-ink:  oklch(78% 0.12 55);
+  --color-g1-tint: oklch(26% 0.030 60 / .40);
+  --color-g2:      oklch(70% 0.16 256 / .55);
+  --color-g2-ink:  oklch(76% 0.14 256);
+  --color-g2-tint: oklch(28% 0.045 256 / .36);
+  --color-g3:      oklch(66% 0.13 155);
+  --color-g3-ink:  oklch(76% 0.12 155);
+  --color-g3-tint: oklch(26% 0.032 155 / .36);
+  --color-g4:      oklch(44% 0.016 255);
+  --color-g4-ink:  oklch(76% 0.012 255);
+  --color-g4-tint: oklch(23% 0.014 255 / .55);
+  --color-veil: oklch(18% 0.012 255 / .78);
+}
+@font-face { font-family:"Geist"; font-style:normal; font-weight:100 900; font-display:swap;
+  src:url(data:font/woff2;base64,%%FONT_DISPLAY%%) format("woff2"); }
+@font-face { font-family:"JetBrains Mono"; font-style:normal; font-weight:100 800; font-display:swap;
+  src:url(data:font/woff2;base64,%%FONT_JBM%%) format("woff2"); }
+.kicker, .node .role, .el, .legend, .foot, .canvas-legend { letter-spacing: 0.03em; }
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { overflow-x: clip; }
+body { background: var(--color-paper); color: var(--color-ink); font-family: var(--font-body); padding: var(--space-xl) var(--space-lg) var(--space-2xl); }
+.page { width: fit-content; max-width: 100%; margin: 0 auto; }
+
+.head { display:grid; grid-template-columns: 1fr auto; gap: var(--space-lg); align-items:end;
+  padding-bottom: var(--space-md); border-bottom: 1px solid var(--color-rule-2); margin-bottom: var(--space-lg); }
+.kicker { font-family: var(--font-mono); font-size: 11px; color: var(--color-accent); margin-bottom: var(--space-sm); }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(22px, 4vw, 30px); letter-spacing: -0.005em; line-height: 1.2; }
+.lede { max-width: 360px; font-size: 12px; line-height: 1.7; color: var(--color-neutral); padding-bottom: 2px; }
+
+.scroller { overflow-x: auto; border: 1px solid var(--color-rule-2); border-radius: var(--radius-card); }
+.canvas { position: relative; width: 1280px; height: 737px; background: var(--color-paper);
+  background-image:
+    linear-gradient(var(--color-rule) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-rule) 1px, transparent 1px);
+  background-size: 24px 24px; background-position: -1px -1px; }
+
+.group { position:absolute; border-radius: var(--radius-tile); }
+.g-label { position:absolute; top:11px; left:12px; display:flex; align-items:center; gap:6px;
+  font-family: var(--font-mono); font-size: 11.5px; font-weight: 600;
+  color: var(--color-neutral); white-space: nowrap; }
+.group.ga { border:1.5px solid var(--color-g1); background: var(--color-g1-tint); }
+.group.gb { border:1.5px solid var(--color-g2); background: var(--color-g2-tint); }
+.group.gc { border:1.5px solid var(--color-g3); background: var(--color-g3-tint); }
+.group.gd { border:1.5px solid var(--color-g4); background: var(--color-g4-tint); }
+.group.ga > .g-label { color: var(--color-g1-ink); }
+.group.gb > .g-label { color: var(--color-g2-ink); }
+.group.gc > .g-label { color: var(--color-g3-ink); }
+.group.gd > .g-label { color: var(--color-g4-ink); }
+
+.node { position:absolute; width:132px; text-align:center; }
+.node.w152 { width:152px; }
+.node.w196 { width:196px; }
+.tile { width:60px; height:60px; margin:0 auto; border-radius: var(--radius-tile);
+  background:#fff; border:1px solid var(--color-rule-2); display:grid; place-items:center;
+  box-shadow: 0 1px 2px oklch(24% 0.02 258 / 0.05); }
+.tile img { width:32px; height:32px; object-fit:contain; }
+.node .name { font-family: var(--font-display); font-weight:600; font-size:13px; margin-top: var(--space-sm); letter-spacing:0; }
+.node .role { font-family: var(--font-mono); font-size:9.2px; color: var(--color-muted); margin-top:2px; white-space: nowrap; }
+.node .role.sub { font-size:8.6px; margin-top:2px; }
+.node .name span, .node .role span { background: var(--color-veil); backdrop-filter: blur(1.5px);
+  padding: 0 var(--space-xs); border-radius: 3px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+
+svg.edges { position:absolute; inset:0; width:1280px; height:737px; pointer-events:none; }
+.e  { stroke: var(--color-accent); stroke-width:1.6; fill:none; }
+.n  { stroke: var(--color-neutral); stroke-width:1.4; fill:none; }
+.dash { stroke-dasharray:4 5; }
+.el { font-family: var(--font-mono); font-size:10px; fill: var(--color-neutral);
+  paint-order: stroke; stroke: var(--color-paper); stroke-width:4px; stroke-linejoin:round; }
+.el.a { fill: var(--color-accent); }
+
+.canvas-legend { position:absolute; left:20px; bottom:18px; display:flex; align-items:center; gap:20px;
+  font-family: var(--font-mono); font-size:9.5px; color: var(--color-muted);
+  background: var(--color-veil); backdrop-filter: blur(1.5px);
+  padding: 7px 12px; border-radius: 6px; border: 1px solid var(--color-rule-2); }
+.canvas-legend .row { display:flex; align-items:center; gap:7px; }
+.canvas-legend .sw { display:inline-block; width:24px; border-top:1.6px solid var(--color-accent); }
+.canvas-legend .sw.n { border-color: var(--color-neutral); border-top-width:1.4px; }
+.canvas-legend .sw.dash { border-top-style: dashed; }
+
+.legend { display:flex; gap: var(--space-lg); align-items:center; margin-top: var(--space-md);
+  font-family: var(--font-mono); font-size:10px; color: var(--color-muted); flex-wrap:wrap; }
+.legend .sw { display:inline-block; width:30px; vertical-align:middle; margin-right:6px; border-top:1.6px solid var(--color-accent); }
+.legend .sw.n { border-color: var(--color-neutral); border-top-width:1.4px; }
+.legend .sw.dash { border-top-style: dashed; }
+
+.foot { margin-top: var(--space-xl); padding-top: var(--space-md); border-top: 1px solid var(--color-rule-2);
+  display:flex; justify-content:space-between; gap: var(--space-md); flex-wrap:wrap;
+  font-family: var(--font-mono); font-size:10px; color: var(--color-muted); }
+.foot a { color: inherit; text-decoration-color: var(--color-rule-2); text-underline-offset: 2px; }
+.g-label { font-family: var(--font-display), "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; font-size: 13px; font-weight: 700; gap: 7px; }
+.g-label img { width:15px; height:15px; }
+.node .name { font-family: var(--font-display), "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; }
+.node .role, .el, .canvas-legend { font-family: var(--font-mono), "Malgun Gothic", "Apple SD Gothic Neo", monospace; }
+.canvas-legend.col { flex-direction: column; align-items: flex-start; gap: 12px; padding: 14px 16px; bottom: auto; }
+[data-theme="dark"] .g-label img.plate { background:#fff; border-radius:3px; padding:1px; }
+</style>
+<body>
+<div class="page">
+
+  <header class="head">
+    <div>
+      <div class="kicker">my-skills / system map</div>
+      <h1>무엇이 어디에 있고 어떻게 연결되나</h1>
+    </div>
+    <p class="lede">툴 저장소와 Releases, my-skills CLI, 레지스트리, 호스트 폴더, 기기 전용 상태, 다른 기기의 관계.</p>
+  </header>
+
+  <div class="scroller">
+  <div class="canvas">
+
+    <!-- GROUPS ============================================================ -->
+    <div class="group gd" style="left:29px; top:24px; width:351px; height:191px;">
+      <div class="g-label"><img src="%%ICON_github%%" alt="" class="plate">GitHub (공개)</div>
+    </div>
+    <div class="group ga" style="left:726px; top:24px; width:525px; height:401px;">
+      <div class="g-label">호스트 폴더 · 에이전트</div>
+    </div>
+    <div class="group gb" style="left:29px; top:262px; width:574px; height:201px;">
+      <div class="g-label"><img src="%%ICON_git%%" alt="">레지스트리 ~/my-agent-skills</div>
+    </div>
+    <div class="group gb" style="left:418px; top:498px; width:185px; height:203px;">
+      <div class="g-label"><img src="%%ICON_laptop%%" alt="" class="plate">다른 기기</div>
+    </div>
+    <div class="group gd" style="left:726px; top:498px; width:525px; height:203px;">
+      <div class="g-label">기기 전용 상태</div>
+    </div>
+
+    <!-- EDGES ============================================================= -->
+    <svg class="edges" viewBox="0 0 1280 737" aria-hidden="true">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="context-stroke"/>
+        </marker>
+      </defs>
+
+      <!-- tool repo -> Releases -> CLI -->
+      <path class="e" d="M152 112 H256" marker-end="url(#ar)"/>
+      <text class="el a" x="204" y="104" text-anchor="middle">태그 · CI</text>
+      <path class="e" d="M328 112 H514" marker-end="url(#ar)"/>
+      <text class="el a" x="450" y="104" text-anchor="middle">설치 · update</text>
+
+      <!-- CLI -> hosts -->
+      <path class="e" d="M586 112 H693 V72 H1111 V96" marker-end="url(#ar)"/>
+      <path class="e" d="M861 72 V96" marker-end="url(#ar)"/>
+      <path class="e" d="M693 112 V307 H951" marker-end="url(#ar)"/>
+      <text class="el a" x="640" y="104" text-anchor="middle">link · copy</text>
+
+      <!-- CLI reads the registry -->
+      <path class="n" d="M531 196 V242 H276 V300 H124 V317" marker-end="url(#ar)"/>
+      <path class="n" d="M316 242 V317" marker-end="url(#ar)"/>
+      <text class="el" x="218" y="232" text-anchor="middle">매니페스트 읽기</text>
+      <text class="el" x="430" y="232" text-anchor="middle">시드 · 정본 읽기</text>
+
+      <!-- hooks call the CLI -->
+      <path class="n dash" d="M508 317 V220 H551 V190" marker-end="url(#ar)"/>
+      <text class="el" x="584" y="220" text-anchor="start">커밋 · pull 호출</text>
+
+      <!-- CLI writes machine-local state -->
+      <path class="n" d="M572 196 V242 H652 V583 H825" marker-end="url(#ar)"/>
+      <path class="n" d="M652 463 H1111 V547" marker-end="url(#ar)"/>
+      <text class="el" x="741" y="575" text-anchor="middle">state · lock</text>
+      <text class="el" x="920" y="455" text-anchor="middle">활성 경로 기록</text>
+
+      <!-- registry <-> private remote <-> another machine -->
+      <path class="n dash" d="M316 442 V547" marker-start="url(#ar)" marker-end="url(#ar)"/>
+      <text class="el" x="306" y="498" text-anchor="end">git push / pull</text>
+      <path class="n dash" d="M352 583 H474" marker-start="url(#ar)" marker-end="url(#ar)"/>
+      <text class="el" x="413" y="575" text-anchor="middle">git pull</text>
+    </svg>
+
+    <!-- NODES ============================================================= -->
+    <div class="node" style="left:50px; top:82px">
+      <div class="tile"><img src="%%ICON_github%%" alt=""></div>
+      <div class="name"><span>툴 저장소</span></div>
+      <div class="role"><span>Rust 소스 · 시드 스킬</span></div>
+    </div>
+
+    <div class="node" style="left:226px; top:82px">
+      <div class="tile"><img src="%%ICON_releases%%" alt=""></div>
+      <div class="name"><span>Releases</span></div>
+      <div class="role"><span>OS별 바이너리</span></div>
+    </div>
+
+    <div class="node w152" style="left:474px; top:82px">
+      <div class="tile"><img src="%%ICON_rust%%" alt=""></div>
+      <div class="name"><span>my-skills CLI</span></div>
+      <div class="role"><span>단일 바이너리 · v1.4</span></div>
+    </div>
+
+    <div class="node w152" style="left:785px; top:102px">
+      <div class="tile"><img src="%%ICON_claude%%" alt=""></div>
+      <div class="name"><span>Claude Code</span></div>
+      <div class="role"><span>~/.claude/skills</span></div>
+      <div class="role sub"><span>link (기본)</span></div>
+    </div>
+
+    <div class="node w152" style="left:1035px; top:102px">
+      <div class="tile"><img src="%%ICON_openai%%" alt=""></div>
+      <div class="name"><span>Codex</span></div>
+      <div class="role"><span>~/.agents/skills</span></div>
+      <div class="role sub"><span>link (기본)</span></div>
+    </div>
+
+    <div class="node w196" style="left:889px; top:277px">
+      <div class="tile"><img src="%%ICON_gemini%%" alt=""></div>
+      <div class="name"><span>Antigravity CLI</span></div>
+      <div class="role"><span>~/.gemini/config/skills</span></div>
+      <div class="role sub"><span>copy (Win) · link (Mac)</span></div>
+    </div>
+
+    <div class="node w152" style="left:48px; top:323px">
+      <div class="tile"><img src="%%ICON_toml%%" alt=""></div>
+      <div class="name"><span>my-skills.toml</span></div>
+      <div class="role"><span>매니페스트 · .local.toml</span></div>
+    </div>
+
+    <div class="node" style="left:250px; top:323px">
+      <div class="tile"><img src="%%ICON_registry%%" alt=""></div>
+      <div class="name"><span>skills/&lt;이름&gt;/</span></div>
+      <div class="role"><span>정본 SKILL.md</span></div>
+    </div>
+
+    <div class="node w152" style="left:432px; top:323px">
+      <div class="tile"><img src="%%ICON_git%%" alt=""></div>
+      <div class="name"><span>.git/hooks</span></div>
+      <div class="role"><span>hook 5개 (pre/post-*)</span></div>
+    </div>
+
+    <div class="node" style="left:250px; top:553px">
+      <div class="tile"><img src="%%ICON_github%%" alt=""></div>
+      <div class="name"><span>private 원격</span></div>
+      <div class="role"><span>레지스트리 백업</span></div>
+    </div>
+
+    <div class="node" style="left:444px; top:553px">
+      <div class="tile"><img src="%%ICON_laptop%%" alt=""></div>
+      <div class="name"><span>같은 구조</span></div>
+      <div class="role"><span>pull → hook이 sync</span></div>
+    </div>
+
+    <div class="node" style="left:795px; top:553px">
+      <div class="tile"><img src="%%ICON_statefile%%" alt=""></div>
+      <div class="name"><span>state.json</span></div>
+      <div class="role"><span>설치 기록 · .lock</span></div>
+    </div>
+
+    <div class="node w152" style="left:1035px; top:553px">
+      <div class="tile"><img src="%%ICON_rootcache%%" alt=""></div>
+      <div class="name"><span>root 캐시</span></div>
+      <div class="role"><span>~/.config/my-skills/root</span></div>
+    </div>
+
+    <div class="canvas-legend col" style="left:29px; top:577px;">
+      <div class="row"><span class="sw"></span><span>주요 배포 · 연결 흐름</span></div>
+      <div class="row"><span class="sw n"></span><span>로컬 읽기 · 상태 기록</span></div>
+      <div class="row"><span class="sw n dash"></span><span>Git 동기화 · 훅 호출</span></div>
+    </div>
+
+  </div>
+  </div>
+
+  <div class="foot">
+    <span>my-skills — system map (v1.4)</span>
+    <span>icons: svgl / devicon / Lucide · made with <a href="https://github.com/caru-ini/stack-diagram" target="_blank" rel="noopener">stack-diagram</a></span>
+  </div>
+
+</div>
+</body>
+</html>

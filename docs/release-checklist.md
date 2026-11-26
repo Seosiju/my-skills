@@ -44,6 +44,18 @@ skills support it. Verify an old manifest that still has `[targets.hermes]`
 loads: with a `path` it is a custom target, and a disabled one without a path
 is ignored.
 
+Run the hub check with the release build. It starts Claude Code, Codex, and
+Antigravity CLI without a UI and checks that every agent sees the registry's
+skills. It also checks that an edit, a new skill, and a disabled skill reach
+each agent after a commit, and that each agent can finish two skill tasks.
+Row 1 only reads the real registry. The other rows run in a disposable sandbox.
+Every row must pass. Content warnings in row 1 are notes for the skill's owner,
+not failures. On Windows, run it from PowerShell.
+
+```bash
+python -I scripts/hub-check.py --bin target/release/my-skills --out hubcheck.md
+```
+
 On macOS, Antigravity CLI 1.2.16 discovered regular folders and symlinks at
 `~/.gemini/config/skills` with the non-interactive command
 `agy -p '/skills' --output-format json`. The check used zero model turns and
@@ -92,6 +104,9 @@ Use the following pre-tag artifact checks once `main` CI passes.
 
 ## 5. Recovery
 
+- If a macOS job is cancelled before any step runs, no runner picked it up. Rerun
+  only the failed jobs with `gh run rerun <run-id> --failed`. The release publishes
+  once all four builds succeed.
 - Keep published tags intact. Verify the fix before shipping a new release.
 - Record the failing command, expected behavior, and actual behavior in a
   follow-up issue.
