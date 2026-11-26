@@ -627,7 +627,7 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
         }
         match crate::git::hooks::Git::discover(&resolution.root) {
             Ok(git) => {
-                if super::hooks::fill_for_setup(&git) {
+                if super::hooks::fill_for_setup(&git) && args.skip_skill_install {
                     resolution.remember();
                 }
             }

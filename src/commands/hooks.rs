@@ -48,7 +48,9 @@ fn run_hook(args: &HooksRunArgs) -> ExitCode {
     if let Ok(resolution) = root::resolve_root(None, false)
         && let Ok(git) = hooks::Git::discover(&resolution.root)
     {
-        report_hook_fill(hooks::fill(&git), |message| eprintln!("{message}"));
+        report_hook_fill(hooks::fill_from_hook(&git), |message| {
+            eprintln!("{message}")
+        });
     }
     match hook {
         "pre-commit" => pre_commit(),
@@ -76,17 +78,24 @@ fn run_hook(args: &HooksRunArgs) -> ExitCode {
     }
 }
 
-fn report_hook_fill(result: anyhow::Result<hooks::FillOutcome>, mut report: impl FnMut(String)) {
-    match result {
-        Ok(hooks::FillOutcome::Applied { installed, .. }) => {
-            for name in installed {
+fn report_hook_fill(
+    result: anyhow::Result<Option<hooks::FilledHooks>>,
+    mut report: impl FnMut(String),
+) {
+    let error = match result {
+        Ok(Some(filled)) => {
+            for name in filled.installed {
                 report(format!("my-skills: added missing hook {name}"));
             }
+            filled.error
         }
-        Ok(hooks::FillOutcome::Skipped(_)) => {}
-        Err(error) => report(format!(
+        Ok(None) => None,
+        Err(error) => Some(error),
+    };
+    if let Some(error) = error {
+        report(format!(
             "warning: my-skills could not add missing hooks: {error:#}"
-        )),
+        ));
     }
 }
 
@@ -104,16 +113,20 @@ pub(super) fn preview_setup(root: &Path) {
 
 pub(super) fn fill_for_setup(git: &hooks::Git<'_>) -> bool {
     match hooks::fill(git) {
-        Ok(hooks::FillOutcome::Applied {
+        Ok(hooks::FillOutcome::Applied(hooks::FilledHooks {
             path,
             installed,
             foreign,
-        }) => {
+            error,
+        })) => {
             for name in &installed {
                 println!("installed: {}", hooks::display_hook_path(&path.join(name)));
             }
             for name in foreign {
                 hooks::print_foreign(&path.join(name), name);
+            }
+            if let Some(error) = error {
+                eprintln!("warning: could not install git hooks: {error:#}");
             }
             !installed.is_empty()
         }
@@ -278,14 +291,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hook_fill_write_error_is_reported_once() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("hooks");
-        std::fs::write(&path, "existing regular file").unwrap();
-        let error = std::fs::create_dir_all(path).unwrap_err();
+    fn hook_fill_reports_successful_writes_before_the_warning() {
+        let filled = hooks::FilledHooks {
+            path: "hooks".into(),
+            installed: vec!["pre-commit", "post-merge"],
+            foreign: Vec::new(),
+            error: Some(anyhow::anyhow!("write failed")),
+        };
         let mut messages = Vec::new();
-        report_hook_fill(Err(error.into()), |message| messages.push(message));
-        assert_eq!(messages.len(), 1);
-        assert!(messages[0].starts_with("warning: my-skills could not add missing hooks: "));
+        report_hook_fill(Ok(Some(filled)), |message| messages.push(message));
+        assert_eq!(
+            messages,
+            [
+                "my-skills: added missing hook pre-commit",
+                "my-skills: added missing hook post-merge",
+                "warning: my-skills could not add missing hooks: write failed",
+            ]
+        );
     }
 }

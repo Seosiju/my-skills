@@ -119,6 +119,36 @@ fn run_in(fixture: &Fixture, registry: &Path) -> Command {
     cmd
 }
 
+fn stage_invalid_skill(fixture: &Fixture, worktree: &Path, registry_prefix: &Path) {
+    let skill = registry_prefix.join("skills/rejected/reference.txt");
+    let file = worktree.join(&skill);
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(file, "skill without a SKILL.md\n").unwrap();
+    fixture
+        .git_command(&["add", "--"])
+        .current_dir(worktree)
+        .arg(skill)
+        .assert()
+        .success();
+}
+
+fn assert_pre_commit_blocks_without_filling(
+    fixture: &Fixture,
+    worktree: &Path,
+    registry_prefix: &Path,
+) {
+    stage_invalid_skill(fixture, worktree, registry_prefix);
+    fixture
+        .git_command(&["commit", "-qm", "invalid skill"])
+        .current_dir(worktree)
+        .assert()
+        .code(1)
+        .stderr(
+            contains("[BLOCKED] rejected: SKILL.md not found")
+                .and(contains("added missing hook").not()),
+        );
+}
+
 fn set_copy_target(fixture: &Fixture) -> PathBuf {
     let copy = fixture.base.join("copy-host");
     let path = serde_json::to_string(&copy).unwrap();
@@ -193,7 +223,14 @@ fn bootstrap_installs_hooks_after_sync_in_a_clone() {
     fixture.commit();
     let clone = clone_registry(&fixture);
     assert_absent(&hooks(&clone), &HOOKS);
-    let result = run_in(&fixture, &clone).arg("bootstrap").assert().success();
+    let cache = fixture.base.join("xdg-config/my-skills/root");
+    assert!(!cache.exists());
+    let result = run_in(&fixture, &clone)
+        .env_remove("MY_SKILLS_ROOT")
+        .arg("bootstrap")
+        .assert()
+        .success()
+        .stderr(contains("note:").not());
     let stdout = String::from_utf8_lossy(&result.get_output().stdout);
     let connecting = stdout
         .find("Connecting enabled skills into agent hosts...")
@@ -203,6 +240,12 @@ fn bootstrap_installs_hooks_after_sync_in_a_clone() {
     assert!(connecting < installed && installed < complete, "{stdout}");
     assert!(copy.join("sample/SKILL.md").is_file());
     assert_managed(&hooks(&clone), &HOOKS);
+    assert_eq!(
+        Path::new(fs::read_to_string(cache).unwrap().trim())
+            .canonicalize()
+            .unwrap(),
+        clone
+    );
 }
 
 #[test]
@@ -480,12 +523,7 @@ fn bootstrap_and_git_hooks_leave_a_linked_worktrees_shared_hooks_alone() {
         .assert()
         .success()
         .stdout(contains("Git hooks: skipped (inside a linked worktree)\n"));
-    fixture
-        .git_command(&["commit", "--allow-empty", "-qm", "linked commit"])
-        .current_dir(linked)
-        .assert()
-        .success()
-        .stderr(contains("added missing hook").not());
+    assert_pre_commit_blocks_without_filling(&fixture, &linked, Path::new(""));
     assert_eq!(snapshot_dir(&dir), before);
 }
 
@@ -543,11 +581,8 @@ fn only_explicit_install_writes_to_a_configured_hooks_path() {
     let default = hooks(&fixture.registry);
     let default_before = snapshot_dir(&default);
 
-    fixture
-        .git_command(&["commit", "--allow-empty", "-qm", "external pre-commit"])
-        .assert()
-        .success()
-        .stderr(contains("added missing hook").not());
+    assert_pre_commit_blocks_without_filling(&fixture, &fixture.registry, Path::new(""));
+    fixture.git(&["reset", "-q", "--", "skills"]);
     fixture
         .command()
         .arg("bootstrap")
@@ -616,13 +651,62 @@ fn bootstrap_warns_and_keeps_sync_results_when_the_hooks_directory_is_a_file() {
 
     fixture
         .command()
+        .args(["bootstrap", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(contains("would install:").not())
+        .stderr(
+            contains("warning: could not install git hooks: ")
+                .count(1)
+                .and(contains("hooks path is not a directory")),
+        );
+    assert!(!copy.exists());
+
+    fixture
+        .command()
         .arg("bootstrap")
         .assert()
         .success()
         .stdout(contains(BOOTSTRAP_COMPLETE))
-        .stderr(contains("warning: could not install git hooks: ").count(1));
+        .stderr(
+            contains("warning: could not install git hooks: ")
+                .count(1)
+                .and(contains("hooks path is not a directory")),
+        );
     assert_eq!(fs::read_to_string(dir).unwrap(), "do not replace\n");
     assert!(copy.join("sample/SKILL.md").is_file());
+}
+
+#[test]
+fn an_obstructed_hooks_directory_warns_once_without_changing_pre_commit_validation() {
+    let fixture = committed_registry();
+    let dir = hooks(&fixture.registry);
+    install(&fixture);
+    stage_invalid_skill(&fixture, &fixture.registry, Path::new(""));
+    let hook = || {
+        fixture
+            .command()
+            .env("MY_SKILLS_ROOT", ".")
+            .args(["hooks", "run", "pre-commit"])
+            .output()
+            .unwrap()
+    };
+    let unobstructed = hook();
+    let expected_code = unobstructed.status.code().unwrap();
+    unobstructed
+        .assert()
+        .code(1)
+        .stderr("[BLOCKED] rejected: SKILL.md not found\n");
+
+    fs::rename(&dir, fixture.base.join("original-hooks")).unwrap();
+    fs::write(&dir, "do not replace\n").unwrap();
+    hook().assert().code(expected_code).stderr(
+        contains("warning: my-skills could not add missing hooks: ")
+            .count(1)
+            .and(contains("hooks path is not a directory"))
+            .and(contains("[BLOCKED] rejected: SKILL.md not found\n")),
+    );
+    assert_eq!(fs::read_to_string(dir).unwrap(), "do not replace\n");
 }
 
 #[test]
@@ -714,6 +798,36 @@ fn a_complete_hook_set_stays_quiet_and_untouched() {
 }
 
 #[test]
+fn a_complete_hook_set_only_runs_git_discovery_and_status() {
+    let fixture = committed_registry();
+    install(&fixture);
+    let trace = fixture.base.join("git-trace.log");
+    let trace_path = my_skills::platform::paths::display_path(&trace);
+    // File checkout runs no Git commands of its own.
+    fixture
+        .command()
+        .env("GIT_TRACE", trace_path)
+        .args(["hooks", "run", "post-checkout", "HEAD", "HEAD", "0"])
+        .assert()
+        .success()
+        .stderr("");
+    let trace = fs::read_to_string(trace).unwrap();
+    assert_eq!(
+        trace
+            .lines()
+            .filter(|line| line.contains("built-in: git "))
+            .count(),
+        2,
+        "{trace}"
+    );
+    assert!(trace.contains("rev-parse --is-inside-work-tree"), "{trace}");
+    assert!(
+        trace.contains("rev-parse --path-format=absolute --git-path hooks"),
+        "{trace}"
+    );
+}
+
+#[test]
 fn setup_leaves_parent_hooks_alone_when_the_registry_is_a_subdirectory() {
     let fixture = committed_registry();
     let nested = fixture.registry.join("nested");
@@ -731,7 +845,9 @@ fn setup_leaves_parent_hooks_alone_when_the_registry_is_a_subdirectory() {
         .env("GIT_DEFAULT_HASH", "invalid-hash")
         .assert()
         .success()
-        .stdout(contains("git init failed; skipped initial commit\n").and(contains(SUBDIR_SKIP)));
+        .stdout(
+            contains("git init failed; skipped initial commit\n").and(contains("Git hooks:").not()),
+        );
     assert_eq!(snapshot_dir(&dir), before);
     assert!(!hooks(&target).exists());
 
@@ -744,6 +860,18 @@ fn setup_leaves_parent_hooks_alone_when_the_registry_is_a_subdirectory() {
             contains("git init failed; skipped initial commit\n").and(contains("Git hooks:").not()),
         );
     assert!(!hooks(&outside).exists());
+
+    fixture.git(&["add", "nested/my-skills.toml"]);
+    fixture.git(&["commit", "-qm", "nested registry"]);
+    enable_hook_binary(&fixture);
+    run_in(&fixture, &nested)
+        .args(["hooks", "install"])
+        .assert()
+        .success();
+    fs::remove_file(dir.join("post-commit")).unwrap();
+    let before = snapshot_dir(&dir);
+    assert_pre_commit_blocks_without_filling(&fixture, &fixture.registry, Path::new("nested"));
+    assert_eq!(snapshot_dir(&dir), before);
 }
 
 #[test]
@@ -780,6 +908,13 @@ fn bootstrap_skips_linked_hooks_directories() {
         .assert()
         .success()
         .stdout(contains(CUSTOM_SKIP));
+    assert_eq!(snapshot_dir(&outside), before);
+
+    enable_hook_binary(&fixture);
+    install(&fixture);
+    fs::remove_file(outside.join("post-commit")).unwrap();
+    let before = snapshot_dir(&outside);
+    assert_pre_commit_blocks_without_filling(&fixture, &fixture.registry, Path::new(""));
     assert_eq!(snapshot_dir(&outside), before);
 }
 
