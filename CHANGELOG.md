@@ -10,11 +10,11 @@ are the release source of truth while PyPI publishing remains undecided.
 ### Fixed
 
 - `doctor` no longer mixes two registries in one report. Run from a registry that is not the active one (for example a clone of this tool), it used to show that registry's `Hosts:` rows (`link 0 / copy 0`) next to a `Connections:` total for every record on the machine (`link 49 / copy 5`). Now `Connections:` counts only the selected registry's records, which matches the `Hosts:` rows. The rest appear on their own line, `Other registries or stale records: link x / copy y (fallback z)`. They include other registries, deleted registries, an old skills folder, and removed hosts.
-- With no registry loaded (none set up, or an invalid manifest), `Connections:` still counts everything and says so: `... across all registries (no registry loaded)`.
+- With no registry loaded (none set up, or an invalid manifest) and a readable `state.json`, `Connections:` still counts everything and says so: `... across all registries (no registry loaded)`. If `state.json` cannot be read, doctor warns and shows zeros, as before.
 
 ### Changed
 
-- `doctor --json` `connections` gains `scope` (`"registry"` or `"machine"`) and `other` (`{link, copy, fallback}`, or `null` when the counts cover the whole machine or `state.json` could not be read). With `scope: "registry"`, `link`, `copy`, and `fallback` now count only the selected registry. When other records exist, these values are smaller than before. The machine total is `link + other.link` (the same for `copy` and `fallback`). Run from the active registry with no other records, the values are unchanged. `fallback` is part of `copy`, as before.
+- `doctor --json` `connections` gains `scope` (`"registry"` or `"machine"`) and `other` (`{link, copy, fallback}`, or `null` when the counts cover the whole machine or `state.json` could not be read). With `scope: "registry"`, `link`, `copy`, and `fallback` now count only the selected registry. Each one drops by its matching `other` count. When `other` is an object, the machine total is `link + other.link` (the same for `copy` and `fallback`). With `scope: "machine"`, the top-level counts are already the machine total. `other: null` with `scope: "registry"` means `state.json` could not be read. Run from the active registry with no other records, the values are unchanged. `fallback` is part of `copy`, as before.
 
 ## [1.4.1] - 2026-11-26
 
