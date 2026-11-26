@@ -107,3 +107,11 @@ if ($AddToPath) {
 } elseif ($sessionPath -ne $env:Path) {
     Write-Output "Add $installDir to PATH to run my-skills from any directory. Rerun with -AddToPath to add it to your user PATH."
 }
+Write-Output ''
+Write-Output @'
+Next:
+  New here?            my-skills init-registry
+  Registry elsewhere?  git clone <your-private-repo> "$HOME/my-agent-skills"
+                       cd "$HOME/my-agent-skills"
+                       my-skills bootstrap
+'@

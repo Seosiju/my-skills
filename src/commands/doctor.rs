@@ -246,8 +246,10 @@ impl Report {
         } else if let Some(error) = &self.registry.error {
             println!("Registry: INVALID ({error})");
         } else {
+            println!("Registry: not configured");
+            println!("{}", crate::commands::first_run::NEXT_STEPS);
             println!(
-                "Registry: not configured (run 'my-skills init-registry' or 'my-skills set-root')"
+                "Registry already on this machine? Run 'my-skills set-root <path>' or set MY_SKILLS_ROOT."
             );
         }
         if let Some(warning) = &self.registry.warning {
@@ -333,7 +335,7 @@ impl Report {
 fn registry() -> (Registry, ManifestHealth, Option<Manifest>) {
     let resolution = match root::resolve_root(None, false) {
         Ok(resolution) => resolution,
-        Err(error) if error.to_string().starts_with("my-skills.toml not found") => {
+        Err(error) if root::is_unconfigured(&error) => {
             return (Registry::default(), ManifestHealth::NotChecked, None);
         }
         Err(error) => {

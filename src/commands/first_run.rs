@@ -17,13 +17,19 @@ pub const NEXT_STEPS: &str = r#"Next:
 
 /// `my-skills` with no command.
 ///
-/// Contract stub: prints the same help as `--help`. Stream B adds the
-/// first-run steps when no registry resolves.
+/// Prints the same help as `--help`, followed by `NEXT_STEPS` when no registry
+/// is configured anywhere on this machine.
 pub fn bare() -> ExitCode {
     use clap::CommandFactory;
     let mut command = crate::cli::Cli::command();
     if command.print_long_help().is_err() {
         return ExitCode::FAILURE;
+    }
+    if let Err(error) = crate::registry::root::resolve_root(None, false)
+        && crate::registry::root::is_unconfigured(&error)
+    {
+        println!();
+        println!("{NEXT_STEPS}");
     }
     ExitCode::SUCCESS
 }
