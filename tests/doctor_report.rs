@@ -82,9 +82,11 @@ fn test_doctor_without_configured_root_is_diagnostic_success() {
         .assert()
         .success();
     let text = output(&result);
-    assert!(text.contains(
-        "Registry: not configured (run 'my-skills init-registry' or 'my-skills set-root')"
-    ));
+    let expected = format!(
+        "Registry: not configured\n{}\nRegistry already on this machine? Run 'my-skills set-root <path>' or set MY_SKILLS_ROOT.",
+        my_skills::commands::first_run::NEXT_STEPS
+    );
+    assert!(text.contains(&expected), "unexpected doctor output: {text}");
     assert!(text.contains("Manifest: not checked"));
     assert!(!fixture.base.join("xdg-config").exists());
 }

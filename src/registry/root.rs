@@ -329,6 +329,20 @@ pub fn check_explicit_root() -> Result<()> {
     }
 }
 
+fn unconfigured_message() -> String {
+    format!(
+        "{MANIFEST_FILE} not found. No registry is set up on this machine.\n{}\nRegistry already on this machine? Run 'my-skills set-root <path>' or set MY_SKILLS_ROOT.",
+        crate::commands::first_run::NEXT_STEPS
+    )
+}
+
+/// True when `error` is the "no registry configured anywhere" error from
+/// [`resolve_root`], as opposed to an invalid `--root`, `MY_SKILLS_ROOT`, or
+/// broken manifest.
+pub fn is_unconfigured(error: &Error) -> bool {
+    matches!(error, Error::Manifest(message) if message == &unconfigured_message())
+}
+
 fn discover_root(start: Option<&Path>) -> Result<RootResolution> {
     if let Some(path) = explicit_root() {
         let root = resolve(&manifest::expand_os_path(path));
@@ -382,11 +396,7 @@ fn discover_root(start: Option<&Path>) -> Result<RootResolution> {
         });
     }
 
-    Err(Error::Manifest(format!(
-        "{MANIFEST_FILE} not found. Run 'my-skills init-registry' to create a \
-         registry, run 'my-skills set-root <path>' to select one, or set \
-         MY_SKILLS_ROOT to its path."
-    )))
+    Err(Error::Manifest(unconfigured_message()))
 }
 
 /// Resolve the registry root and load its manifest. Pass `write_cache = false`
