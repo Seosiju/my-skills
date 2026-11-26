@@ -484,6 +484,14 @@ fn doctor_quick_keeps_keys_and_counts_only_owned_connections_per_host() {
         codex["connections"],
         json!({"link": 0, "copy": 2, "fallback": 1})
     );
+    assert_eq!(report["connections"]["scope"], "registry");
+    assert_eq!(report["connections"]["link"], 1);
+    assert_eq!(report["connections"]["copy"], 2);
+    assert_eq!(report["connections"]["fallback"], 1);
+    assert_eq!(
+        report["connections"]["other"],
+        json!({"link": 0, "copy": 1, "fallback": 0})
+    );
 
     for key in ["registry_git", "hooks", "hooks_error", "full_validation"] {
         assert_eq!(report.get(key), Some(&Value::Null), "{key}");
