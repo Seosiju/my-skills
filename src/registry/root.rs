@@ -84,12 +84,12 @@ impl RootResolution {
         Ok(())
     }
 
-    /// Cache only a first cwd discovery, and preserve a newer set-root.
     /// True when the saved active registry already points at this root.
     pub(crate) fn is_saved(&self) -> bool {
         read_root_cache().as_deref() == Some(self.root.as_path())
     }
 
+    /// Cache only a first cwd discovery, and preserve a newer set-root.
     pub(crate) fn remember(&self) -> bool {
         if self.would_cache() {
             return self.cache.remember(&self.root);
