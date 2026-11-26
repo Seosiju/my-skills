@@ -432,7 +432,9 @@ fn doctor_connection_summary_and_full_validation_find_different_problems() {
     assert_eq!(
         report["connections"],
         json!({
+            "scope": "registry",
             "link": 1, "copy": 1, "fallback": 1,
+            "other": {"link": 0, "copy": 0, "fallback": 0},
             // `disabled` is neither wanted nor connected, so it is not MISSING.
             "statuses": {"FRESH": 1, "MISSING": 1},
             "warnings": [],

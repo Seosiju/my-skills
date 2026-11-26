@@ -108,12 +108,24 @@ struct GitStatus {
     warnings: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ConnectionScope {
+    Registry,
+    #[default]
+    Machine,
+}
+
 #[derive(Default, Serialize)]
 struct Connections {
+    scope: ConnectionScope,
     #[serde(flatten)]
     counts: ConnectionCounts,
+    other: Option<ConnectionCounts>,
     statuses: BTreeMap<&'static str, usize>,
     warnings: Vec<String>,
+    #[serde(skip)]
+    state_loaded: bool,
 }
 
 #[derive(Default, Serialize)]
@@ -133,6 +145,14 @@ impl ConnectionCounts {
             }
         }
     }
+
+    fn total(&self) -> usize {
+        self.link + self.copy
+    }
+}
+
+fn is_known_host(name: &str) -> bool {
+    hosts::ALL.iter().any(|host| host.name == name)
 }
 
 #[derive(Serialize)]
@@ -746,7 +766,15 @@ pub fn agy_windows_link_warning(
 
 impl Connections {
     fn collect(manifest: Option<&Manifest>) -> (Self, BTreeMap<String, ConnectionCounts>) {
-        let mut report = Self::default();
+        let scope = if manifest.is_some() {
+            ConnectionScope::Registry
+        } else {
+            ConnectionScope::Machine
+        };
+        let mut report = Self {
+            scope,
+            ..Default::default()
+        };
         let mut by_host = BTreeMap::<String, ConnectionCounts>::new();
         let skills_root = manifest.map(Manifest::skills_dir);
         let state = match State::load(None) {
@@ -760,16 +788,27 @@ impl Connections {
             }
         };
         if let Some(state) = &state {
-            for record in state.records() {
-                report.counts.count(record);
-                if skills_root
-                    .as_deref()
-                    .is_some_and(|root| record.belongs_to(root))
-                {
-                    by_host
-                        .entry(record.host.clone())
-                        .or_default()
-                        .count(record);
+            report.state_loaded = true;
+            match skills_root.as_deref() {
+                Some(root) => {
+                    let mut other = ConnectionCounts::default();
+                    for record in state.records() {
+                        if record.belongs_to(root) && is_known_host(&record.host) {
+                            report.counts.count(record);
+                            by_host
+                                .entry(record.host.clone())
+                                .or_default()
+                                .count(record);
+                        } else {
+                            other.count(record);
+                        }
+                    }
+                    report.other = Some(other);
+                }
+                None => {
+                    for record in state.records() {
+                        report.counts.count(record);
+                    }
                 }
             }
             if let Some(manifest) = manifest {
@@ -804,12 +843,25 @@ impl Connections {
     }
 
     fn print(&self) {
-        println!(
-            "\nConnections: link {} / copy {} (fallback {})",
-            self.counts.link, self.counts.copy, self.counts.fallback
-        );
+        if self.scope == ConnectionScope::Machine && self.state_loaded {
+            println!(
+                "\nConnections: link {} / copy {} (fallback {}) across all registries (no registry loaded)",
+                self.counts.link, self.counts.copy, self.counts.fallback
+            );
+        } else {
+            println!(
+                "\nConnections: link {} / copy {} (fallback {})",
+                self.counts.link, self.counts.copy, self.counts.fallback
+            );
+        }
         for (status, count) in &self.statuses {
             println!("  {status}: {count}");
+        }
+        if let Some(other) = self.other.as_ref().filter(|other| other.total() > 0) {
+            println!(
+                "  Other registries or stale records: link {} / copy {} (fallback {})",
+                other.link, other.copy, other.fallback
+            );
         }
         print_warnings(&self.warnings);
     }
