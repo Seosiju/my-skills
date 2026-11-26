@@ -5,15 +5,15 @@
 
 use std::process::ExitCode;
 
-/// Shown when no registry is set up. `$HOME` is literal so the shell expands
-/// it: Windows PowerShell 5.1 does not expand `~` for native commands. One
-/// command per line because Windows PowerShell 5.1 has no `&&`.
-pub const NEXT_STEPS: &str = "\
-Next:
+/// Shown when no registry is set up. `"$HOME/..."` is literal so the shell
+/// expands it (sh, zsh, PowerShell) and keeps spaces: Windows PowerShell 5.1
+/// does not expand `~` for native commands. One command per line because
+/// Windows PowerShell 5.1 has no `&&`.
+pub const NEXT_STEPS: &str = r#"Next:
   New here?            my-skills init-registry
-  Registry elsewhere?  git clone <your-private-repo> $HOME/my-agent-skills
-                       cd $HOME/my-agent-skills
-                       my-skills bootstrap";
+  Registry elsewhere?  git clone <your-private-repo> "$HOME/my-agent-skills"
+                       cd "$HOME/my-agent-skills"
+                       my-skills bootstrap"#;
 
 /// `my-skills` with no command.
 ///

@@ -547,19 +547,21 @@ impl Command {
 }
 
 pub fn run(cli: Cli) -> ExitCode {
-    let Some(command) = cli.command else {
-        return commands::first_run::bare();
-    };
-    commands::set_json_errors(command.wants_json());
-    if cli.root.is_some() && matches!(command, Command::SetRoot(_) | Command::InitRegistry(_)) {
-        return commands::config_error(ROOT_WITH_SET_ROOT);
+    if let Some(command) = &cli.command {
+        commands::set_json_errors(command.wants_json());
+        if cli.root.is_some() && matches!(command, Command::SetRoot(_) | Command::InitRegistry(_)) {
+            return commands::config_error(ROOT_WITH_SET_ROOT);
+        }
     }
     crate::registry::root::set_explicit_root(cli.root);
     // A wrong --root is a usage error for every command, including ones that
-    // never resolve the registry (update, data-path).
+    // never resolve the registry (update, data-path), and a bare `my-skills`.
     if let Err(error) = crate::registry::root::check_explicit_root() {
         return commands::config_error(error);
     }
+    let Some(command) = cli.command else {
+        return commands::first_run::bare();
+    };
     match command {
         Command::Validate(args) => commands::inspect::validate(&args),
         Command::Doctor(args) => commands::doctor::run(&args),
