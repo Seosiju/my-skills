@@ -48,7 +48,8 @@ terminal afterwards and run `my-skills --version`. To update later, run
 ## Get started
 
 Create a registry. my-skills asks where to put it (`~/my-agent-skills` by
-default) and sets it up as a Git repo with a few starter skills.
+default) and sets it up as a Git repo with a few starter skills and its Git
+hooks.
 
 ```bash
 my-skills init-registry
@@ -61,9 +62,11 @@ Already have a registry on another machine? Clone it and connect it:
 ```bash
 git clone <your-private-repo> ~/my-agent-skills
 cd ~/my-agent-skills
-my-skills bootstrap       # connect its skills to this machine's agents
-my-skills hooks install   # keep this machine up to date on every git pull
+my-skills bootstrap   # connect its skills and install the Git hooks
 ```
+
+On Windows PowerShell, use `"$HOME/my-agent-skills"` instead of `~/my-agent-skills`.
+Run `my-skills` with no command at any time to see these steps again.
 
 ## Everyday use
 
@@ -99,7 +102,9 @@ Registry owners are responsible for skill security. Use dedicated tools such as 
 ## Use the same skills on several machines
 
 Your registry is a normal Git repo. Push it to a private remote, clone it on
-each machine, and run `my-skills hooks install` once in each clone. After that:
+each machine, and run `my-skills bootstrap` once in each clone. It installs the
+Git hooks, and a later commit or pull adds any hook a newer version brings.
+After that:
 
 - `git pull` connects new skills, updates changed ones, and removes the ones you
   turned off.

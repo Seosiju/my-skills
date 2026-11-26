@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 This project follows a GitHub-first release flow. Git tags and GitHub Releases
 are the release source of truth while PyPI publishing remains undecided.
 
+## [Unreleased]
+
+### Changed
+
+- `init-registry` and `bootstrap` now install the managed Git hooks, so one command gets a machine ready. Pass `--no-hooks` to skip them. `bootstrap` no longer tells you to run `my-skills hooks install`.
+- Every hook run adds any managed hook that is missing. After `my-skills update`, the next commit or a pull that brings changes fills a hook that a newer version added. `bootstrap` or `hooks install` adds it right away.
+- Automatic install writes only missing hooks and never touches a foreign hook. It skips a registry inside a larger Git repository, a linked worktree, a set `core.hooksPath`, and a linked `.git/hooks`, and says why (`Git hooks: skipped (<reason>)`). In a hook run, a failure to add a hook is a warning and never changes Git's result.
+- `hooks install` with a foreign hook present now installs the other hooks. It still leaves the foreign hook alone, prints the line to add to it, and exits `1`.
+- With no registry set up, the not-found error, `doctor`, the install scripts, and `my-skills` with no command show the two ways to start: `my-skills init-registry`, or clone your registry to `"$HOME/my-agent-skills"` and run `my-skills bootstrap`. The steps are one command per line and use `$HOME`, so they also work in Windows PowerShell 5.1.
+- `my-skills` with no command prints help and exits `0`, instead of a usage error.
+
 ## [1.4.0] - 2026-11-26
 
 ### Removed
