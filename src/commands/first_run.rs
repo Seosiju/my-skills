@@ -22,10 +22,13 @@ pub const NEXT_STEPS: &str = r#"Next:
 pub fn bare() -> ExitCode {
     use clap::CommandFactory;
     let mut command = crate::cli::Cli::command();
+    // Match clap's own `--help`, which names the binary after argv[0] only
+    // when that name is valid UTF-8. A test pins the output to `--help`.
     if let Some(bin_name) = std::env::args_os().next().and_then(|arg0| {
         std::path::Path::new(&arg0)
             .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
+            .and_then(|name| name.to_str())
+            .map(str::to_owned)
     }) {
         command = command.bin_name(bin_name);
     }
