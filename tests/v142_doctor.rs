@@ -82,15 +82,19 @@ fn t1_cwd_registry_separates_own_and_other_registry_records() {
 
     let reg_b = fixture.base.join("registry-b");
     fs::create_dir_all(reg_b.join("skills/beta-one")).unwrap();
+    fs::create_dir_all(reg_b.join("skills/alpha-one")).unwrap();
     fs::write(
         reg_b.join("my-skills.toml"),
         concat!(
             "schema_version = 1\nskills_root = \"skills\"\n",
+            "[targets.agy]\nenabled = true\n",
             "[skills.beta-one]\nenabled = true\nhosts = [\"claude\"]\n",
+            "[skills.alpha-one]\nenabled = true\nhosts = [\"claude\"]\n",
         ),
     )
     .unwrap();
     fs::write(reg_b.join("skills/beta-one/SKILL.md"), skill("beta-one")).unwrap();
+    fs::write(reg_b.join("skills/alpha-one/SKILL.md"), skill("alpha-one")).unwrap();
 
     let dst = fixture.base.join("home/.claude/skills");
     let state_path = write_state(
@@ -150,20 +154,35 @@ fn t1_cwd_registry_separates_own_and_other_registry_records() {
         .iter()
         .position(|line| *line == "Connections: link 1 / copy 0 (fallback 0)")
         .unwrap_or_else(|| panic!("missing Connections line:\n{text}"));
-    let status_idx = lines
+    let foreign_idx = lines
+        .iter()
+        .position(|line| *line == "  FOREIGN: 1")
+        .unwrap_or_else(|| panic!("missing FOREIGN status line:\n{text}"));
+    let missing_idx = lines
         .iter()
         .position(|line| *line == "  MISSING: 1")
-        .unwrap_or_else(|| panic!("missing status line:\n{text}"));
+        .unwrap_or_else(|| panic!("missing MISSING status line:\n{text}"));
     let other_idx = lines
         .iter()
         .position(|line| {
-            line.trim() == "Other registries or stale records: link 2 / copy 1 (fallback 1)"
+            *line == "  Other registries or stale records: link 2 / copy 1 (fallback 1)"
         })
         .unwrap_or_else(|| panic!("missing Other registries line:\n{text}"));
     assert!(
-        conn_idx < status_idx && status_idx < other_idx,
-        "unexpected line order: conn={conn_idx}, status={status_idx}, other={other_idx}\n{text}"
+        conn_idx < foreign_idx && foreign_idx < missing_idx && missing_idx < other_idx,
+        "unexpected line order: conn={conn_idx}, foreign={foreign_idx}, missing={missing_idx}, other={other_idx}\n{text}"
     );
+    #[cfg(windows)]
+    {
+        let warning_idx = lines
+            .iter()
+            .position(|line| line.starts_with("  warning: Antigravity CLI (agy) on Windows"))
+            .unwrap_or_else(|| panic!("missing agy connection warning:\n{text}"));
+        assert!(
+            other_idx < warning_idx,
+            "expected warning after Other line: other={other_idx}, warning={warning_idx}\n{text}"
+        );
+    }
 
     let json_res = fixture
         .command()
@@ -179,6 +198,7 @@ fn t1_cwd_registry_separates_own_and_other_registry_records() {
     assert_eq!(conn["copy"], 0);
     assert_eq!(conn["fallback"], 0);
     assert_eq!(conn["other"], json!({"link": 2, "copy": 1, "fallback": 1}));
+    assert_eq!(conn["statuses"], json!({"FOREIGN": 1, "MISSING": 1}));
     assert_eq!(sum_host_connections(&report), (1, 0, 0));
     assert_eq!(
         conn["link"].as_u64().unwrap() + conn["other"]["link"].as_u64().unwrap(),
@@ -322,7 +342,7 @@ fn t3_deleted_old_skills_root_and_removed_host_go_to_other_while_missing_skill_s
         "my-skills.toml",
         concat!(
             "schema_version = 1\nskills_root = \"custom-skills\"\n",
-            "[skills.vanished-skill]\nenabled = true\nhosts = [\"claude\"]\n",
+            "[skills.vanished-skill]\nenabled = true\nhosts = [\"codex\"]\n",
         ),
     );
     fs::create_dir_all(fixture.registry.join("custom-skills")).unwrap();
@@ -330,7 +350,7 @@ fn t3_deleted_old_skills_root_and_removed_host_go_to_other_while_missing_skill_s
     write_state(
         &fixture,
         vec![
-            // 1. Deleted registry path -> other (link)
+            // 1. Deleted registry path -> other (link on claude)
             record_json(
                 "deleted-one",
                 "claude",
@@ -339,7 +359,7 @@ fn t3_deleted_old_skills_root_and_removed_host_go_to_other_while_missing_skill_s
                 &fixture.base.join("home/.claude/skills/deleted-one"),
                 None,
             ),
-            // 2. Old skills folder in same registry -> other (fallback copy)
+            // 2. Old skills folder in same registry -> other (fallback copy on codex)
             record_json(
                 "old-dir-one",
                 "codex",
@@ -357,13 +377,13 @@ fn t3_deleted_old_skills_root_and_removed_host_go_to_other_while_missing_skill_s
                 &fixture.base.join("home/.hermes/skills/legacy-host-one"),
                 None,
             ),
-            // 4. Skill folder disappeared from current custom-skills folder -> stays in this registry
+            // 4. Skill folder disappeared from current custom-skills folder -> stays in this registry (non-fallback copy on codex)
             record_json(
                 "vanished-skill",
-                "claude",
-                "link",
+                "codex",
+                "copy",
                 &paths::display_path(&fixture.registry.join("custom-skills/vanished-skill")),
-                &fixture.base.join("home/.claude/skills/vanished-skill"),
+                &fixture.base.join("home/.agents/skills/vanished-skill"),
                 None,
             ),
         ],
@@ -379,15 +399,36 @@ fn t3_deleted_old_skills_root_and_removed_host_go_to_other_while_missing_skill_s
         report["connections"],
         json!({
             "scope": "registry",
-            "link": 1,
-            "copy": 0,
+            "link": 0,
+            "copy": 1,
             "fallback": 0,
             "other": {"link": 2, "copy": 1, "fallback": 1},
             "statuses": {"MISSING": 1},
             "warnings": [],
         })
     );
-    assert_eq!(sum_host_connections(&report), (1, 0, 0));
+    let host_counts = |name: &str| {
+        report["hosts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|h| h["name"] == name)
+            .unwrap()["connections"]
+            .clone()
+    };
+    assert_eq!(
+        host_counts("claude"),
+        json!({"link": 0, "copy": 0, "fallback": 0})
+    );
+    assert_eq!(
+        host_counts("codex"),
+        json!({"link": 0, "copy": 1, "fallback": 0})
+    );
+    assert_eq!(
+        host_counts("agy"),
+        json!({"link": 0, "copy": 0, "fallback": 0})
+    );
+    assert_eq!(sum_host_connections(&report), (0, 1, 0));
 
     let text_res = fixture
         .command()
@@ -395,8 +436,8 @@ fn t3_deleted_old_skills_root_and_removed_host_go_to_other_while_missing_skill_s
         .assert()
         .success();
     let text = output(&text_res);
-    assert!(text.contains("Connections: link 1 / copy 0 (fallback 0)"));
-    assert!(text.contains("Other registries or stale records: link 2 / copy 1 (fallback 1)"));
+    assert!(text.contains("Connections: link 0 / copy 1 (fallback 0)"));
+    assert!(text.contains("  Other registries or stale records: link 2 / copy 1 (fallback 1)"));
 }
 
 #[test]
@@ -464,7 +505,7 @@ fn t4_machine_scope_when_unconfigured_or_manifest_invalid() {
     assert_eq!(report["connections"]["link"], 2);
     assert_eq!(report["connections"]["copy"], 1);
     assert_eq!(report["connections"]["fallback"], 1);
-    assert!(report["connections"]["other"].is_null());
+    assert_eq!(report["connections"].get("other"), Some(&Value::Null));
 
     // 2. Invalid TOML manifest in cwd -> exit 1, machine scope.
     fixture.write("my-skills.toml", "invalid = [\n");
@@ -499,7 +540,7 @@ fn t4_machine_scope_when_unconfigured_or_manifest_invalid() {
     assert_eq!(report["connections"]["link"], 2);
     assert_eq!(report["connections"]["copy"], 1);
     assert_eq!(report["connections"]["fallback"], 1);
-    assert!(report["connections"]["other"].is_null());
+    assert_eq!(report["connections"].get("other"), Some(&Value::Null));
 }
 
 #[test]
@@ -680,7 +721,7 @@ fn t6_corrupt_and_missing_state_and_no_persistent_writes() {
     assert_eq!(report["connections"]["link"], 0);
     assert_eq!(report["connections"]["copy"], 0);
     assert_eq!(report["connections"]["fallback"], 0);
-    assert!(report["connections"]["other"].is_null());
+    assert_eq!(report["connections"].get("other"), Some(&Value::Null));
     assert!(
         report["connections"]["warnings"][0]
             .as_str()
