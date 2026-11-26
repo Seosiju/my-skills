@@ -370,6 +370,18 @@ Each built-in host row includes `configured_mode` (`link`, `copy`, or `null`
 when the manifest is unavailable) and `connections: {link, copy, fallback}`
 for records owned by the current registry. `configured_mode` describes a new
 connection. A recorded copy fallback contributes to both `copy` and `fallback`.
+
+The `Connections:` line counts the same records as the host rows. These are
+records whose source is in the selected registry's skills folder, for a
+supported host. Every other record in `state.json` is shown on its own line,
+`Other registries or stale records: link x / copy y (fallback z)`, which is
+omitted when there are none. That covers other registries, deleted registries,
+an old skills folder, and removed hosts. With no registry loaded, `Connections:`
+counts every record and ends with `across all registries (no registry loaded)`.
+In JSON, `connections.scope` is `registry` or `machine`. `connections.other` is
+`{link, copy, fallback}` in registry scope and `null` otherwise, including when
+`state.json` could not be read. The machine total in registry scope is
+`link + other.link`.
 Use `--no-update-check` or set `MY_SKILLS_NO_UPDATE_CHECK=1` to skip only the
 network lookup. If diagnostics find an invalid manifest, doctor exits `1` with
 the health report.
