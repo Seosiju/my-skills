@@ -65,6 +65,7 @@ pub fn init_registry(args: &InitRegistryArgs) -> ExitCode {
     if !args.no_git {
         seeds::init_git(&target, with_defaults);
         if !args.no_hooks
+            && created.join(".git").exists()
             && let Ok(git) = crate::git::hooks::Git::discover(&created)
         {
             super::hooks::fill_for_setup(&git);
