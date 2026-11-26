@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub mod connect; // integrator: install, sync, uninstall, convert, bootstrap
 pub mod diff; // wave14 stream B: read-only canonical vs host comparison
 pub mod doctor; // stream G
+pub mod first_run; // v1.4.1 stream B: first-run guidance
 pub mod hooks; // stream G
 pub mod inspect; // integrator: validate, status, set-root, data-path
 pub mod registry; // stream H: init-registry, skills, share, enable, disable, import
