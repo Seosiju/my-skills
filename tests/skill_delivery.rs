@@ -167,6 +167,13 @@ fn obsolete_manifest_audit_values_are_ignored_by_validate_hooks_and_doctor() {
                 .success()
         );
     }
+    // Install the wrappers first so the hook run below has nothing to fill and
+    // its empty output speaks only to the legacy audit settings.
+    fixture
+        .command()
+        .args(["hooks", "install"])
+        .assert()
+        .success();
     fixture
         .command()
         .args(["hooks", "run", "pre-commit"])

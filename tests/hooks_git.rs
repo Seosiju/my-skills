@@ -99,7 +99,7 @@ fn install_dry_run_status_reinstall_and_uninstall_honor_hooks_path() {
 }
 
 #[test]
-fn a_foreign_hook_blocks_every_install_write_and_prints_the_manual_command() {
+fn install_leaves_a_foreign_hook_in_place_and_installs_the_other_hooks() {
     let fixture = Fixture::isolated();
     fixture.init();
     fixture.write(".git/hooks/post-rewrite", "#!/bin/sh\necho foreign\n");
@@ -107,17 +107,32 @@ fn a_foreign_hook_blocks_every_install_write_and_prints_the_manual_command() {
         ".git/hooks/pre-commit",
         "#!/bin/sh\n# managed-by: my-skills hooks v0\n",
     );
-    for args in [
-        &["hooks", "install"][..],
-        &["hooks", "install", "--dry-run"][..],
-    ] {
-        fixture
-            .command()
-            .args(args)
-            .assert()
-            .code(1)
-            .stderr(contains("my-skills hooks run post-rewrite \"$@\""));
-    }
+    let preview = fixture
+        .command()
+        .args(["hooks", "install", "--dry-run"])
+        .assert()
+        .code(1)
+        .stderr(
+            contains("my-skills hooks run post-rewrite \"$@\"")
+                .and(contains("existing foreign hooks were left in place")),
+        )
+        .stdout(contains("would install:").count(4));
+    assert!(!String::from_utf8_lossy(&preview.get_output().stdout).contains("post-rewrite"));
+    assert!(!fixture.registry.join(".git/hooks/post-merge").exists());
+    assert_eq!(
+        fs::read_to_string(fixture.registry.join(".git/hooks/pre-commit")).unwrap(),
+        "#!/bin/sh\n# managed-by: my-skills hooks v0\n"
+    );
+    fixture
+        .command()
+        .args(["hooks", "install"])
+        .assert()
+        .code(1)
+        .stderr(
+            contains("my-skills hooks run post-rewrite \"$@\"")
+                .and(contains("existing foreign hooks were left in place")),
+        )
+        .stdout(contains("installed:").count(4));
     fixture
         .command()
         .args(["hooks", "status"])
@@ -128,11 +143,10 @@ fn a_foreign_hook_blocks_every_install_write_and_prints_the_manual_command() {
         fs::read_to_string(fixture.registry.join(".git/hooks/post-rewrite")).unwrap(),
         "#!/bin/sh\necho foreign\n"
     );
-    assert_eq!(
-        fs::read_to_string(fixture.registry.join(".git/hooks/pre-commit")).unwrap(),
-        "#!/bin/sh\n# managed-by: my-skills hooks v0\n"
-    );
-    assert!(!fixture.registry.join(".git/hooks/post-merge").exists());
+    for hook in HOOKS.into_iter().filter(|name| *name != "post-rewrite") {
+        let script = fs::read_to_string(fixture.registry.join(".git/hooks").join(hook)).unwrap();
+        assert!(script.starts_with("#!/bin/sh\n# managed-by: my-skills hooks v1\n"));
+    }
 }
 
 #[cfg(unix)]

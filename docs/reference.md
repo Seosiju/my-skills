@@ -19,10 +19,13 @@ Detailed reference for commands, registry lookup, install modes, safety checks, 
 | `my-skills import <SOURCE>` | Copy an external skill folder into `skills/` and register it as disabled (`--enable`, `--force`, `--dry-run`). |
 | `my-skills share --from <HOST> [SKILL]` | Promote a skill from a host folder into your registry (`--plan` / `--dry-run`, `--json`, `--enable`, `--disable`, `--force`). |
 | `my-skills convert --to link\|copy [SKILL]` | Switch existing managed connections between link and copy (`--host <HOST>`, `--all`, `--dry-run`, `--yes`). |
+| `my-skills init-registry [PATH]` | Create a private registry with seed skills, `git init`, a first commit, and the managed Git hooks (`--no-defaults`, `--no-git`, `--no-hooks`, `--dry-run`). |
+| `my-skills bootstrap` | Prepare this machine from a cloned registry: connect enabled skills and install missing Git hooks (`--host <HOST>`, `--all`, `--mode link\|copy`, `--skip-skill-install`, `--no-hooks`, `--dry-run`). |
 | `my-skills hooks <install\|uninstall\|status>` | Install, remove, or inspect the registry's managed Git hooks (`--dry-run` on `install`/`uninstall`). |
 | `my-skills data-path <SKILL>` | Print a skill's machine-local data folder (`--create` to create it). |
 | `my-skills update` | Update the `my-skills` binary from GitHub Releases (`--check`, `--dry-run`, `--channel stable\|main`). |
 | `my-skills doctor` | Check your environment, hosts, active registry, Git hooks, and manifest (`--quick`, `--no-update-check`, `--json`). |
+| `my-skills` (no command) | Print help. With no registry set up yet, also print the two ways to start: `init-registry`, or clone and `bootstrap`. |
 
 ### Skill selection
 
@@ -74,9 +77,9 @@ A path without `my-skills.toml` gives a usage error and exit `2`. `set-root` and
 If lookup picks a cwd registry other than the saved active registry:
 
 - **Read-only and preview commands** use the cwd registry for that run. Commands that load it for inspection or a preview, such as `validate`, `diff`, and `sync --dry-run`, print a note to stderr.
-- **Commands that write** (`new`, `install`, `sync`, `enable`, `disable`, `import`, `share`, `uninstall`, `convert`, `bootstrap` without `--dry-run` or `--skip-skill-install`, and `hooks install`/`uninstall`) refuse with exit `2` before writing (`new --dry-run` also refuses an inactive cwd registry). Run from the active registry, select a registry for one command with `--root` or `MY_SKILLS_ROOT`, or switch permanently with `my-skills set-root <PATH>`.
-- Managed Git hooks installed by `my-skills hooks install` export `MY_SKILLS_ROOT` for their own registry; running `my-skills hooks run post-merge|post-rewrite|post-checkout` without `MY_SKILLS_ROOT` inside a non-active clone skips syncing with a warning instead of writing, and all four `post-*` hooks (`post-commit`, `post-merge`, `post-rewrite`, `post-checkout`) are no-ops in linked Git worktrees (`git worktree add`).
-- **Upgrading to v1.3.0:** re-run `my-skills hooks install` on every machine so Git installs the `post-commit` hook (until then, `my-skills hooks status` reports `post-commit` as `missing`).
+- **Commands that write** (`new`, `install`, `sync`, `enable`, `disable`, `import`, `share`, `uninstall`, `convert`, `bootstrap` without `--dry-run` (with `--skip-skill-install`, only when it installs hooks), and `hooks install`/`uninstall`) refuse with exit `2` before writing (`new --dry-run` also refuses an inactive cwd registry). Run from the active registry, select a registry for one command with `--root` or `MY_SKILLS_ROOT`, or switch permanently with `my-skills set-root <PATH>`.
+- Managed Git hooks (installed by `init-registry`, `bootstrap`, or `my-skills hooks install`) export `MY_SKILLS_ROOT` for their own registry; running `my-skills hooks run post-merge|post-rewrite|post-checkout` without `MY_SKILLS_ROOT` inside a non-active clone skips syncing with a warning instead of writing, and all four `post-*` hooks (`post-commit`, `post-merge`, `post-rewrite`, `post-checkout`) are no-ops in linked Git worktrees (`git worktree add`).
+- **Upgrading:** since v1.4.1 a hook run adds any managed hook that is missing, so after `my-skills update` the next commit or pull fills new hooks such as `post-commit`. Run `my-skills bootstrap` (or `my-skills hooks install`) to add them right away.
 
 To switch your saved active registry permanently:
 
@@ -85,7 +88,7 @@ my-skills set-root /path/to/your/registry
 my-skills doctor
 ```
 
-On a machine with no saved active registry yet, only the **first real write** from a registry (`new`, `install`, `sync`, `enable`, `disable`, `import`, `share`, `uninstall`, `convert`, `bootstrap` unless `--dry-run` or `--skip-skill-install`, or `hooks install`/`uninstall`) saves that folder automatically so later commands work from anywhere. Read-only commands, `sync --check`, every `--dry-run`, and usage errors never write or change the saved active registry; previews print `would remember <path> as the active registry` instead. Run `my-skills doctor` and check the `Registry:` line whenever you want to be sure which registry a command will use.
+On a machine with no saved active registry yet, only the **first real write** from a registry (`new`, `install`, `sync`, `enable`, `disable`, `import`, `share`, `uninstall`, `convert`, `bootstrap` unless `--dry-run` (with `--skip-skill-install`, only when it installs hooks), or `hooks install`/`uninstall`) saves that folder automatically so later commands work from anywhere. Read-only commands, `sync --check`, every `--dry-run`, and usage errors never write or change the saved active registry; previews print `would remember <path> as the active registry` instead. Run `my-skills doctor` and check the `Registry:` line whenever you want to be sure which registry a command will use.
 
 ## JSON output
 
@@ -314,9 +317,21 @@ exit `2` on validation/name (`invalid_name`), collision (`already_exists`),
 
 `my-skills hooks install|uninstall|status` manages five hooks in `.git/hooks`:
 `pre-commit`, `post-commit`, `post-merge`, `post-rewrite`, and `post-checkout`.
-After upgrading to v1.3.0, re-run `my-skills hooks install` on every machine so
-`post-commit` is installed (`hooks status` lists `post-commit` as `missing`
-until then).
+
+- **Automatic install (v1.4.1):** `init-registry` and `bootstrap` install the
+  hooks (`--no-hooks` skips that step), and every hook run adds any managed hook
+  that is missing. So after `my-skills update`, the next commit or pull fills a
+  hook that a newer version added. Automatic install writes only missing hooks.
+  It never touches a foreign hook, and it skips a registry inside a larger
+  repository, a linked worktree, a set `core.hooksPath`, and a linked
+  `.git/hooks`. In those cases `init-registry` and `bootstrap` print
+  `Git hooks: skipped (<reason>)`, and `hooks install` still installs there.
+- **Turning hooks off:** run `my-skills hooks uninstall` (it removes all five),
+  and use `bootstrap --no-hooks` later so bootstrap does not put them back. A
+  hook you delete while the others stay is added back on the next hook run.
+- `hooks install` rewrites the managed hooks, installs the missing ones, and
+  leaves a foreign hook alone. It prints the line to add to that hook and exits
+  `1` while a foreign hook remains.
 
 - `pre-commit` validates staged changes to `my-skills.toml` and `skills/<name>/`
   from the Git index snapshot and blocks invalid commits.

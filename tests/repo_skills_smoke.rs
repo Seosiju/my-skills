@@ -179,7 +179,7 @@ fn repo_manifest_supports_read_only_cli_commands() {
     let bootstrap = cli_stdout(&mut by_env(), &["bootstrap", "--dry-run"]);
     assert!(
         bootstrap.contains("would run: my-skills sync --yes --dry-run")
-            && bootstrap.contains("would suggest: run `my-skills hooks install` to check commits"),
+            && bootstrap.contains("  git hooks: skipped (not a Git repository)"),
         "{bootstrap}"
     );
 

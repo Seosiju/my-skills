@@ -98,7 +98,7 @@ my-skills skills
 my-skills new my-skill
 my-skills install --dry-run
 my-skills install
-my-skills hooks install   # validate on commit and auto-sync copies after commit
+my-skills hooks status    # init-registry installed the hooks: check on commit, sync after
 ```
 
 After adding or changing skills, start a new host session if needed (Claude Code

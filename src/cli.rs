@@ -39,8 +39,10 @@ pub struct Cli {
     /// current directory, and the saved active registry; never saved)
     #[arg(long, global = true, value_name = "PATH")]
     pub root: Option<PathBuf>,
+    /// Without a command, print help and, when no registry is set up yet,
+    /// the first-run steps.
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -173,6 +175,9 @@ pub struct BootstrapArgs {
     /// Override the install mode for new connections
     #[arg(long, value_enum)]
     pub mode: Option<ModeArg>,
+    /// Do not install the my-skills git hooks
+    #[arg(long)]
+    pub no_hooks: bool,
 }
 
 #[derive(Debug, Args)]
@@ -188,6 +193,9 @@ pub struct InitRegistryArgs {
     /// Skip `git init` and the initial commit
     #[arg(long)]
     pub no_git: bool,
+    /// Do not install the my-skills git hooks
+    #[arg(long)]
+    pub no_hooks: bool,
     /// Show what would change; write nothing
     #[arg(long)]
     pub dry_run: bool,
@@ -539,17 +547,22 @@ impl Command {
 }
 
 pub fn run(cli: Cli) -> ExitCode {
-    commands::set_json_errors(cli.command.wants_json());
-    if cli.root.is_some() && matches!(cli.command, Command::SetRoot(_) | Command::InitRegistry(_)) {
-        return commands::config_error(ROOT_WITH_SET_ROOT);
+    if let Some(command) = &cli.command {
+        commands::set_json_errors(command.wants_json());
+        if cli.root.is_some() && matches!(command, Command::SetRoot(_) | Command::InitRegistry(_)) {
+            return commands::config_error(ROOT_WITH_SET_ROOT);
+        }
     }
     crate::registry::root::set_explicit_root(cli.root);
     // A wrong --root is a usage error for every command, including ones that
-    // never resolve the registry (update, data-path).
+    // never resolve the registry (update, data-path), and a bare `my-skills`.
     if let Err(error) = crate::registry::root::check_explicit_root() {
         return commands::config_error(error);
     }
-    match cli.command {
+    let Some(command) = cli.command else {
+        return commands::first_run::bare();
+    };
+    match command {
         Command::Validate(args) => commands::inspect::validate(&args),
         Command::Doctor(args) => commands::doctor::run(&args),
         Command::Update(args) => commands::update::run(&args),

@@ -44,6 +44,14 @@ pub fn init_registry(args: &InitRegistryArgs) -> ExitCode {
             "  git init and initial commit: {}",
             if args.no_git { "no" } else { "yes" }
         );
+        println!(
+            "  git hooks: {}",
+            if args.no_git || args.no_hooks {
+                "no"
+            } else {
+                "yes"
+            }
+        );
         return ExitCode::SUCCESS;
     }
     if let Err(err) = scaffold.create(&target, with_defaults) {
@@ -56,6 +64,12 @@ pub fn init_registry(args: &InitRegistryArgs) -> ExitCode {
     cache.remember(&created);
     if !args.no_git {
         seeds::init_git(&target, with_defaults);
+        if !args.no_hooks
+            && created.join(".git").exists()
+            && let Ok(git) = crate::git::hooks::Git::discover(&created)
+        {
+            super::hooks::fill_for_setup(&git);
+        }
     }
     println!(
         "Created private skill registry at {}",

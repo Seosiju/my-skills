@@ -86,3 +86,8 @@ case ":${PATH:-}:" in
     *":$install_dir:"*) ;;
     *) printf 'Add %s to PATH to run my-skills from any directory.\n' "$install_dir" ;;
 esac
+printf '\n%s\n' 'Next:
+  New here?            my-skills init-registry
+  Registry elsewhere?  git clone <your-private-repo> "$HOME/my-agent-skills"
+                       cd "$HOME/my-agent-skills"
+                       my-skills bootstrap'

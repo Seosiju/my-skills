@@ -8,6 +8,13 @@ pub enum Error {
     #[error("{0}")]
     Manifest(String),
 
+    /// No registry is configured anywhere on this machine.
+    #[error(
+        "my-skills.toml not found. No registry is set up on this machine.\n{}\nRegistry already on this machine? Run 'my-skills set-root <path>' or set MY_SKILLS_ROOT.",
+        crate::commands::first_run::NEXT_STEPS
+    )]
+    Unconfigured,
+
     /// `state.json` missing fields, malformed, or written by a newer CLI.
     #[error("{0}")]
     State(String),

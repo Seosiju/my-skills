@@ -1,12 +1,15 @@
 //! Registry git hook commands.
 
 use std::collections::BTreeSet;
+use std::path::Path;
 use std::process::ExitCode;
 
 use crate::cli::{HooksAction, HooksArgs, HooksRunArgs, SyncArgs};
 use crate::drive::state::{State, StateLock, default_state_path};
 use crate::registry::manifest::{self, CliOverrides};
 use crate::{git::hooks, registry::root};
+
+pub(super) const NOT_A_GIT_REPOSITORY: &str = "not a Git repository";
 
 pub fn run(args: &HooksArgs) -> ExitCode {
     let write_cache = match &args.action {
@@ -38,7 +41,18 @@ pub fn run(args: &HooksArgs) -> ExitCode {
 }
 
 fn run_hook(args: &HooksRunArgs) -> ExitCode {
-    match args.hook.as_str() {
+    let hook = args.hook.as_str();
+    if !hooks::NAMES.contains(&hook) {
+        return super::config_error(format!("unknown hook: {hook}"));
+    }
+    if let Ok(resolution) = root::resolve_root(None, false)
+        && let Ok(git) = hooks::Git::discover(&resolution.root)
+    {
+        report_hook_fill(hooks::fill_from_hook(&git), |message| {
+            eprintln!("{message}")
+        });
+    }
+    match hook {
         "pre-commit" => pre_commit(),
         "post-checkout" if args.git_args.get(2).map(String::as_str) != Some("1") => {
             ExitCode::SUCCESS
@@ -60,7 +74,70 @@ fn run_hook(args: &HooksRunArgs) -> ExitCode {
             }
             ExitCode::SUCCESS
         }
-        hook => super::config_error(format!("unknown hook: {hook}")),
+        _ => unreachable!(),
+    }
+}
+
+fn report_hook_fill(
+    result: anyhow::Result<Option<hooks::FilledHooks>>,
+    mut report: impl FnMut(String),
+) {
+    let error = match result {
+        Ok(Some(filled)) => {
+            for name in filled.installed {
+                report(format!("my-skills: added missing hook {name}"));
+            }
+            filled.error
+        }
+        Ok(None) => None,
+        Err(error) => Some(error),
+    };
+    if let Some(error) = error {
+        report(format!(
+            "warning: my-skills could not add missing hooks: {error:#}"
+        ));
+    }
+}
+
+pub(super) fn preview_setup(root: &Path) {
+    let plan = match hooks::Git::discover(root) {
+        Ok(git) => hooks::plan_fill(&git),
+        Err(_) => Ok(hooks::FillPlan::Skipped(NOT_A_GIT_REPOSITORY)),
+    };
+    match plan {
+        Ok(hooks::FillPlan::Skipped(reason)) => println!("  git hooks: skipped ({reason})"),
+        Ok(hooks::FillPlan::Eligible(status)) => status.print_fill_preview(),
+        Err(error) => eprintln!("warning: could not install git hooks: {error:#}"),
+    }
+}
+
+pub(super) fn fill_for_setup(git: &hooks::Git<'_>) -> bool {
+    match hooks::fill(git) {
+        Ok(hooks::FillOutcome::Applied(hooks::FilledHooks {
+            path,
+            installed,
+            foreign,
+            error,
+        })) => {
+            for name in &installed {
+                println!("installed: {}", hooks::display_hook_path(&path.join(name)));
+            }
+            for name in foreign {
+                hooks::print_foreign(&path.join(name), name);
+            }
+            if let Some(error) = error {
+                eprintln!("warning: could not install git hooks: {error:#}");
+            }
+            !installed.is_empty()
+        }
+        Ok(hooks::FillOutcome::Skipped(reason)) => {
+            println!("Git hooks: skipped ({reason})");
+            false
+        }
+        Err(error) => {
+            eprintln!("warning: could not install git hooks: {error:#}");
+            false
+        }
     }
 }
 
@@ -206,5 +283,30 @@ fn pre_commit() -> ExitCode {
             eprintln!("[BLOCKED] pre-commit: {error:#}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hook_fill_reports_successful_writes_before_the_warning() {
+        let filled = hooks::FilledHooks {
+            path: "hooks".into(),
+            installed: vec!["pre-commit", "post-merge"],
+            foreign: Vec::new(),
+            error: Some(anyhow::anyhow!("write failed")),
+        };
+        let mut messages = Vec::new();
+        report_hook_fill(Ok(Some(filled)), |message| messages.push(message));
+        assert_eq!(
+            messages,
+            [
+                "my-skills: added missing hook pre-commit",
+                "my-skills: added missing hook post-merge",
+                "warning: my-skills could not add missing hooks: write failed",
+            ]
+        );
     }
 }
