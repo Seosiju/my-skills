@@ -249,6 +249,39 @@ fn bootstrap_installs_hooks_after_sync_in_a_clone() {
 }
 
 #[test]
+fn bootstrap_saves_the_registry_when_only_hooks_were_written() {
+    let fixture = committed_registry();
+    set_copy_target(&fixture);
+    fixture.commit();
+    let clone = clone_registry(&fixture);
+    let cache = fixture.base.join("xdg-config/my-skills/root");
+    // Connect everything first with an explicit root, which is never saved, so
+    // bootstrap's sync has nothing left to write.
+    run_in(&fixture, &clone)
+        .env_remove("MY_SKILLS_ROOT")
+        .arg("--root")
+        .arg(&clone)
+        .args(["sync", "--yes"])
+        .assert()
+        .success();
+    assert!(!cache.exists());
+    run_in(&fixture, &clone)
+        .env_remove("MY_SKILLS_ROOT")
+        .arg("bootstrap")
+        .assert()
+        .success()
+        .stdout(contains("installed: "))
+        .stderr(contains("note:").not());
+    assert_managed(&hooks(&clone), &HOOKS);
+    assert_eq!(
+        Path::new(fs::read_to_string(cache).unwrap().trim())
+            .canonicalize()
+            .unwrap(),
+        clone
+    );
+}
+
+#[test]
 fn bootstrap_only_fills_missing_hooks() {
     let fixture = committed_registry();
     let dir = hooks(&fixture.registry);

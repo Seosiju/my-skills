@@ -627,7 +627,9 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
         }
         match crate::git::hooks::Git::discover(&resolution.root) {
             Ok(git) => {
-                if super::hooks::fill_for_setup(&git) && args.skip_skill_install {
+                // Installing hooks is a write, so a first-run cwd registry is
+                // saved as active unless sync already saved it.
+                if super::hooks::fill_for_setup(&git) && !resolution.is_saved() {
                     resolution.remember();
                 }
             }
