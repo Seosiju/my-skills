@@ -297,13 +297,14 @@ flowchart TD
 
 | 명령 | 흐름 (commands/) | 실제 일을 하는 곳 |
 | --- | --- | --- |
-| `install`, `sync`, `uninstall`, `convert`, `bootstrap` | `connect.rs` | `drive/plan.rs`, `drive/apply.rs`, `drive/lock.rs`, `drive/state.rs`, `check/` |
+| `install`, `sync`, `uninstall`, `convert`, `bootstrap` | `connect.rs` | `drive/plan.rs`, `drive/apply.rs`, `drive/lock.rs`, `drive/state.rs`, `check/`. `bootstrap`은 끝에 `git/hooks.rs`의 `fill`로 빠진 hook을 설치 |
 | `status`, `validate`, `set-root`, `data-path` | `inspect.rs` | `drive/plan.rs`, `check/`, `registry/root.rs`, `platform/data.rs` |
-| `skills`, `enable`, `disable`, `share`, `import`, `init-registry`, `new` | `registry.rs` | `registry/catalog.rs`, `registry/edit.rs`, `registry/share.rs`, `registry/seeds.rs` |
+| `skills`, `enable`, `disable`, `share`, `import`, `init-registry`, `new` | `registry.rs` | `registry/catalog.rs`, `registry/edit.rs`, `registry/share.rs`, `registry/seeds.rs`. `init-registry`는 git init 뒤 `git/hooks.rs`의 `fill`로 hook 설치 |
 | `resolve` | `resolve.rs` | `drive/state.rs`, `drive/link.rs`, `registry/root.rs` |
 | `diff` | `diff.rs` | `drive/diff.rs`, `drive/plan.rs` |
 | `doctor` | `doctor.rs` | `registry/catalog.rs`, `git/hooks.rs`, `drive/` |
-| `hooks install/status/uninstall/run` | `hooks.rs` | `git/hooks.rs`, 그리고 sync를 위해 `connect.rs` |
+| `hooks install/status/uninstall/run` | `hooks.rs` | `git/hooks.rs`, 그리고 sync를 위해 `connect.rs`. `hooks run`은 먼저 빠진 hook을 채움(`fill`) |
+| 명령 없이 `my-skills` | `first_run.rs` | 도움말과, 레지스트리가 없으면 처음 안내(`NEXT_STEPS`). 같은 글자를 `registry/root.rs`의 미설정 에러, doctor, 설치 스크립트가 씀 |
 | `update` | `update.rs` | `src/update.rs` |
 
 ### 6.3 파일별 역할

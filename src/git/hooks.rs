@@ -14,7 +14,7 @@ use crate::check::validate;
 use crate::platform::paths;
 use crate::registry::manifest::{self, MANIFEST_FILE, Manifest};
 
-const NAMES: [&str; 5] = [
+pub(crate) const NAMES: [&str; 5] = [
     "pre-commit",
     "post-commit",
     "post-merge",
@@ -310,6 +310,12 @@ pub(crate) struct HookStatus {
 }
 
 impl HookStatus {
+    fn has_missing(&self) -> bool {
+        self.entries
+            .iter()
+            .any(|hook| hook.status == HookState::Missing)
+    }
+
     pub(crate) fn print(&self) {
         println!("  Directory: {}", display_hook_path(&self.path));
         println!(
@@ -325,6 +331,30 @@ impl HookStatus {
                 hook.version.as_deref().unwrap_or("-")
             );
         }
+        if self.has_missing() {
+            println!("  Missing hooks: run 'my-skills hooks install' to add them.");
+        }
+    }
+
+    pub(crate) fn print_fill_preview(&self) {
+        for hook in &self.entries {
+            let action = match hook.status {
+                HookState::Missing => "would install",
+                HookState::Foreign => "would leave foreign hook",
+                HookState::Installed => continue,
+            };
+            println!(
+                "  {action}: {}",
+                display_hook_path(&self.path.join(hook.name))
+            );
+        }
+        if self
+            .entries
+            .iter()
+            .all(|hook| hook.status == HookState::Installed)
+        {
+            println!("  git hooks: already installed");
+        }
     }
 }
 
@@ -335,7 +365,7 @@ fn serialize_hook_path<S: serde::Serializer>(
     serializer.serialize_str(&display_hook_path(path))
 }
 
-fn display_hook_path(path: &Path) -> String {
+pub(crate) fn display_hook_path(path: &Path) -> String {
     let displayed = paths::display_path(path);
     #[cfg(windows)]
     {
@@ -391,6 +421,19 @@ fn inspect_hook_error(file: &Path, error: io::Error) -> crate::Error {
 
 pub(crate) fn status(git: &Git<'_>) -> anyhow::Result<HookStatus> {
     let path = git.path("hooks")?;
+    match fs::metadata(&path) {
+        Ok(metadata) if !metadata.is_dir() => {
+            let error = io::Error::new(
+                io::ErrorKind::NotADirectory,
+                "hooks path is not a directory",
+            );
+            return Err(inspect_hook_error(&path, error).into());
+        }
+        Err(error) if error.kind() != io::ErrorKind::NotFound => {
+            return Err(inspect_hook_error(&path, error).into());
+        }
+        _ => {}
+    }
     let entries = NAMES
         .into_iter()
         .map(|name| {
@@ -405,45 +448,199 @@ pub(crate) fn status(git: &Git<'_>) -> anyhow::Result<HookStatus> {
     })
 }
 
+pub(crate) enum FillPlan {
+    Skipped(&'static str),
+    Eligible(HookStatus),
+}
+
+pub(crate) fn plan_fill(git: &Git<'_>) -> anyhow::Result<FillPlan> {
+    match fill_skip_reason(git)? {
+        Some(reason) => Ok(FillPlan::Skipped(reason)),
+        None => Ok(FillPlan::Eligible(status(git)?)),
+    }
+}
+
+fn fill_skip_reason(git: &Git<'_>) -> anyhow::Result<Option<&'static str>> {
+    if !git.registry_prefix()?.is_empty() {
+        return Ok(Some("inside a subdirectory of a larger Git repository"));
+    }
+    if git.in_linked_worktree()? {
+        return Ok(Some("inside a linked worktree"));
+    }
+    let custom_path = git
+        .command()
+        .args(["config", "--get", "core.hooksPath"])
+        .output()?;
+    let custom_or_linked_hooks = match custom_path.status.code() {
+        Some(0) => true,
+        Some(1) if custom_path.stderr.is_empty() => {
+            let common = git.text(&["rev-parse", "--path-format=absolute", "--git-common-dir"])?;
+            linked_hooks_folder(&Path::new(&common).join("hooks"))?
+        }
+        _ => anyhow::bail!(
+            "git config --get core.hooksPath: {}",
+            String::from_utf8_lossy(&custom_path.stderr).trim()
+        ),
+    };
+    Ok(custom_or_linked_hooks.then_some(
+        "core.hooksPath or a linked hooks folder is set; run 'my-skills hooks install' to install there",
+    ))
+}
+
+fn linked_hooks_folder(path: &Path) -> anyhow::Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => Ok(metadata.file_type().is_symlink()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(inspect_hook_error(path, error).into()),
+    }
+}
+
+pub(crate) enum FillOutcome {
+    Skipped(&'static str),
+    Applied(FilledHooks),
+}
+
+pub(crate) struct FilledHooks {
+    pub path: PathBuf,
+    pub installed: Vec<&'static str>,
+    pub foreign: Vec<&'static str>,
+    pub error: Option<anyhow::Error>,
+}
+
+pub(crate) fn fill(git: &Git<'_>) -> anyhow::Result<FillOutcome> {
+    match plan_fill(git)? {
+        FillPlan::Skipped(reason) => Ok(FillOutcome::Skipped(reason)),
+        FillPlan::Eligible(status) => fill_hooks(git, status).map(FillOutcome::Applied),
+    }
+}
+
+pub(crate) fn fill_from_hook(git: &Git<'_>) -> anyhow::Result<Option<FilledHooks>> {
+    let status = status(git);
+    // A full hook directory needs no eligibility checks. If inspecting it failed,
+    // still check eligibility so that skipped layouts stay quiet.
+    if status.as_ref().is_ok_and(|status| !status.has_missing()) || fill_skip_reason(git)?.is_some()
+    {
+        return Ok(None);
+    }
+    fill_hooks(git, status?).map(Some)
+}
+
+fn fill_hooks(git: &Git<'_>, status: HookStatus) -> anyhow::Result<FilledHooks> {
+    let (installed, error) = if status.has_missing() {
+        fs::create_dir_all(&status.path)
+            .map_err(|error| inspect_hook_error(&status.path, error))?;
+        let script = wrapper(git)?;
+        write_missing_hooks(&status, |path, hook| {
+            fill_missing_hook(path, hook, &script(hook.name))
+        })
+    } else {
+        (Vec::new(), None)
+    };
+    Ok(FilledHooks {
+        path: status.path,
+        installed,
+        error,
+        foreign: status
+            .entries
+            .into_iter()
+            .filter_map(|hook| (hook.status == HookState::Foreign).then_some(hook.name))
+            .collect(),
+    })
+}
+
+fn write_missing_hooks(
+    status: &HookStatus,
+    mut write: impl FnMut(&Path, &HookEntry) -> anyhow::Result<bool>,
+) -> (Vec<&'static str>, Option<anyhow::Error>) {
+    let mut installed = Vec::new();
+    let mut first_error = None;
+    for hook in status
+        .entries
+        .iter()
+        .filter(|hook| hook.status == HookState::Missing)
+    {
+        match write(&status.path.join(hook.name), hook) {
+            Ok(true) => installed.push(hook.name),
+            Ok(false) => {}
+            Err(error) => {
+                first_error.get_or_insert(error);
+            }
+        }
+    }
+    (installed, first_error)
+}
+
+fn fill_missing_hook(path: &Path, hook: &HookEntry, script: &str) -> anyhow::Result<bool> {
+    match write_hook(path, hook, script) {
+        Ok(()) => Ok(true),
+        // Another installer (or the user) won the race for this name.
+        Err(error)
+            if error
+                .downcast_ref::<tempfile::PersistError>()
+                .is_some_and(|error| error.error.kind() == io::ErrorKind::AlreadyExists) =>
+        {
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+pub(crate) fn print_foreign(path: &Path, name: &str) {
+    eprintln!(
+        "Foreign hook at {}. Add this line to that hook:",
+        display_hook_path(path)
+    );
+    eprintln!("  my-skills hooks run {name} \"$@\"");
+}
+
 pub(crate) fn install(git: &Git<'_>, dry_run: bool) -> anyhow::Result<()> {
     let status = status(git)?;
-    let mut foreign = false;
-    for hook in &status.entries {
-        if hook.status == HookState::Foreign {
-            foreign = true;
-            eprintln!(
-                "Foreign hook at {}. Add this line to that hook:",
-                display_hook_path(&status.path.join(hook.name))
-            );
-            eprintln!("  my-skills hooks run {} \"$@\"", hook.name);
+    let mut foreign = status
+        .entries
+        .iter()
+        .filter(|hook| hook.status == HookState::Foreign)
+        .peekable();
+    let has_foreign = foreign.peek().is_some();
+    for hook in foreign {
+        print_foreign(&status.path.join(hook.name), hook.name);
+    }
+    let mut hooks = status
+        .entries
+        .iter()
+        .filter(|hook| hook.status != HookState::Foreign)
+        .peekable();
+    let script = if dry_run || hooks.peek().is_none() {
+        None
+    } else {
+        fs::create_dir_all(&status.path)?;
+        Some(wrapper(git)?)
+    };
+    for hook in hooks {
+        let path = status.path.join(hook.name);
+        if let Some(script) = &script {
+            write_hook(&path, hook, &script(hook.name))?;
+            println!("installed: {}", display_hook_path(&path));
+        } else {
+            println!("would install: {}", display_hook_path(&path));
         }
     }
-    anyhow::ensure!(!foreign, "existing foreign hooks were left in place");
+    anyhow::ensure!(!has_foreign, "existing foreign hooks were left in place");
+    Ok(())
+}
 
+fn wrapper(git: &Git<'_>) -> anyhow::Result<impl Fn(&str) -> String> {
     let executable = shell_path(&env::current_exe()?)?;
     let registry = shell_path(&Path::new(".").join(git.registry_prefix()?))?;
-    if !dry_run {
-        fs::create_dir_all(&status.path)?;
-    }
-    for hook in status.entries {
-        let path = status.path.join(hook.name);
-        if dry_run {
-            println!("would install: {}", display_hook_path(&path));
-            continue;
-        }
-        let script = format!(
+    Ok(move |name: &str| {
+        format!(
             "#!/bin/sh\n{MARKER}{VERSION}\n\
              if ! MY_SKILLS=$(command -v my-skills); then\n\
                  MY_SKILLS={executable}\n\
              fi\n\
              export MY_SKILLS_ROOT={registry}\n\
-             exec \"$MY_SKILLS\" hooks run {} \"$@\"\n",
-            hook.name
-        );
-        write_hook(&path, hook, &script)?;
-        println!("installed: {}", display_hook_path(&path));
-    }
-    Ok(())
+             exec \"$MY_SKILLS\" hooks run {name} \"$@\"\n"
+        )
+    })
 }
 
 fn shell_path(path: &Path) -> anyhow::Result<String> {
@@ -461,7 +658,7 @@ fn shell_path(path: &Path) -> anyhow::Result<String> {
     Ok(format!("'{}'", path.replace('\'', "'\"'\"'")))
 }
 
-fn write_hook(path: &Path, hook: HookEntry, script: &str) -> anyhow::Result<()> {
+fn write_hook(path: &Path, hook: &HookEntry, script: &str) -> anyhow::Result<()> {
     let mut temp = tempfile::NamedTempFile::new_in(path.parent().expect("hook has parent"))?;
     temp.write_all(script.as_bytes())?;
     #[cfg(unix)]
@@ -748,6 +945,117 @@ fn skill_errors(path: &Path, name: &str, manifest: Option<&Manifest>) -> Vec<Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn a_non_link_reparse_directory_is_not_a_linked_hooks_folder() {
+        use std::ffi::c_void;
+        use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+        use std::os::windows::io::AsRawHandle;
+
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn DeviceIoControl(
+                handle: *mut c_void,
+                code: u32,
+                input: *const u8,
+                input_size: u32,
+                output: *mut c_void,
+                output_size: u32,
+                bytes_returned: *mut u32,
+                overlapped: *mut c_void,
+            ) -> i32;
+        }
+
+        const FSCTL_SET_REPARSE_POINT: u32 = 0x900a4;
+        const FSCTL_DELETE_REPARSE_POINT: u32 = 0x900ac;
+        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x02000000;
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x00200000;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        const TEST_TAG: u32 = 0x4042;
+        let temp = tempfile::tempdir().unwrap();
+        let folder = fs::OpenOptions::new()
+            .write(true)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(temp.path())
+            .unwrap();
+        // REPARSE_GUID_DATA_BUFFER with no payload and the name-surrogate bit clear.
+        let mut request = [0; 24];
+        request[..4].copy_from_slice(&TEST_TAG.to_le_bytes());
+        request[8..].copy_from_slice(b"my-skills-test!!");
+        let control = |code| {
+            let mut bytes_returned = 0;
+            // SAFETY: folder and buffers remain live for the synchronous call.
+            let success = unsafe {
+                DeviceIoControl(
+                    folder.as_raw_handle(),
+                    code,
+                    request.as_ptr(),
+                    request.len() as u32,
+                    std::ptr::null_mut(),
+                    0,
+                    &mut bytes_returned,
+                    std::ptr::null_mut(),
+                )
+            };
+            assert_ne!(success, 0, "{}", io::Error::last_os_error());
+        };
+
+        control(FSCTL_SET_REPARSE_POINT);
+        let metadata = fs::symlink_metadata(temp.path());
+        let linked = linked_hooks_folder(temp.path());
+        control(FSCTL_DELETE_REPARSE_POINT);
+        assert_ne!(
+            metadata.unwrap().file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT,
+            0
+        );
+        assert!(!linked.unwrap());
+    }
+
+    #[test]
+    fn fill_keeps_successful_writes_and_continues_after_the_first_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let status = HookStatus {
+            path: temp.path().to_owned(),
+            on_path: false,
+            entries: NAMES
+                .into_iter()
+                .map(|name| inspect(&temp.path().join(name), name).unwrap())
+                .collect(),
+        };
+        let first = temp.path().join("first-obstruction");
+        let second = temp.path().join("second-obstruction");
+        fs::write(&first, "regular file").unwrap();
+        fs::write(&second, "regular file").unwrap();
+
+        let (installed, error) = write_missing_hooks(&status, |path, hook| match hook.name {
+            "post-commit" => fill_missing_hook(&first.join(hook.name), hook, "wrapper"),
+            "post-rewrite" => fill_missing_hook(&second.join(hook.name), hook, "wrapper"),
+            _ => fill_missing_hook(path, hook, "wrapper"),
+        });
+        assert_eq!(installed, ["pre-commit", "post-merge", "post-checkout"]);
+        for name in installed {
+            assert_eq!(
+                fs::read_to_string(temp.path().join(name)).unwrap(),
+                "wrapper"
+            );
+        }
+        let error = format!("{:#}", error.unwrap());
+        assert!(error.contains("first-obstruction"), "{error}");
+        assert!(!error.contains("second-obstruction"), "{error}");
+    }
+
+    #[test]
+    fn a_hook_created_after_inspection_is_left_in_place() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("pre-commit");
+        let missing = inspect(&path, "pre-commit").unwrap();
+        assert_eq!(missing.status, HookState::Missing);
+        fs::write(&path, "someone else's hook").unwrap();
+
+        assert!(!fill_missing_hook(&path, &missing, "our wrapper").unwrap());
+        assert_eq!(fs::read_to_string(path).unwrap(), "someone else's hook");
+    }
 
     #[test]
     fn display_hook_path_normalizes_separators_on_windows() {

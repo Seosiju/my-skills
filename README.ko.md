@@ -47,7 +47,7 @@ Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Seosiju/my-skills/main
 ## 시작하기
 
 레지스트리를 새로 만듭니다. 위치를 물어보며(기본값 `~/my-agent-skills`), Git 저장소와
-기본 스킬 몇 개를 함께 만들어 줍니다.
+기본 스킬 몇 개, Git hook을 함께 만들어 줍니다.
 
 ```bash
 my-skills init-registry
@@ -60,9 +60,11 @@ my-skills install             # 에이전트에 연결
 ```bash
 git clone <비공개-저장소-주소> ~/my-agent-skills
 cd ~/my-agent-skills
-my-skills bootstrap       # 이 기기의 에이전트에 스킬 연결
-my-skills hooks install   # 앞으로 git pull 할 때마다 자동으로 맞춤
+my-skills bootstrap   # 스킬을 연결하고 Git hook을 설치
 ```
+
+Windows PowerShell에서는 `~/my-agent-skills` 대신 `"$HOME/my-agent-skills"`를 쓰세요.
+이 순서는 명령 없이 `my-skills`만 쳐도 다시 볼 수 있습니다.
 
 ## 자주 하는 일
 
@@ -98,7 +100,8 @@ my-skills sync --yes
 ## 여러 기기에서 같은 스킬 쓰기
 
 레지스트리는 평범한 Git 저장소입니다. 비공개 원격 저장소에 push하고, 기기마다
-clone한 폴더에서 `my-skills hooks install`을 한 번 실행하세요. 그러면:
+clone한 폴더에서 `my-skills bootstrap`을 한 번 실행하세요. 이때 Git hook이 설치되고,
+새 버전에서 hook이 늘면 다음 커밋이나 pull 때 빠진 hook이 채워집니다. 그러면:
 
 - `git pull`만 하면 새 스킬은 연결되고, 바뀐 스킬은 갱신되고, 끈 스킬은 정리됩니다.
 - 커밋할 때 스킬을 먼저 검사하므로, 깨진 스킬이 다른 기기로 넘어가지 않습니다.

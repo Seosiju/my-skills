@@ -559,7 +559,7 @@ fn print_skipped_convert_hosts(skipped: &[(String, InstallMode)]) {
 // ---------------------------------------------------------------- bootstrap
 
 pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
-    let writes = !args.dry_run && !args.skip_skill_install;
+    let writes = !args.dry_run && (!args.skip_skill_install || !args.no_hooks);
     let resolution = match if writes {
         resolve_write_root()
     } else {
@@ -588,7 +588,9 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
                 );
             }
         }
-        println!("  would suggest: run `my-skills hooks install` to check commits");
+        if !args.no_hooks {
+            super::hooks::preview_setup(&resolution.root);
+        }
         return ExitCode::SUCCESS;
     }
     if !args.skip_skill_install {
@@ -619,10 +621,25 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
             return code;
         }
     }
-    println!(
-        "Bootstrap complete. Run `my-skills hooks install` to check commits, \
-         and `my-skills doctor` to inspect registry configuration."
-    );
+    if !args.no_hooks {
+        if let Err(error) = resolution.recheck_write() {
+            return config_error(error);
+        }
+        match crate::git::hooks::Git::discover(&resolution.root) {
+            Ok(git) => {
+                // Installing hooks is a write, so a first-run cwd registry is
+                // saved as active unless sync already saved it.
+                if super::hooks::fill_for_setup(&git) && !resolution.is_saved() {
+                    resolution.remember();
+                }
+            }
+            Err(_) => println!(
+                "Git hooks: skipped ({})",
+                super::hooks::NOT_A_GIT_REPOSITORY
+            ),
+        }
+    }
+    println!("Bootstrap complete. Run `my-skills doctor` to inspect registry configuration.");
     ExitCode::SUCCESS
 }
 

@@ -84,6 +84,11 @@ impl RootResolution {
         Ok(())
     }
 
+    /// True when the saved active registry already points at this root.
+    pub(crate) fn is_saved(&self) -> bool {
+        read_root_cache().as_deref() == Some(self.root.as_path())
+    }
+
     /// Cache only a first cwd discovery, and preserve a newer set-root.
     pub(crate) fn remember(&self) -> bool {
         if self.would_cache() {
@@ -329,6 +334,13 @@ pub fn check_explicit_root() -> Result<()> {
     }
 }
 
+/// True when `error` is the "no registry configured anywhere" error from
+/// [`resolve_root`], as opposed to an invalid `--root`, `MY_SKILLS_ROOT`, or
+/// broken manifest.
+pub fn is_unconfigured(error: &Error) -> bool {
+    matches!(error, Error::Unconfigured)
+}
+
 fn discover_root(start: Option<&Path>) -> Result<RootResolution> {
     if let Some(path) = explicit_root() {
         let root = resolve(&manifest::expand_os_path(path));
@@ -382,11 +394,7 @@ fn discover_root(start: Option<&Path>) -> Result<RootResolution> {
         });
     }
 
-    Err(Error::Manifest(format!(
-        "{MANIFEST_FILE} not found. Run 'my-skills init-registry' to create a \
-         registry, run 'my-skills set-root <path>' to select one, or set \
-         MY_SKILLS_ROOT to its path."
-    )))
+    Err(Error::Unconfigured)
 }
 
 /// Resolve the registry root and load its manifest. Pass `write_cache = false`
