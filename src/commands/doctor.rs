@@ -17,15 +17,12 @@ use crate::registry::manifest::{self, InstallMode, Manifest};
 use crate::registry::root::{self, RootSource};
 use crate::{check::validate, drive::hosts, drive::plan, platform::paths, update};
 
-const PYTHON: &str = "not required (Rust binary)";
-
 #[derive(Serialize)]
 struct Report {
     version: &'static str,
     update: String,
     os: String,
     shell: String,
-    python: &'static str,
     registry: Registry,
     skills: Option<Skills>,
     state_path: String,
@@ -227,7 +224,6 @@ impl Report {
                 || "unknown".into(),
                 |shell| shell.to_string_lossy().into_owned(),
             ),
-            python: PYTHON,
             registry,
             skills,
             state_path: paths::display_path(&state::default_state_path()),
@@ -259,7 +255,6 @@ impl Report {
         println!("Update:  {}", self.update);
         println!("OS:     {}", self.os);
         println!("Shell:  {}", self.shell);
-        println!("Python: {}", self.python);
         println!();
         if let (Some(path), Some(source)) = (&self.registry.path, self.registry.source) {
             println!("Registry: {} (source: {source})", paths::display_path(path));
@@ -744,7 +739,7 @@ pub fn agy_windows_link_warning(
         (true, true) => {
             "Antigravity CLI (agy) on Windows may not discover junction-linked skills; \
              set `[targets.agy] install_mode = \"copy\"` in my-skills.local.toml \
-             and convert existing agy links with `my-skills convert --to copy --host agy`."
+             and run `my-skills sync --host agy`."
         }
         (true, false) => {
             "Antigravity CLI (agy) on Windows may not discover junction-linked skills; \
@@ -752,12 +747,13 @@ pub fn agy_windows_link_warning(
         }
         (false, true) if manifest.is_none() => {
             "Antigravity CLI (agy) on Windows may not discover junction-linked skills. \
-             First check the Registry line and fix the registry or run `my-skills set-root <path>`. \
-             Then convert existing agy links with `my-skills convert --to copy --host agy`."
+             First check the Registry line and fix the registry or run `my-skills set-root <path>`, \
+             set `[targets.agy] install_mode = \"copy\"` in my-skills.local.toml, \
+             and run `my-skills sync --host agy`."
         }
         (false, true) => {
             "Antigravity CLI (agy) on Windows may not discover junction-linked skills; \
-             convert existing agy links with `my-skills convert --to copy --host agy`."
+             run `my-skills sync --host agy`."
         }
         (false, false) => unreachable!(),
     };

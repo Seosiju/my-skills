@@ -1,4 +1,4 @@
-//! init-registry, skills, share, enable, disable, import. Stream H.
+//! init-registry, skills, enable, disable, import, new.
 
 use std::io::Write as _;
 use std::path::Path;
@@ -11,9 +11,9 @@ use crate::cli::*;
 use crate::drive::state::State;
 use crate::registry::catalog::{self, display_path, json_output};
 use crate::registry::edit;
+use crate::registry::import::{self, Failure};
 use crate::registry::manifest::{self, CliOverrides, MANIFEST_FILE, Manifest};
 use crate::registry::seeds::{self, Scaffold};
-use crate::registry::share::{self, Failure};
 use crate::{Error, Result, registry::root};
 
 pub fn init_registry(args: &InitRegistryArgs) -> ExitCode {
@@ -75,7 +75,7 @@ pub fn init_registry(args: &InitRegistryArgs) -> ExitCode {
         "Created private skill registry at {}",
         display_path(&target)
     );
-    println!("Next: cd there, add skills/<name>/SKILL.md, then run `my-skills install --dry-run`.");
+    println!("Next: cd there, add skills/<name>/SKILL.md, then run 'my-skills sync --dry-run'.");
     ExitCode::SUCCESS
 }
 
@@ -107,7 +107,7 @@ pub fn skills(args: &SkillsArgs) -> ExitCode {
         } else {
             args.enabled.then_some(true)
         };
-        let rows = catalog::rows(&manifest, &state, host, enabled, &hosts, selected, false)?;
+        let rows = catalog::rows(&manifest, &state, host, enabled, &hosts, selected)?;
         Ok(if args.json {
             if args.brief {
                 json_with_registry(rows.brief(), &resolution)
@@ -178,7 +178,7 @@ fn set_enabled(args: &SkillNameArgs, enabled: bool) -> ExitCode {
             return Ok(());
         }
         let path = manifest.root.join(MANIFEST_FILE);
-        share::ensure_outside_hosts(&path, share::target_paths(&manifest))?;
+        import::ensure_outside_hosts(&path, import::target_paths(&manifest))?;
         let edit = edit::prepare_enabled(&path, &names, enabled)?;
         resolution.recheck_write()?;
         resolution.remember();
@@ -194,6 +194,27 @@ fn set_enabled(args: &SkillNameArgs, enabled: bool) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+#[derive(Serialize)]
+struct ImportJson {
+    skill: String,
+    canonical_path: String,
+    enabled: bool,
+    adopted_host: Option<String>,
+    identical: bool,
+    overwritten: bool,
+    warnings: Vec<String>,
+    dry_run: bool,
+}
+
+#[derive(Serialize)]
+struct ImportBlockedJson {
+    blocked: bool,
+    skill: String,
+    reason: String,
+    errors: Vec<String>,
+    symlink: Option<String>,
+}
+
 pub fn import(args: &ImportArgs) -> ExitCode {
     if let Some(from_host) = args.from_host.as_deref() {
         if args.plan && args.target.is_some() {
@@ -204,7 +225,7 @@ pub fn import(args: &ImportArgs) -> ExitCode {
                 Ok(loaded) => loaded,
                 Err(err) => return super::config_error(err),
             };
-            return match share::plan_share(&manifest, from_host) {
+            return match import::plan_from_host(&manifest, from_host) {
                 Ok(plan) => {
                     let output = if args.json {
                         json_with_registry(plan, &resolution)
@@ -228,46 +249,19 @@ pub fn import(args: &ImportArgs) -> ExitCode {
         if args.enable == args.disable {
             return super::config_error("import --from requires either --enable or --disable");
         }
-        let resolution = match root::resolve_root(None, false) {
+        let resolution = match resolve_for_import(args.dry_run) {
             Ok(resolution) => resolution,
             Err(err) => return super::config_error(err),
         };
-        if let Some(refusal) = resolution.write_refusal() {
-            return super::config_error(refusal);
-        }
-        return match share::share(&resolution, from_host, skill, args.enable, args.force) {
-            Ok(result) => {
-                if args.force {
-                    println!("WARN: force overwrite allowed for existing canonical skill");
-                }
-                let name = result.name;
-                println!(
-                    "imported: {name} -> {} ({})",
-                    display_path(&result.canonical),
-                    enabled_label(args.enable)
-                );
-                println!("adopted: {name} -> {from_host}");
-                print_hint(&name, args.enable);
-                if let Some(warning) = result.cleanup_warning {
-                    eprintln!("warning: {warning}");
-                }
-                ExitCode::SUCCESS
-            }
-            Err(Failure::Config(err)) => super::config_error(err),
-            Err(Failure::Link(path)) => {
-                println!("[BLOCKED] {skill}: import source contains symlink");
-                println!("  symlink: {}", display_path(&path));
-                ExitCode::from(1)
-            }
-            Err(Failure::Validation(errors)) => {
-                println!("[BLOCKED] {}", errors.join("; "));
-                ExitCode::from(1)
-            }
-            Err(Failure::Blocked(message)) => {
-                println!("[BLOCKED] {message}");
-                ExitCode::from(1)
-            }
-        };
+        let outcome = import::import_from_host(
+            &resolution,
+            from_host,
+            skill,
+            args.enable,
+            args.force,
+            args.dry_run,
+        );
+        return render_import_result(args, &resolution, outcome);
     }
 
     if args.plan {
@@ -276,15 +270,77 @@ pub fn import(args: &ImportArgs) -> ExitCode {
     let Some(raw_source) = args.target.as_deref() else {
         return super::config_error("import requires a source path unless --from is used");
     };
-    let (manifest, resolution) = match load_resolved(!args.dry_run) {
-        Ok(loaded) => loaded,
+    let resolution = match resolve_for_import(args.dry_run) {
+        Ok(resolution) => resolution,
         Err(err) => return super::config_error(err),
     };
     let source = seeds::expand_user(raw_source);
-    match share::import(&manifest, &source, args.enable, args.force, args.dry_run) {
+    let outcome = import::import_path(&resolution, &source, args.enable, args.force, args.dry_run);
+    render_import_result(args, &resolution, outcome)
+}
+
+fn resolve_for_import(dry_run: bool) -> Result<root::RootResolution> {
+    if dry_run {
+        // Load with mismatch warning enabled without modifying the root cache.
+        let (_, resolution) = load_resolved(false)?;
+        Ok(resolution)
+    } else {
+        let resolution = root::resolve_root(None, false)?;
+        if let Some(refusal) = resolution.write_refusal() {
+            return Err(Error::Manifest(refusal));
+        }
+        Ok(resolution)
+    }
+}
+
+fn import_blocked_json(
+    resolution: &root::RootResolution,
+    skill: String,
+    reason: String,
+    errors: Vec<String>,
+    symlink: Option<String>,
+) -> String {
+    let payload = ImportBlockedJson {
+        blocked: true,
+        skill,
+        reason,
+        errors,
+        symlink,
+    };
+    json_with_registry(payload, resolution)
+}
+
+fn render_import_result(
+    args: &ImportArgs,
+    resolution: &root::RootResolution,
+    outcome: std::result::Result<import::ImportOutcome, Failure>,
+) -> ExitCode {
+    match outcome {
         Ok(result) => {
+            if let Some(warning) = &result.cleanup_warning {
+                eprintln!("warning: {warning}");
+            }
+            if args.json {
+                let payload = ImportJson {
+                    skill: result.name,
+                    canonical_path: display_path(&result.canonical),
+                    enabled: result.enabled,
+                    adopted_host: result.adopted_host,
+                    identical: result.identical,
+                    overwritten: result.overwritten,
+                    warnings: result.warnings,
+                    dry_run: args.dry_run,
+                };
+                println!("{}", json_with_registry(payload, resolution));
+                return ExitCode::SUCCESS;
+            }
             let name = result.name;
             let canonical = display_path(&result.canonical);
+            if args.dry_run
+                && let Some(refusal) = resolution.write_refusal()
+            {
+                println!("BLOCKED: {refusal}");
+            }
             for warning in &result.warnings {
                 println!("  warn: {warning}");
             }
@@ -298,50 +354,101 @@ pub fn import(args: &ImportArgs) -> ExitCode {
                     println!("  would import to: {canonical}");
                 }
                 println!("  would register as: {}", enabled_label(result.enabled));
-                super::print_would_cache_root(&resolution);
+                if let Some(host) = &result.adopted_host {
+                    println!("  would adopt from: {host}");
+                }
+                super::print_would_cache_root(resolution);
                 return ExitCode::SUCCESS;
             }
-            if result.identical {
-                println!("up to date: {name} already matches the canonical skill");
-            } else {
+            if let Some(host) = &result.adopted_host {
                 if result.overwritten {
-                    println!(
-                        "WARN: force overwrite allowed for existing canonical skill: {canonical}"
-                    );
+                    println!("WARN: force overwrite allowed for existing canonical skill");
                 }
-                println!("imported: {name} -> {canonical}");
-            }
-            println!("registered: {name} ({})", enabled_label(result.enabled));
-            if !result.identical {
-                print_hint(&name, args.enable);
-            }
-            if let Some(warning) = result.cleanup_warning {
-                eprintln!("warning: {warning}");
+                println!(
+                    "imported: {name} -> {canonical} ({})",
+                    enabled_label(result.enabled)
+                );
+                println!("adopted: {name} -> {host}");
+                print_hint(&name, result.enabled);
+            } else {
+                if result.identical {
+                    println!("up to date: {name} already matches the canonical skill");
+                } else {
+                    if result.overwritten {
+                        println!(
+                            "WARN: force overwrite allowed for existing canonical skill: {canonical}"
+                        );
+                    }
+                    println!("imported: {name} -> {canonical}");
+                }
+                println!("registered: {name} ({})", enabled_label(result.enabled));
+                if !result.identical {
+                    print_hint(&name, args.enable);
+                }
             }
             ExitCode::SUCCESS
         }
         Err(Failure::Config(err)) => super::config_error(err),
-        Err(Failure::Link(path)) => {
-            println!(
-                "[BLOCKED] {}: import source contains symlink",
-                share::basename(&source)
-            );
-            println!("  symlink: {}", display_path(&path));
-            eprintln!("\nNothing was imported (fix the source first).");
-            ExitCode::from(1)
-        }
-        Err(Failure::Validation(errors)) => {
-            println!("[BLOCKED] {}: validation failed", share::basename(&source));
-            for error in errors {
-                println!("  error: {error}");
+        Err(Failure::Link { skill, path }) => {
+            if args.json {
+                println!(
+                    "{}",
+                    import_blocked_json(
+                        resolution,
+                        skill,
+                        "import source contains symlink".into(),
+                        Vec::new(),
+                        Some(display_path(&path)),
+                    )
+                );
+            } else {
+                println!("[BLOCKED] {skill}: import source contains symlink");
+                println!("  symlink: {}", display_path(&path));
+                if args.from_host.is_none() {
+                    eprintln!("\nNothing was imported (fix the source first).");
+                }
             }
-            eprintln!("\nNothing was imported (fix the source first).");
             ExitCode::from(1)
         }
-        Err(Failure::Blocked(message)) => {
-            println!("[BLOCKED] {message}");
-            if message.contains("a different canonical skill already exists at") {
-                eprintln!("Re-run with --force to overwrite it. Nothing was changed.");
+        Err(Failure::Validation { skill, errors }) => {
+            if args.json {
+                println!(
+                    "{}",
+                    import_blocked_json(
+                        resolution,
+                        skill,
+                        "validation failed".into(),
+                        errors,
+                        None,
+                    )
+                );
+            } else if args.from_host.is_some() {
+                println!(
+                    "[BLOCKED] {skill}: validation failed: {}",
+                    errors.join("; ")
+                );
+            } else {
+                println!("[BLOCKED] {skill}: validation failed");
+                for error in errors {
+                    println!("  error: {error}");
+                }
+                eprintln!("\nNothing was imported (fix the source first).");
+            }
+            ExitCode::from(1)
+        }
+        Err(Failure::Blocked { skill, message }) => {
+            if args.json {
+                println!(
+                    "{}",
+                    import_blocked_json(resolution, skill, message, Vec::new(), None)
+                );
+            } else {
+                println!("[BLOCKED] {message}");
+                if args.from_host.is_none()
+                    && message.contains("a different canonical skill already exists at")
+                {
+                    eprintln!("Re-run with --force to overwrite it. Nothing was changed.");
+                }
             }
             ExitCode::from(1)
         }
@@ -480,8 +587,8 @@ fn create_new_skill(args: &NewArgs) -> Result<()> {
             hosts.push(host.clone());
         }
     }
-    share::ensure_outside_hosts(&manifest_path, share::target_paths(&manifest))?;
-    share::ensure_outside_hosts(&canonical_dir, share::target_paths(&manifest))?;
+    import::ensure_outside_hosts(&manifest_path, import::target_paths(&manifest))?;
+    import::ensure_outside_hosts(&canonical_dir, import::target_paths(&manifest))?;
     let warnings = crate::drive::hosts::ALL
         .into_iter()
         .filter(|host| {
@@ -720,5 +827,27 @@ mod rollback_tests {
             std::fs::read_to_string(dir.join("theirs.txt")).unwrap(),
             "theirs"
         );
+    }
+
+    #[test]
+    fn validation_blocked_json_includes_errors_and_null_symlink() {
+        let temp = tempfile::tempdir().unwrap();
+        let manifest = temp.path().join(MANIFEST_FILE);
+        std::fs::write(&manifest, "schema_version = 1\n").unwrap();
+        let resolution = root::resolve_root(Some(temp.path()), false).unwrap();
+        let text = import_blocked_json(
+            &resolution,
+            "demo".into(),
+            "validation failed".into(),
+            vec!["SKILL.md not found".into()],
+            None,
+        );
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["blocked"], true);
+        assert_eq!(value["skill"], "demo");
+        assert_eq!(value["reason"], "validation failed");
+        assert_eq!(value["errors"], serde_json::json!(["SKILL.md not found"]));
+        assert!(value["symlink"].is_null());
+        assert_eq!(value["registry"]["path"], display_path(&resolution.root));
     }
 }

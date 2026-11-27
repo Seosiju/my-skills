@@ -142,7 +142,7 @@ fn explicit_install_leaves_existing_cache_bytes_unchanged_and_never_creates_it()
         });
 
         let plan = support_h::json(command(&fixture, &selected).args([
-            "install",
+            "sync",
             "--yes",
             "--dry-run",
             "--json",
@@ -152,7 +152,7 @@ fn explicit_install_leaves_existing_cache_bytes_unchanged_and_never_creates_it()
         fixture
             .command()
             .env_remove("MY_SKILLS_ROOT")
-            .args(["install", "--yes", "--root", selected.to_str().unwrap()])
+            .args(["sync", "--yes", "--root", selected.to_str().unwrap()])
             .assert()
             .success()
             .stderr("");
@@ -173,7 +173,7 @@ fn invalid_explicit_root_exits_two_even_when_other_roots_are_available() {
     let invalid = fixture.root.join("elsewhere");
     command(&fixture, &invalid)
         .env("MY_SKILLS_ROOT", &fixture.registry)
-        .args(["install", "--yes"])
+        .args(["sync", "--yes"])
         .assert()
         .code(2)
         .stderr(contains(format!(
@@ -185,11 +185,11 @@ fn invalid_explicit_root_exits_two_even_when_other_roots_are_available() {
 }
 
 #[test]
-fn explicit_root_preserves_foreign_copies_during_sync_and_blocks_batch_uninstall() {
+fn explicit_root_preserves_foreign_copies_during_sync_and_blocks_wanted_batch_sync() {
     let fixture = batch();
     let owner = other_registry(&fixture, "owner-registry", "alpha");
     command(&fixture, &owner)
-        .args(["install", "--yes"])
+        .args(["sync", "--yes"])
         .assert()
         .success();
     let installed = fixture.host("claude").join("alpha/SKILL.md");
@@ -212,7 +212,7 @@ fn explicit_root_preserves_foreign_copies_during_sync_and_blocks_batch_uninstall
 
     fixture.write_manifest(BATCH);
     command(&fixture, &fixture.registry)
-        .args(["uninstall", "--group", "batch", "--yes"])
+        .args(["sync", "--group", "batch", "--host", "claude", "--yes"])
         .assert()
         .code(1)
         .stdout(contains("connection belongs to another registry"));
@@ -221,31 +221,31 @@ fn explicit_root_preserves_foreign_copies_during_sync_and_blocks_batch_uninstall
 }
 
 #[test]
-fn install_selects_the_union_including_disabled_members() {
+fn sync_selects_the_union_including_disabled_members_with_all() {
     let fixture = batch();
     let selected = support_h::json(fixture.command().args([
-        "install",
+        "sync",
         "beta",
         "alpha",
         "alpha",
         "--group",
         "batch",
+        "--all",
         "--host",
         "codex",
         "--dry-run",
         "--json",
     ]));
     assert_eq!(names(&selected, "actions", "skill"), ["alpha", "beta"]);
-    let default = support_h::json(fixture.command().args([
-        "install",
-        "--host",
-        "codex",
-        "--dry-run",
-        "--json",
-    ]));
+    let default =
+        support_h::json(
+            fixture
+                .command()
+                .args(["sync", "--host", "codex", "--dry-run", "--json"]),
+        );
     assert_eq!(names(&default, "actions", "skill"), ["alpha", "gamma"]);
     let all = support_h::json(fixture.command().args([
-        "install",
+        "sync",
         "--all",
         "--host",
         "codex",
@@ -256,7 +256,7 @@ fn install_selects_the_union_including_disabled_members() {
 }
 
 #[test]
-fn builtin_seed_install_confirmation_exemption_applies_only_to_default_selection() {
+fn builtin_seed_multi_host_sync_requires_yes() {
     let fixture = batch();
     fs::write(
         fixture.manifest(),
@@ -265,16 +265,16 @@ fn builtin_seed_install_confirmation_exemption_applies_only_to_default_selection
     )
     .unwrap();
 
-    for selection in [&["alpha"][..], &["--group", "batch"]] {
+    for selection in [&[][..], &["alpha"][..], &["--group", "batch"]] {
         fixture
             .command()
-            .arg("install")
+            .arg("sync")
             .args(selection)
             .assert()
             .code(2)
             .stderr(contains("writes to multiple hosts"));
     }
-    fixture.command().arg("install").assert().success();
+    fixture.command().args(["sync", "--yes"]).assert().success();
     let state = State::load(Some(&fixture.state())).unwrap();
     assert!(state.get("alpha", "claude").is_some());
     assert!(state.get("alpha", "codex").is_some());
@@ -292,7 +292,7 @@ fn selected_sync_prunes_only_selected_skills_and_keeps_other_connections_and_orp
     fixture.write_manifest(&format!("{BATCH}\n[skills.orphan]\nenabled = true\n"));
     fixture
         .command()
-        .args(["install", "--all", "--yes"])
+        .args(["sync", "--all", "--yes"])
         .assert()
         .success();
     let before = State::load(Some(&fixture.state())).unwrap();
@@ -330,11 +330,7 @@ fn selected_sync_prunes_only_selected_skills_and_keeps_other_connections_and_orp
             assert!(fixture.host(host).join(name).join("SKILL.md").is_file());
         }
     }
-    fixture
-        .command()
-        .args(["uninstall", "orphan", "--yes"])
-        .assert()
-        .success();
+    fixture.command().args(["sync", "--yes"]).assert().success();
     assert!(
         State::load(Some(&fixture.state()))
             .unwrap()
@@ -344,33 +340,37 @@ fn selected_sync_prunes_only_selected_skills_and_keeps_other_connections_and_orp
 }
 
 #[test]
-fn batch_uninstall_plans_each_selected_skill_on_each_host_and_requires_yes() {
+fn batch_disable_and_sync_prunes_selected_skills_and_requires_yes() {
     let fixture = batch();
     fixture
         .command()
-        .args(["install", "--all", "--yes"])
+        .args(["sync", "--all", "--yes"])
+        .assert()
+        .success();
+    fixture
+        .command()
+        .args(["disable", "alpha", "--group", "batch"])
         .assert()
         .success();
     let before = fs::read(fixture.state()).unwrap();
     fixture
         .command()
-        .args(["uninstall", "alpha", "--group", "batch", "--dry-run"])
+        .args(["sync", "alpha", "--group", "batch", "--dry-run"])
         .assert()
         .success()
         .stdout(contains("alpha -> claude"))
         .stdout(contains("alpha -> codex"))
-        .stdout(contains("beta -> claude"))
         .stdout(contains("beta -> codex"));
     fixture
         .command()
-        .args(["uninstall", "alpha", "beta"])
+        .args(["sync", "alpha", "beta"])
         .assert()
         .code(2)
         .stderr(contains("writes to multiple hosts"));
     assert_eq!(fs::read(fixture.state()).unwrap(), before);
     fixture
         .command()
-        .args(["uninstall", "alpha", "--group", "batch", "--yes"])
+        .args(["sync", "alpha", "--group", "batch", "--yes"])
         .assert()
         .success();
     let state = State::load(Some(&fixture.state())).unwrap();
@@ -430,7 +430,7 @@ fn enable_and_disable_preview_every_change_and_noop_then_edit_only_the_selection
 fn invalid_batch_arguments_never_write_the_manifest_or_root_cache() {
     let fixture = batch();
     let before = fs::read(fixture.manifest()).unwrap();
-    for cmd in ["enable", "disable", "install", "sync", "uninstall"] {
+    for cmd in ["enable", "disable", "sync"] {
         for invalid in [["alpha", "unregistered"], ["--group", "unregistered"]] {
             fixture
                 .command()
@@ -511,50 +511,29 @@ fn skills_json_filters_groups_with_host_and_state_and_keeps_existing_row_data() 
 }
 
 #[test]
-fn skills_brief_uses_only_the_documented_keys_and_preserves_governance_and_text() {
+fn skills_brief_uses_only_the_documented_keys_and_omits_connections() {
     let fixture = batch();
-    let full = support_h::json(
-        fixture
-            .command()
-            .args(["skills", "--json", "--with-governance"]),
-    );
-    let alias = support_h::json(
-        fixture
-            .command()
-            .args(["skills", "--json", "--with-status"]),
-    );
-    assert_eq!(full, alias);
+    let full = support_h::json(fixture.command().args(["skills", "--json"]));
     let brief = support_h::json(fixture.command().args(["skills", "--json", "--brief"]));
     assert_eq!(brief["registry"], full["registry"]);
-    let brief_governance = support_h::json(fixture.command().args([
-        "skills",
-        "--json",
-        "--brief",
-        "--with-governance",
-    ]));
-    for ((row, complete), governed) in brief["skills"]
+    for (row, complete) in brief["skills"]
         .as_array()
         .unwrap()
         .iter()
         .zip(full["skills"].as_array().unwrap())
-        .zip(brief_governance["skills"].as_array().unwrap())
     {
-        let mut expected = json!({
+        assert!(complete.get("connections").is_some(), "{complete}");
+        assert!(complete.get("provenance").is_none(), "{complete}");
+        let expected = json!({
             "name": complete["name"], "enabled": complete["enabled"], "hosts": complete["hosts"],
             "group": complete["group"], "status": complete["status"],
         });
         assert_eq!(*row, expected);
-        expected["governance"] = json!({"provenance": complete["provenance"]});
-        assert_eq!(*governed, expected);
     }
-    let text = fixture
-        .command()
-        .args(["skills", "--with-governance"])
-        .assert()
-        .success();
+    let text = fixture.command().args(["skills"]).assert().success();
     fixture
         .command()
-        .args(["skills", "--with-governance", "--brief"])
+        .args(["skills", "--brief"])
         .assert()
         .success()
         .stdout(text.get_output().stdout.clone());
@@ -603,17 +582,21 @@ fn ten_skill_catalog_brief_size() {
 #[test]
 fn missing_multi_host_confirmation_leaves_the_root_cache_absent() {
     let mut cached = Vec::new();
-    for (args, installed) in [
-        (&["install", "--group", "batch"][..], false),
+    for (args, disable_after_install) in [
         (&["sync", "--group", "batch"][..], false),
-        (&["uninstall", "--group", "batch"][..], true),
-        (&["convert", "alpha", "--to", "link"][..], true),
+        (&["sync", "alpha", "--mode", "link"][..], false),
+        (&["sync", "alpha"][..], true),
     ] {
         let fixture = batch();
-        if installed {
+        if disable_after_install {
             fixture
                 .command()
-                .args(["install", "alpha", "--yes"])
+                .args(["sync", "alpha", "--yes"])
+                .assert()
+                .success();
+            fixture
+                .command()
+                .args(["disable", "alpha"])
                 .assert()
                 .success();
         }
@@ -634,7 +617,7 @@ fn missing_multi_host_confirmation_leaves_the_root_cache_absent() {
 #[test]
 fn validation_failure_leaves_the_root_cache_absent() {
     let mut cached = Vec::new();
-    for cmd in ["install", "sync", "bootstrap"] {
+    for cmd in ["sync", "bootstrap"] {
         let fixture = batch();
         fs::remove_file(fixture.canonical("alpha").join("SKILL.md")).unwrap();
         from_cwd(&fixture)
@@ -653,19 +636,9 @@ fn validation_failure_leaves_the_root_cache_absent() {
 #[test]
 fn noop_connections_leave_the_root_cache_absent() {
     let mut cached = Vec::new();
-    for args in [
-        &["install", "--yes"][..],
-        &["sync", "--yes"],
-        &["uninstall", "beta", "--yes"],
-        &["convert", "--to", "copy", "--yes"],
-        &["bootstrap"],
-    ] {
+    for args in [&["sync", "--yes"][..], &["bootstrap"]] {
         let fixture = batch();
-        fixture
-            .command()
-            .args(["install", "--yes"])
-            .assert()
-            .success();
+        fixture.command().args(["sync", "--yes"]).assert().success();
         let state = fs::read(fixture.state()).unwrap();
         from_cwd(&fixture).args(args).assert().success();
         assert_eq!(fs::read(fixture.state()).unwrap(), state);
@@ -677,12 +650,12 @@ fn noop_connections_leave_the_root_cache_absent() {
 }
 
 #[test]
-fn first_successful_cwd_install_records_the_root_cache() {
+fn first_successful_cwd_sync_records_the_root_cache() {
     let fixture = batch();
     let cache = root_cache(&fixture);
     assert!(!cache.exists());
     from_cwd(&fixture)
-        .args(["install", "--yes"])
+        .args(["sync", "--yes"])
         .assert()
         .success();
     assert!(fixture.host("claude").join("alpha/SKILL.md").is_file());

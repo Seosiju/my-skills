@@ -550,29 +550,24 @@ fn agy_windows_link_warning_decision_is_os_and_mode_aware() {
     let link_manifest = load_manifest(&fixture.registry, &CliOverrides::default()).unwrap();
     let warning =
         agy_windows_link_warning("windows", Some(&link_manifest), Some(&empty_state)).unwrap();
-    assert!(warning.contains("junction"), "{warning}");
-    assert!(
-        warning.contains("[targets.agy] install_mode = \"copy\""),
-        "{warning}"
-    );
-    assert!(warning.contains("my-skills.local.toml"), "{warning}");
-    assert!(
-        !warning.contains("convert --to copy --host agy"),
-        "{warning}"
+    assert_eq!(
+        warning,
+        "Antigravity CLI (agy) on Windows may not discover junction-linked skills; \
+         set `[targets.agy] install_mode = \"copy\"` in my-skills.local.toml."
     );
     assert!(agy_windows_link_warning("macos", Some(&link_manifest), Some(&empty_state)).is_none());
     assert!(agy_windows_link_warning("linux", Some(&link_manifest), Some(&empty_state)).is_none());
 
-    // agy enabled with effective mode = link AND existing agy link: suggests both setting and convert.
+    // agy enabled with effective mode = link AND existing agy link: suggests both setting and sync.
     let mut agy_link_state = empty_state.clone();
     agy_link_state.put(sample_record("agy", InstallMode::Link));
     let both_warning =
         agy_windows_link_warning("windows", Some(&link_manifest), Some(&agy_link_state)).unwrap();
-    assert!(
-        both_warning.contains("[targets.agy] install_mode = \"copy\"")
-            && both_warning.contains("my-skills.local.toml")
-            && both_warning.contains("my-skills convert --to copy --host agy"),
-        "{both_warning}"
+    assert_eq!(
+        both_warning,
+        "Antigravity CLI (agy) on Windows may not discover junction-linked skills; \
+         set `[targets.agy] install_mode = \"copy\"` in my-skills.local.toml \
+         and run `my-skills sync --host agy`."
     );
 
     // agy enabled with [targets.agy] install_mode = "copy" and no link connections: no warning.
@@ -594,16 +589,13 @@ fn agy_windows_link_warning_decision_is_os_and_mode_aware() {
             .is_none()
     );
 
-    // Effective mode already copy + existing agy link: suggests ONLY convert (not local overlay).
+    // Effective mode already copy + existing agy link: suggests ONLY sync (not local overlay).
     let copy_with_link_warning =
         agy_windows_link_warning("windows", Some(&copy_manifest), Some(&agy_link_state)).unwrap();
-    assert!(
-        copy_with_link_warning.contains("my-skills convert --to copy --host agy")
-            && !copy_with_link_warning.contains("my-skills.local.toml")
-            && !copy_with_link_warning.contains("[targets.agy] install_mode")
-            && !copy_with_link_warning.contains("set-root")
-            && !copy_with_link_warning.contains("Registry line"),
-        "{copy_with_link_warning}"
+    assert_eq!(
+        copy_with_link_warning,
+        "Antigravity CLI (agy) on Windows may not discover junction-linked skills; \
+         run `my-skills sync --host agy`."
     );
     assert!(
         agy_windows_link_warning("macos", Some(&copy_manifest), Some(&agy_link_state)).is_none()
@@ -613,26 +605,26 @@ fn agy_windows_link_warning_decision_is_os_and_mode_aware() {
     let disabled_with_link_warning =
         agy_windows_link_warning("windows", Some(&disabled_manifest), Some(&agy_link_state))
             .unwrap();
-    assert!(
-        disabled_with_link_warning.contains("my-skills convert --to copy --host agy")
-            && disabled_with_link_warning.contains("[targets.agy] install_mode = \"copy\""),
-        "{disabled_with_link_warning}"
+    assert_eq!(
+        disabled_with_link_warning,
+        "Antigravity CLI (agy) on Windows may not discover junction-linked skills; \
+         set `[targets.agy] install_mode = \"copy\"` in my-skills.local.toml \
+         and run `my-skills sync --host agy`."
     );
     assert!(
         agy_windows_link_warning("macos", Some(&disabled_manifest), Some(&agy_link_state))
             .is_none()
     );
 
-    // No manifest + existing agy link: fix the registry before converting.
+    // No manifest + existing agy link: fix the registry, set copy mode, then sync.
     let no_manifest_warning =
         agy_windows_link_warning("windows", None, Some(&agy_link_state)).unwrap();
-    assert!(
-        no_manifest_warning.contains(concat!(
-            "First check the Registry line and fix the registry or run `my-skills set-root <path>`. ",
-            "Then convert existing agy links with `my-skills convert --to copy --host agy`."
-        ))
-            && !no_manifest_warning.contains("my-skills.local.toml"),
-        "{no_manifest_warning}"
+    assert_eq!(
+        no_manifest_warning,
+        "Antigravity CLI (agy) on Windows may not discover junction-linked skills. \
+         First check the Registry line and fix the registry or run `my-skills set-root <path>`, \
+         set `[targets.agy] install_mode = \"copy\"` in my-skills.local.toml, \
+         and run `my-skills sync --host agy`."
     );
 }
 
@@ -696,7 +688,7 @@ fn doctor_cli_warns_for_existing_agy_link_when_mode_is_copy_or_disabled() {
     )
     .unwrap();
 
-    // Effective mode is already copy, so doctor suggests only convert.
+    // Effective mode is already copy, so doctor suggests only sync.
     let result = fixture
         .command()
         .args(["doctor", "--no-update-check"])
@@ -706,7 +698,7 @@ fn doctor_cli_warns_for_existing_agy_link_when_mode_is_copy_or_disabled() {
     #[cfg(windows)]
     assert!(
         text.contains("warning: Antigravity CLI (agy) on Windows")
-            && text.contains("my-skills convert --to copy --host agy")
+            && text.contains("run `my-skills sync --host agy`.")
             && !text.contains("my-skills.local.toml")
             && !text.contains("set-root")
             && !text.contains("Registry line"),
@@ -730,10 +722,29 @@ fn doctor_cli_warns_for_existing_agy_link_when_mode_is_copy_or_disabled() {
     #[cfg(windows)]
     assert!(
         text.contains("warning: Antigravity CLI (agy) on Windows")
-            && text.contains("my-skills convert --to copy --host agy")
+            && text.contains("and run `my-skills sync --host agy`.")
             && text.contains("[targets.agy] install_mode = \"copy\""),
         "{text}"
     );
     #[cfg(not(windows))]
     assert!(!text.contains("Antigravity CLI (agy) on Windows"), "{text}");
+}
+
+#[test]
+fn doctor_omits_python_field_in_text_and_json() {
+    let fixture = Fixture::isolated();
+    let text_res = fixture
+        .command()
+        .args(["doctor", "--no-update-check"])
+        .assert()
+        .success();
+    assert!(!output(&text_res).contains("Python:"));
+
+    let json_res = fixture
+        .command()
+        .args(["doctor", "--no-update-check", "--json"])
+        .assert()
+        .success();
+    let report = parse(&json_res);
+    assert!(report.get("python").is_none(), "{report}");
 }

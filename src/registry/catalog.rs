@@ -1,4 +1,4 @@
-//! Skill listing and metadata (v0.4.1 catalog.py). Stream H.
+//! Skill listing and metadata.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -8,9 +8,10 @@ use serde::Serialize;
 
 use crate::Result;
 use crate::check::frontmatter::{Mapping, Node, mapping_get, parse_document};
-use crate::drive::plan::{status_of, wants};
+use crate::drive::link::{EntryKind, LinkKind, entry_kind};
+use crate::drive::plan::{destination, status_of, wants};
 use crate::drive::state::State;
-use crate::registry::manifest::{Manifest, Skill};
+use crate::registry::manifest::{InstallMode, Manifest, Skill};
 
 #[derive(Serialize)]
 pub(crate) struct Catalog {
@@ -24,8 +25,7 @@ struct Row {
     description: String,
     path: String,
     canonical_path: String,
-    #[serde(flatten, skip_serializing_if = "Option::is_none")]
-    governance: Option<Governance>,
+    connections: BTreeMap<String, ConnectionInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
@@ -40,14 +40,10 @@ struct Summary {
 }
 
 #[derive(Serialize)]
-struct Governance {
-    provenance: Provenance,
-}
-
-#[derive(Serialize)]
-struct Provenance {
-    source_type: String,
-    trust_tier: &'static str,
+struct ConnectionInfo {
+    mode: Option<InstallMode>,
+    link_kind: Option<LinkKind>,
+    fallback_reason: Option<String>,
 }
 
 pub(crate) fn rows(
@@ -57,7 +53,6 @@ pub(crate) fn rows(
     enabled: Option<bool>,
     status_hosts: &[String],
     selected: Option<&[String]>,
-    with_governance: bool,
 ) -> Result<Catalog> {
     let skills_root = manifest.skills_dir();
     let mut skills = Vec::new();
@@ -77,6 +72,10 @@ pub(crate) fn rows(
                 ))
             })
             .collect::<Result<_>>()?;
+        let connections = status_hosts
+            .iter()
+            .map(|host| (host.clone(), connection_info(manifest, skill, host, state)))
+            .collect();
         let directory = skills_root.join(&skill.name);
         let (description, error) = match metadata(&directory) {
             Ok(meta) => (
@@ -99,11 +98,38 @@ pub(crate) fn rows(
             description,
             path: display_path(&Path::new(&manifest.skills_root).join(&skill.name)),
             canonical_path: display_path(&directory),
-            governance: with_governance.then(|| governance(skill, state, &skills_root)),
+            connections,
             error,
         });
     }
     Ok(Catalog { skills })
+}
+
+fn connection_info(
+    manifest: &Manifest,
+    skill: &Skill,
+    host: &str,
+    state: &State,
+) -> ConnectionInfo {
+    let Some(record) = state.get(&skill.name, host) else {
+        return ConnectionInfo {
+            mode: None,
+            link_kind: None,
+            fallback_reason: None,
+        };
+    };
+    let link_kind = destination(manifest, host, &skill.name)
+        .ok()
+        .and_then(|dest| entry_kind(&dest).ok())
+        .and_then(|kind| match kind {
+            EntryKind::Link(kind) => Some(kind),
+            _ => None,
+        });
+    ConnectionInfo {
+        mode: Some(record.mode),
+        link_kind,
+        fallback_reason: record.fallback_reason.clone(),
+    }
 }
 
 #[derive(Default, Serialize)]
@@ -172,36 +198,12 @@ fn supports(hosts: &[String], host: &str) -> bool {
     hosts.is_empty() || hosts.iter().any(|candidate| candidate == host)
 }
 
-fn governance(skill: &Skill, state: &State, skills_root: &Path) -> Governance {
-    let records = || {
-        state
-            .records()
-            .filter(|record| record.skill == skill.name && record.belongs_to(skills_root))
-    };
-    let record = records()
-        .find(|record| record.source_type == "host")
-        .or_else(|| records().next());
-    let source_type = record.map_or("canonical", |item| item.source_type.as_str());
-    Governance {
-        provenance: Provenance {
-            source_type: source_type.into(),
-            trust_tier: if source_type == "host" {
-                "imported-local"
-            } else {
-                "local-authored"
-            },
-        },
-    }
-}
-
 impl Catalog {
     pub(crate) fn brief(&self) -> impl Serialize + '_ {
         #[derive(Serialize)]
         struct BriefRow<'a> {
             #[serde(flatten)]
             summary: &'a Summary,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            governance: Option<&'a Governance>,
             #[serde(skip_serializing_if = "Option::is_none")]
             error: Option<&'a str>,
         }
@@ -217,7 +219,6 @@ impl Catalog {
                 .iter()
                 .map(|row| BriefRow {
                     summary: &row.summary,
-                    governance: row.governance.as_ref(),
                     error: row.error.as_deref(),
                 })
                 .collect(),
@@ -225,12 +226,8 @@ impl Catalog {
     }
 
     pub(crate) fn table(&self, status_hosts: &[String]) -> String {
-        let include_governance = self.skills.iter().any(|row| row.governance.is_some());
         let mut headers = vec!["SKILL".into(), "ENABLED".into()];
         headers.extend(status_hosts.iter().map(|host| host.to_uppercase()));
-        if include_governance {
-            headers.push("TRUST".into());
-        }
         let rows = self.skills.iter().map(|row| {
             let summary = &row.summary;
             let name = if row.description.trim().is_empty() {
@@ -246,13 +243,6 @@ impl Catalog {
                     "-".into()
                 }
             }));
-            if include_governance {
-                let trust = row
-                    .governance
-                    .as_ref()
-                    .map_or("-", |info| info.provenance.trust_tier);
-                cells.push(trust.into());
-            }
             cells
         });
         table(headers, rows, true)

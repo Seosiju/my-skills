@@ -335,7 +335,7 @@ fn json_errors_include_usage_selection_and_config_codes() {
             "not supported with --check",
         ),
         (
-            &["share", "--from", "codex", "--json"][..],
+            &["import", "--from", "codex", "--json"][..],
             "usage",
             "requires a skill name",
         ),
@@ -392,7 +392,7 @@ fn json_write_refusal_and_blocked_preview_keep_their_own_shapes() {
     let assert = fixture
         .command()
         .env_remove("MY_SKILLS_ROOT")
-        .args(["share", "example", "--from", "codex", "--enable", "--json"])
+        .args(["import", "example", "--from", "codex", "--enable", "--json"])
         .assert()
         .code(2)
         .stderr(contains("refusing to write to cwd registry"));
@@ -570,7 +570,7 @@ fn diff_copy_files_agree_with_fresh_stale_drifted_and_conflict_status() {
         fixture.write("skills/example/removed.txt", "base\n");
         fixture
             .command()
-            .args(["install", "example", "--host", "codex"])
+            .args(["sync", "example", "--host", "codex"])
             .assert()
             .success();
         let installed = dest(&fixture, "codex", "example");
@@ -594,20 +594,14 @@ fn diff_copy_files_agree_with_fresh_stale_drifted_and_conflict_status() {
         );
         assert_eq!(compared["hosts"].as_array().unwrap().len(), 1);
         let row = host(&compared, "host", "codex");
-        let status = read_json(
+        let skills = read_json(
             &fixture
                 .command()
-                .args(["status", "--json"])
+                .args(["skills", "example", "--json"])
                 .assert()
                 .success(),
         );
-        let status = status
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|r| r["skill"] == "example" && r["host"] == "codex")
-            .unwrap();
-        assert_eq!(row["status"], status["status"]);
+        assert_eq!(row["status"], skills["skills"][0]["status"]["codex"]);
         assert_eq!(row["status"], expected);
         assert_eq!(row["mode"], "copy");
         assert_eq!(row["destination"], display_path(&installed));
@@ -707,11 +701,13 @@ fn diff_reports_the_actual_link_target_in_text_and_json() {
 #[test]
 fn diff_explicit_disabled_host_checks_managed_copy() {
     let fixture = fixture();
+    fixture.write("my-skills.local.toml", "[targets.agy]\nenabled = true\n");
     fixture
         .command()
-        .args(["install", "example", "--host", "agy"])
+        .args(["sync", "example", "--host", "agy"])
         .assert()
         .success();
+    fs::remove_file(fixture.registry.join("my-skills.local.toml")).unwrap();
     fs::write(dest(&fixture, "agy", "example").join("SKILL.md"), "local\n").unwrap();
 
     let report = compare(&fixture, &["--host", "agy"], 1);
@@ -822,7 +818,7 @@ fn diff_uses_owned_records_when_the_configured_path_changes() {
     let fixture = fixture();
     fixture
         .command()
-        .args(["install", "example", "--host", "codex"])
+        .args(["sync", "example", "--host", "codex"])
         .assert()
         .success();
     let installed = dest(&fixture, "codex", "example");

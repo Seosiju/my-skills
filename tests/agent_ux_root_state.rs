@@ -58,12 +58,10 @@ fn read_only_commands_and_previews_leave_the_root_cache_uncreated() {
 
     for args in [
         &["validate"][..],
-        &["status"],
         &["skills"],
         &["data-path", "alpha"],
         &["data-path", "alpha", "--create"],
-        &["share", "--plan", "--from", "claude"],
-        &["install", "--dry-run"],
+        &["import", "--plan", "--from", "claude"],
         &["sync", "--dry-run"],
     ] {
         from_cwd(&fixture, root).args(args).assert().success();
@@ -74,19 +72,19 @@ fn read_only_commands_and_previews_leave_the_root_cache_uncreated() {
     assert_eq!(catalog["registry"], registry_meta(root, "cwd"));
     assert_eq!(catalog["skills"][0]["name"], "alpha");
     for flag in ["--plan", "--dry-run"] {
-        let share = json_output(
-            from_cwd(&fixture, root).args(["share", "--from", "claude", flag, "--json"]),
+        let imported = json_output(
+            from_cwd(&fixture, root).args(["import", "--from", "claude", flag, "--json"]),
         );
-        assert_eq!(share["registry"], registry_meta(root, "cwd"));
-        assert_eq!(share["from"], "claude");
-        assert_eq!(share["source"], display_path(&fixture.host("claude")));
-        assert_eq!(share["candidates"], json!([]));
+        assert_eq!(imported["registry"], registry_meta(root, "cwd"));
+        assert_eq!(imported["from"], "claude");
+        assert_eq!(imported["source"], display_path(&fixture.host("claude")));
+        assert_eq!(imported["candidates"], json!([]));
     }
     assert!(!cache.exists());
     assert!(!config.exists());
 
     from_cwd(&fixture, root)
-        .args(["install", "--yes"])
+        .args(["sync", "--yes"])
         .assert()
         .success();
     assert_eq!(
@@ -109,7 +107,7 @@ fn a_different_cwd_registry_requires_explicit_selection_for_writes() {
     write_registry(a, &host, "copy", Some(("alpha", true)));
     write_registry(&b, &host, "copy", Some(("beta", true)));
     from_cwd(&fixture, a)
-        .args(["install", "--yes"])
+        .args(["sync", "--yes"])
         .assert()
         .success();
 
@@ -132,8 +130,7 @@ fn a_different_cwd_registry_requires_explicit_selection_for_writes() {
     let before_beta = fs::read(&beta).unwrap();
 
     for args in [
-        &["install", "--yes"][..],
-        &["sync", "--yes"],
+        &["sync", "--yes"][..],
         &["enable", "beta"],
         &["disable", "beta"],
         &["import", incoming.to_str().unwrap()],
@@ -169,7 +166,7 @@ fn a_different_cwd_registry_requires_explicit_selection_for_writes() {
     assert!(!stderr.contains(r"\\?\"), "{stderr}");
 
     with_root(&fixture, &b)
-        .args(["install", "--yes"])
+        .args(["sync", "--yes"])
         .assert()
         .success();
     assert_eq!(fs::read(host.join("beta/SKILL.md")).unwrap(), before_beta);
@@ -184,7 +181,7 @@ fn sync_leaves_foreign_copy_orphans_and_unwanted_connections_intact() {
     let host = fixture.host("claude");
     write_registry(a, &host, "copy", Some(("alpha", true)));
     with_root(&fixture, a)
-        .args(["install", "--yes"])
+        .args(["sync", "--yes"])
         .assert()
         .success();
     let installed = host.join("alpha/SKILL.md");
@@ -211,25 +208,21 @@ fn foreign_wanted_copy_is_visible_and_every_connection_plan_blocks_it() {
     write_registry(a, &host, "copy", Some(("alpha", true)));
     write_registry(&b, &host, "link", Some(("alpha", true)));
     with_root(&fixture, a)
-        .args(["install", "--yes"])
+        .args(["sync", "--yes"])
         .assert()
         .success();
     let installed = host.join("alpha/SKILL.md");
     let before_install = fs::read(&installed).unwrap();
     let before_state = fs::read(fixture.state()).unwrap();
 
-    let status = json_output(with_root(&fixture, &b).args(["status", "--json"]));
-    assert_eq!(status[0]["status"], "FOREIGN");
     let skills = json_output(with_root(&fixture, &b).args(["skills", "--json"]));
     assert_eq!(skills["skills"][0]["status"]["claude"], "FOREIGN");
     let source = display_path(&a.join("skills/alpha").canonicalize().unwrap());
     let reason = format!("connection belongs to another registry ({source})");
     for args in [
-        &["install", "--dry-run"][..],
-        &["sync", "--dry-run"],
-        &["convert", "--to", "link", "--dry-run"],
-        &["convert", "--to", "copy", "--dry-run"],
-        &["uninstall", "alpha", "--dry-run"],
+        &["sync", "--dry-run"][..],
+        &["sync", "--mode", "link", "--dry-run"],
+        &["sync", "--mode", "copy", "--dry-run"],
     ] {
         with_root(&fixture, &b)
             .args(args)
@@ -242,10 +235,9 @@ fn foreign_wanted_copy_is_visible_and_every_connection_plan_blocks_it() {
     let b_manifest = fs::read(b.join("my-skills.toml")).unwrap();
     let b_skill = fs::read(b.join("skills/alpha/SKILL.md")).unwrap();
     for args in [
-        &["install", "--yes"][..],
-        &["sync", "--yes"],
-        &["convert", "--to", "link", "--yes"],
-        &["share", "alpha", "--from", "claude", "--enable", "--force"],
+        &["sync", "--yes"][..],
+        &["sync", "--mode", "link", "--yes"],
+        &["import", "alpha", "--from", "claude", "--enable", "--force"],
     ] {
         with_root(&fixture, &b)
             .args(args)
@@ -257,14 +249,6 @@ fn foreign_wanted_copy_is_visible_and_every_connection_plan_blocks_it() {
     }
     assert_eq!(fs::read(b.join("my-skills.toml")).unwrap(), b_manifest);
     assert_eq!(fs::read(b.join("skills/alpha/SKILL.md")).unwrap(), b_skill);
-
-    with_root(&fixture, &b)
-        .args(["uninstall", "alpha", "--yes"])
-        .assert()
-        .code(1)
-        .stdout(contains(&reason));
-    assert_eq!(fs::read(&installed).unwrap(), before_install);
-    assert_eq!(fs::read(fixture.state()).unwrap(), before_state);
 
     fs::remove_file(&installed).unwrap();
     fs::remove_dir(host.join("alpha")).unwrap();
@@ -286,7 +270,7 @@ fn sync_leaves_foreign_link_orphans_intact() {
     write_registry(a, &host, "link", Some(("alpha", true)));
     write_registry(&b, &host, "link", None);
     with_root(&fixture, a)
-        .args(["install", "--yes"])
+        .args(["sync", "--yes"])
         .assert()
         .success();
     let connection = host.join("alpha");
@@ -413,7 +397,7 @@ fn sync_check_ignores_a_foreign_record_for_an_unsupported_host() {
     );
     fs::write(manifest, format!("{text}hosts = [\"codex\"]\n")).unwrap();
     with_root(&fixture, a)
-        .args(["install", "--yes"])
+        .args(["sync", "--yes"])
         .assert()
         .success();
     let claude_skill = claude.join("split-host/SKILL.md");
@@ -433,7 +417,7 @@ fn sync_check_ignores_a_foreign_record_for_an_unsupported_host() {
 }
 
 #[test]
-fn share_previews_skip_foreign_host_copies() {
+fn import_from_host_previews_skip_foreign_host_copies() {
     let fixture = Fixture::new();
     let a = &fixture.registry;
     let b = fixture.root.join("registry-b");
@@ -441,13 +425,13 @@ fn share_previews_skip_foreign_host_copies() {
     write_registry(a, &host, "copy", Some(("alpha", true)));
     write_registry(&b, &host, "copy", None);
     with_root(&fixture, a)
-        .args(["install", "--yes"])
+        .args(["sync", "--yes"])
         .assert()
         .success();
     let source = display_path(&a.join("skills/alpha").canonicalize().unwrap());
     let reason = format!("connection belongs to another registry ({source})");
     with_root(&fixture, &b)
-        .args(["share", "alpha", "--from", "claude", "--enable"])
+        .args(["import", "alpha", "--from", "claude", "--enable"])
         .assert()
         .code(1)
         .stdout(contains(&reason));
@@ -455,7 +439,7 @@ fn share_previews_skip_foreign_host_copies() {
 
     for mode in ["--plan", "--dry-run"] {
         let plan = json_output(
-            with_root(&fixture, &b).args(["share", "--from", "claude", mode, "--json"]),
+            with_root(&fixture, &b).args(["import", "--from", "claude", mode, "--json"]),
         );
         let candidate = &plan["candidates"][0];
         assert_eq!(candidate["name"], "alpha");
@@ -514,14 +498,14 @@ fn data_path_prints_native_separators_and_points_to_the_directory() {
 }
 
 #[test]
-fn unknown_manifest_skills_and_missing_share_arguments_leave_the_cache_empty() {
+fn unknown_manifest_skills_and_missing_import_arguments_leave_the_cache_empty() {
     let mut wrote_cache = Vec::new();
     for (args, error) in [
         (&["enable", "unknown"][..], "unknown skill: unknown"),
         (&["disable", "unknown"], "unknown skill: unknown"),
         (
-            &["share", "--from", "claude", "--enable"],
-            "share requires a skill name",
+            &["import", "--from", "claude", "--enable"],
+            "import --from requires a skill name unless --plan is used",
         ),
     ] {
         let fixture = Fixture::new();
