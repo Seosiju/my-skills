@@ -475,6 +475,7 @@ mod agent_ux_output {
     use my_skills::platform::paths;
     use predicates::prelude::PredicateBooleanExt;
     use predicates::str::contains;
+    #[cfg(windows)]
     use serde_json::Value;
 
     fn registry(two_hosts: bool) -> Fixture {
