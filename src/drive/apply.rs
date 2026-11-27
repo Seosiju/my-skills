@@ -37,6 +37,7 @@ pub enum Outcome {
     Updated,
     Removed,
     Converted(Connection),
+    KeptCopyFallback { reason: String },
     Unchanged,
 }
 
@@ -117,13 +118,16 @@ pub(crate) enum PreparedConnection {
         snapshot: Rc<CopySnapshot>,
         connection: Connection,
     },
+    KeepCopyFallback {
+        reason: String,
+    },
 }
 
 impl PreparedConnection {
     pub(crate) fn check_snapshot(&self) -> Option<&Path> {
         match self {
             Self::Copy { snapshot, .. } => Some(&snapshot.path),
-            Self::Link { .. } => None,
+            Self::Link { .. } | Self::KeepCopyFallback { .. } => None,
         }
     }
 }
@@ -144,7 +148,7 @@ fn prepare_with(
     create_link: impl FnOnce(&Path, &Path) -> Result<Created>,
 ) -> Result<Option<PreparedConnection>> {
     let connection = match (item.action, item.mode) {
-        (Action::Create, InstallMode::Link) => {
+        (Action::Create | Action::Convert, InstallMode::Link) => {
             let temp = stage_near(&item.destination)?;
             let entry = temp.path().join(&item.skill);
             match create_link(&entry, &absolute(&item.source)?)? {
@@ -154,6 +158,9 @@ fn prepare_with(
                         entry,
                         kind,
                     }));
+                }
+                Created::NeedsCopy { reason } if item.action == Action::Convert => {
+                    return Ok(Some(PreparedConnection::KeepCopyFallback { reason }));
                 }
                 Created::NeedsCopy { reason } => Connection::CopyFallback { reason },
             }
@@ -199,14 +206,26 @@ pub(crate) fn apply_prepared_group(
     let dest = &item.destination;
     let targets = std::iter::once(item).chain(aliases.iter().copied());
     match (item.action, prepared) {
-        (Action::Create, Some(PreparedConnection::Link { entry, kind, .. })) => {
+        (Action::Create | Action::Convert, Some(PreparedConnection::Link { entry, kind, .. })) => {
             let connection = Connection::Link(*kind);
             let hash = hash_directory(&item.source)?;
             let records = targets.map(|target| record_for(target, &connection, hash.clone()));
-            replace_entry(entry, dest, EntryKind::Missing, None, || {
+            let converting = item.action == Action::Convert;
+            let expected = if converting {
+                EntryKind::Dir
+            } else {
+                EntryKind::Missing
+            };
+            let digest = installed_copy_hash(item, state, expected);
+            let warning = replace_entry(entry, dest, expected, digest.as_deref(), || {
                 commit_records(state, records).map_err(|err| Error::StateSave(Box::new(err)))
             })?;
-            Ok(Applied::new(Outcome::Created(connection), None))
+            let outcome = if converting {
+                Outcome::Converted(connection)
+            } else {
+                Outcome::Created(connection)
+            };
+            Ok(Applied::new(outcome, warning))
         }
         (
             Action::Create | Action::Update | Action::Convert,
@@ -215,8 +234,17 @@ pub(crate) fn apply_prepared_group(
                 connection,
             }),
         ) => {
-            let records =
-                targets.map(|target| record_for(target, connection, snapshot.hash.clone()));
+            let records: Vec<_> = targets
+                .map(|target| {
+                    let mut record = record_for(target, connection, snapshot.hash.clone());
+                    if item.action == Action::Update {
+                        record.fallback_reason = state
+                            .get(&target.skill, &target.host)
+                            .and_then(|previous| previous.fallback_reason.clone());
+                    }
+                    record
+                })
+                .collect();
             let stage = stage_near(dest)?;
             let entry = stage.path().join(&item.skill);
             copy_tree(&snapshot.path, &entry)?;
@@ -225,9 +253,9 @@ pub(crate) fn apply_prepared_group(
                 Action::Update => (EntryKind::Dir, Outcome::Updated),
                 Action::Convert => {
                     let kind = link::entry_kind(dest)?;
-                    if !matches!(kind, EntryKind::Link(_)) {
+                    if !link::is_managed_link(dest, &item.source) {
                         return Err(Error::Refused(format!(
-                            "{} is no longer a linked directory; not converting",
+                            "{} is no longer the managed link; not converting",
                             dest.display()
                         )));
                     }
@@ -247,8 +275,29 @@ pub(crate) fn apply_prepared_group(
             Ok(Applied::new(outcome, warning))
         }
         (Action::Remove, _) => remove(item, state),
-        (Action::Convert, None) if item.mode == InstallMode::Link => {
-            convert_copy_to_link(item, aliases, state)
+        (Action::Convert, Some(PreparedConnection::KeepCopyFallback { reason })) => {
+            let records = targets
+                .map(|target| {
+                    let mut record = state
+                        .get(&target.skill, &target.host)
+                        .cloned()
+                        .ok_or_else(|| Error::CopyConflict(display_path(dest)))?;
+                    record.fallback_reason = Some(reason.clone());
+                    Ok(record)
+                })
+                .collect::<Result<Vec<_>>>()?;
+            if link::entry_kind(dest)? != EntryKind::Dir
+                || hash_directory(dest)? != records[0].installed_hash
+            {
+                return Err(Error::CopyConflict(display_path(dest)));
+            }
+            commit_records(state, records).map_err(|err| Error::StateSave(Box::new(err)))?;
+            Ok(Applied::new(
+                Outcome::KeptCopyFallback {
+                    reason: reason.clone(),
+                },
+                None,
+            ))
         }
         (action, _) if action.writes() => Err(Error::Refused("connection was not prepared".into())),
         _ => Ok(Applied::new(Outcome::Unchanged, None)),
@@ -290,35 +339,6 @@ fn remove(item: &PlanItem, state: &mut State) -> Result<Applied> {
         return Err(Error::StateSave(Box::new(err)));
     }
     Ok(Applied::new(Outcome::Removed, cleanup_backup(backup)))
-}
-
-fn convert_copy_to_link(
-    item: &PlanItem,
-    aliases: &[&PlanItem],
-    state: &mut State,
-) -> Result<Applied> {
-    let dest = &item.destination;
-    let staged = stage_near(dest)?;
-    let entry = staged.path().join(&item.skill);
-    let canonical = absolute(&item.source)?;
-    match link::create_link(&entry, &canonical)? {
-        Created::Link(kind) => {
-            let connection = Connection::Link(kind);
-            let hash = hash_directory(&item.source)?;
-            let records = std::iter::once(item)
-                .chain(aliases.iter().copied())
-                .map(|target| record_for(target, &connection, hash.clone()));
-            let digest = installed_copy_hash(item, state, EntryKind::Dir);
-            let warning = replace_entry(&entry, dest, EntryKind::Dir, digest.as_deref(), || {
-                commit_records(state, records)
-            })?;
-            Ok(Applied::new(Outcome::Converted(connection), warning))
-        }
-        Created::NeedsCopy { reason } => Err(Error::Link(format!(
-            "cannot link {}: {reason}; the copy was kept",
-            dest.display()
-        ))),
-    }
 }
 
 fn installed_copy_hash(item: &PlanItem, state: &State, expected: EntryKind) -> Option<String> {
@@ -610,6 +630,20 @@ fn format_utc(secs: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::drive::plan::{self, SyncScope};
+    use crate::registry::manifest::Manifest;
+
+    fn plan_alpha(manifest: &Manifest, state: &State, host: &str, mode: InstallMode) -> PlanItem {
+        let scope = SyncScope {
+            skills: &[&manifest.skills["alpha"]],
+            hosts: &[host.into()],
+            include_orphans: false,
+            prune: true,
+        };
+        plan::plan_sync(manifest, state, &scope, Some(mode))
+            .unwrap()
+            .remove(0)
+    }
 
     #[test]
     fn copy_fallback_retries_after_state_save_failure_without_leaking_record() {
@@ -688,7 +722,7 @@ mod tests {
     #[test]
     fn checked_snapshot_is_the_only_copy_source_across_hosts() {
         use crate::check::validate;
-        use crate::drive::plan::{self, Status};
+        use crate::drive::plan::Status;
         use crate::registry::manifest::{CliOverrides, load_manifest};
 
         let tmp = tempfile::tempdir().unwrap();
@@ -710,8 +744,10 @@ mod tests {
         let skill_md = source.join("SKILL.md");
         fs::write(&skill_md, original).unwrap();
 
-        let item =
-            plan::plan_install_one(&manifest, skill, "claude", &state, InstallMode::Copy).unwrap();
+        let link = plan_alpha(&manifest, &state, "claude", InstallMode::Link);
+        apply(&link, &mut state).unwrap();
+        let item = plan_alpha(&manifest, &state, "claude", InstallMode::Copy);
+        assert_eq!(item.action, Action::Convert);
         let mut snapshots = BTreeMap::new();
         let prepared = prepare(&item, &mut snapshots).unwrap().unwrap();
         let staged = prepared.check_snapshot().unwrap();
@@ -719,8 +755,7 @@ mod tests {
         let hash = hash_directory(staged).unwrap();
 
         fs::write(&skill_md, "Invalid edit after the check.").unwrap();
-        let second =
-            plan::plan_install_one(&manifest, skill, "codex", &state, InstallMode::Copy).unwrap();
+        let second = plan_alpha(&manifest, &state, "codex", InstallMode::Copy);
         let second_prepared = prepare(&second, &mut snapshots).unwrap().unwrap();
         assert_eq!(second_prepared.check_snapshot(), Some(staged));
         for (item, prepared) in [(item, prepared), (second, second_prepared)] {
@@ -743,7 +778,6 @@ mod tests {
 
     #[test]
     fn a_late_host_edit_blocks_update_and_conversion() {
-        use crate::drive::plan;
         use crate::registry::manifest::{CliOverrides, load_manifest};
 
         for convert in [false, true] {
@@ -755,31 +789,20 @@ mod tests {
             );
             fs::write(root.join("my-skills.toml"), contents).unwrap();
             let manifest = load_manifest(root, &CliOverrides::default()).unwrap();
-            let skill = &manifest.skills["alpha"];
             let source = manifest.skill_dir("alpha");
             fs::create_dir_all(&source).unwrap();
             fs::write(source.join("SKILL.md"), "Original.").unwrap();
             let state_path = root.join("state.json");
             let mut state = State::load(Some(&state_path)).unwrap();
-            let create =
-                plan::plan_install_one(&manifest, skill, "claude", &state, InstallMode::Copy)
-                    .unwrap();
+            let create = plan_alpha(&manifest, &state, "claude", InstallMode::Copy);
             apply(&create, &mut state).unwrap();
             fs::write(source.join("SKILL.md"), "New canonical content.").unwrap();
-            let item = if convert {
-                plan::plan_convert(
-                    &manifest,
-                    &state,
-                    &[skill],
-                    &["claude".into()],
-                    InstallMode::Link,
-                )
-                .unwrap()
-                .remove(0)
+            let mode = if convert {
+                InstallMode::Link
             } else {
-                plan::plan_install_one(&manifest, skill, "claude", &state, InstallMode::Copy)
-                    .unwrap()
+                InstallMode::Copy
             };
+            let item = plan_alpha(&manifest, &state, "claude", mode);
             assert_eq!(
                 item.action,
                 if convert {

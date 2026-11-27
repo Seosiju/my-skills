@@ -28,7 +28,7 @@ fn repo() -> Fixture {
 fn launch(fixture: &Fixture, name: &str) -> Child {
     fixture
         .process(env!("CARGO_BIN_EXE_my-skills"))
-        .args(["install", name, "--host", "claude", "--yes"])
+        .args(["sync", name, "--host", "claude", "--yes"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -111,14 +111,19 @@ fn busy_writers_leave_state_and_hosts_unchanged() {
     let fixture = repo();
     fixture
         .command()
-        .args(["install", "alpha", "--host", "claude", "--yes"])
+        .args(["sync", "alpha", "--host", "claude", "--yes"])
         .assert()
         .success();
     let state = fs::read(fixture.state()).unwrap();
+    fixture
+        .command()
+        .args(["disable", "alpha"])
+        .assert()
+        .success();
     let lock = hold_lock(&fixture);
     for args in [
-        &["install", "beta", "--host", "claude", "--yes"][..],
-        &["uninstall", "alpha", "--host", "claude", "--yes"][..],
+        &["sync", "beta", "--host", "claude", "--yes"][..],
+        &["sync", "alpha", "--host", "claude", "--yes"][..],
     ] {
         fixture
             .command()
@@ -149,7 +154,7 @@ fn readers_do_not_wait_for_the_state_lock() {
     let fixture = repo();
     fixture
         .command()
-        .args(["install", "alpha", "--host", "claude", "--yes"])
+        .args(["sync", "alpha", "--host", "claude", "--yes"])
         .assert()
         .success();
     let state = fs::read(fixture.state()).unwrap();
@@ -158,12 +163,14 @@ fn readers_do_not_wait_for_the_state_lock() {
         fixture
             .command()
             .env("MY_SKILLS_STATE_LOCK_TIMEOUT_MS", "0")
-            .args(["status", "--json"]),
+            .args(["skills", "--json"]),
     );
     assert!(
-        status.as_array().unwrap().iter().any(|row| {
-            row["skill"] == "alpha" && row["host"] == "claude" && row["status"] == "FRESH"
-        }),
+        status["skills"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| { row["name"] == "alpha" && row["status"]["claude"] == "FRESH" }),
         "{status}"
     );
     let preview = support_h::json(
@@ -193,7 +200,7 @@ fn readers_do_not_wait_for_the_state_lock() {
 }
 
 #[test]
-fn share_takes_the_manifest_lock_first_and_reports_busy_as_json() {
+fn host_import_takes_the_manifest_lock_first_and_reports_busy_as_json() {
     let fixture = repo();
     let copy = skill(
         &fixture.host("claude"),
@@ -205,29 +212,29 @@ fn share_takes_the_manifest_lock_first_and_reports_busy_as_json() {
     let state_lock = hold_lock(&fixture);
     let manifest_lock = fixture.manifest().with_extension("toml.edit-lock");
     fs::write(&manifest_lock, "").unwrap();
-    let attempt_share = || {
+    let attempt_import = || {
         let mut command = fixture.command();
         command
             .env_remove("MY_SKILLS_ROOT")
             .env("MY_SKILLS_STATE_LOCK_TIMEOUT_MS", "0")
-            .args(["share", "gamma", "--from", "claude", "--enable", "--json"]);
+            .args(["import", "gamma", "--from", "claude", "--enable", "--json"]);
         command
     };
 
-    attempt_share()
+    attempt_import()
         .assert()
         .code(2)
         .stderr(predicate::str::contains("my-skills.toml.edit-lock"));
 
     fixture
         .command()
-        .args(["share", "--from", "claude", "--plan", "--json"])
+        .args(["import", "--from", "claude", "--plan", "--json"])
         .assert()
         .success()
         .stderr("");
     fs::remove_file(&manifest_lock).unwrap();
 
-    let busy = attempt_share()
+    let busy = attempt_import()
         .assert()
         .code(2)
         .stderr(predicate::str::starts_with("error: state is busy: "));
@@ -247,7 +254,7 @@ fn one_install_copies_to_two_hosts_and_records_matching_hashes() {
     let fixture = repo();
     fixture
         .command()
-        .args(["install", "alpha", "--yes"])
+        .args(["sync", "alpha", "--yes"])
         .assert()
         .success();
     let state = State::load(Some(&fixture.state())).unwrap();
@@ -285,16 +292,16 @@ fn a_copy_from_a_linked_canonical_directory_tracks_the_target_bytes() {
     support_h::link_dir(&target, &canonical);
     fixture
         .command()
-        .args(["install", "beta", "--host", "claude", "--yes"])
+        .args(["sync", "beta", "--host", "claude", "--yes"])
         .assert()
         .success();
     let status = || {
-        support_h::json(fixture.command().args(["status", "--json"]))
+        support_h::json(fixture.command().args(["skills", "--json"]))["skills"]
             .as_array()
             .unwrap()
             .iter()
-            .find(|row| row["skill"] == "beta" && row["host"] == "claude")
-            .unwrap()["status"]
+            .find(|row| row["name"] == "beta")
+            .unwrap()["status"]["claude"]
             .clone()
     };
     assert_eq!(status(), "FRESH");
@@ -308,7 +315,7 @@ fn backup_cleanup_failure_keeps_the_update_applied() {
     let fixture = repo();
     fixture
         .command()
-        .args(["install", "alpha", "--host", "claude", "--yes"])
+        .args(["sync", "alpha", "--host", "claude", "--yes"])
         .assert()
         .success();
     let host = fixture.host("claude");
@@ -421,8 +428,7 @@ fn assert_waiting(signal: std::sync::mpsc::Receiver<String>) {
 #[test]
 fn waiting_writers_respect_a_new_active_registry() {
     for args in [
-        &["share", "gamma", "--from", "claude", "--enable"][..],
-        &["install", "alpha", "--host", "claude", "--yes"][..],
+        &["import", "gamma", "--from", "claude", "--enable"][..],
         &["sync", "alpha", "--host", "claude", "--yes"][..],
         &["bootstrap", "--host", "claude"][..],
     ] {
@@ -478,7 +484,7 @@ fn waiting_writer_keeps_a_new_selection_of_the_same_registry() {
     let mut writer = fixture
         .process(env!("CARGO_BIN_EXE_my-skills"))
         .env_remove("MY_SKILLS_ROOT")
-        .args(["install", "alpha", "--host", "claude", "--yes"])
+        .args(["sync", "alpha", "--host", "claude", "--yes"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -525,7 +531,7 @@ fn aliased_copy_targets_install_and_update_one_tree_with_both_records() {
     let fixture = shared_host_fixture("copy");
     fixture
         .command()
-        .args(["install", "alpha", "--yes"])
+        .args(["sync", "alpha", "--yes"])
         .assert()
         .success()
         .stdout(predicate::str::contains("created: alpha -> claude"))
@@ -561,7 +567,7 @@ fn shared_copy_rolls_back_the_tree_and_both_records_on_save_failure() {
 
     fixture
         .command()
-        .args(["install", "alpha", "--yes"])
+        .args(["sync", "alpha", "--yes"])
         .assert()
         .code(1)
         .stdout(predicate::str::contains("state.json.tmp"));
@@ -574,28 +580,27 @@ fn shared_copy_rolls_back_the_tree_and_both_records_on_save_failure() {
 }
 
 #[test]
-fn incompatible_aliased_targets_block_the_entire_batch() {
+fn aliased_targets_with_different_modes_cannot_create_a_shared_entry() {
     let fixture = shared_host_fixture("link");
-    let preview =
-        support_h::json(
-            fixture
-                .command()
-                .args(["install", "alpha", "--dry-run", "--json"]),
-        );
+    let preview = support_h::json(
+        fixture
+            .command()
+            .args(["sync", "alpha", "--dry-run", "--json"]),
+    );
     assert_eq!(preview["blocked"], true);
     fixture
         .command()
-        .args(["install", "alpha", "beta", "--yes"])
+        .args(["sync", "alpha", "beta", "--yes"])
         .assert()
         .code(1)
-        .stdout(predicate::str::contains("shared destination"));
+        .stdout(predicate::str::contains("want different install modes"));
     assert!(!fixture.state().exists());
     assert_eq!(fs::read_dir(fixture.host("claude")).unwrap().count(), 0);
 }
 
 #[cfg(windows)]
 #[test]
-fn forced_share_reports_when_committed_backup_cannot_be_cleaned() {
+fn forced_host_import_reports_when_committed_backup_cannot_be_cleaned() {
     let fixture = repo();
     let local = skill(
         &fixture.host("claude"),
@@ -633,7 +638,7 @@ fn forced_share_reports_when_committed_backup_cannot_be_cleaned() {
     );
     let result = fixture
         .command()
-        .args(["share", "alpha", "--from", "claude", "--enable", "--force"])
+        .args(["import", "alpha", "--from", "claude", "--enable", "--force"])
         .output()
         .unwrap();
     let backup = fs::read_dir(canonical.parent().unwrap())
@@ -651,7 +656,7 @@ fn forced_share_reports_when_committed_backup_cannot_be_cleaned() {
     result
         .assert()
         .success()
-        .stdout(predicate::str::contains("shared: alpha"))
+        .stdout(predicate::str::contains("imported: alpha"))
         .stderr(predicate::str::contains("warning: cleanup"))
         .stderr(predicate::str::contains(
             my_skills::platform::paths::display_path(&backup),

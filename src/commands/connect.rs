@@ -34,11 +34,7 @@ pub fn sync(args: &SyncArgs) -> ExitCode {
         resolution,
         _state_lock,
         refusal,
-    } = match load_connect_manifest(
-        &CliOverrides::default(),
-        !args.dry_run && !args.check,
-        args.json,
-    ) {
+    } = match load_connect_manifest(!args.dry_run && !args.check, args.json) {
         Ok(loaded) => loaded,
         Err(e) => return config_error(e),
     };
@@ -115,6 +111,10 @@ fn sync_manifest_with_resolution(
     };
     // Excluded skills are untouched, including by the orphan prune.
     items.retain(|item| !args.exclude.contains(&item.skill));
+    let shared = match plan::group_destinations(manifest, &state, &mut items) {
+        Ok(shared) => shared,
+        Err(err) => return config_error(err),
+    };
 
     if args.check {
         // Status of every wanted pair (v0.4.1 output), plus what a real sync
@@ -122,6 +122,10 @@ fn sync_manifest_with_resolution(
         let mut drift = items
             .iter()
             .any(|i| i.action.writes() || i.action.is_block());
+        let by_pair: BTreeMap<_, _> = items
+            .iter()
+            .map(|item| ((item.skill.as_str(), item.host.as_str()), item))
+            .collect();
         for skill in &skills {
             if !skill.enabled {
                 continue;
@@ -130,8 +134,26 @@ fn sync_manifest_with_resolution(
             for host in &hosts {
                 match plan::status_of(manifest, skill, host, &state) {
                     Ok(status) => {
-                        println!("  {host:8} {}", status.label());
-                        drift |= !matches!(status, plan::Status::Fresh | plan::Status::Unsupported);
+                        let item = by_pair.get(&(skill.name.as_str(), host.as_str()));
+                        if let Some(item) = item.filter(|item| item.action == Action::Convert) {
+                            let from = state
+                                .get(&skill.name, host)
+                                .expect("conversion requires an existing record")
+                                .mode;
+                            println!(
+                                "  {host:8} CONVERT ({} -> {})",
+                                mode_label(from),
+                                mode_label(item.mode)
+                            );
+                        } else if let Some(item) = item.filter(|item| item.action.is_block())
+                            && matches!(status, plan::Status::Fresh | plan::Status::Stale)
+                        {
+                            println!("  {host:8} BLOCKED ({})", item.reason);
+                        } else {
+                            println!("  {host:8} {}", status.label());
+                            drift |=
+                                !matches!(status, plan::Status::Fresh | plan::Status::Unsupported);
+                        }
                     }
                     Err(e) => return config_error(e),
                 }
@@ -144,10 +166,6 @@ fn sync_manifest_with_resolution(
         return exit(drift);
     }
 
-    let shared = match plan::group_destinations(manifest, &state, &mut items) {
-        Ok(shared) => shared,
-        Err(err) => return config_error(err),
-    };
     let writes = items.iter().any(|i| i.action.writes());
     let explicit = !requested.is_empty();
     let mut report =
@@ -184,7 +202,8 @@ fn sync_manifest_with_resolution(
         .filter(|s| {
             explicit
                 || items.iter().any(|i| {
-                    i.skill == s.name && matches!(i.action, Action::Create | Action::Update)
+                    i.skill == s.name
+                        && matches!(i.action, Action::Create | Action::Update | Action::Convert)
                 })
         })
         .collect();
@@ -322,13 +341,10 @@ struct ConnectManifest {
     refusal: Option<String>,
 }
 
-fn load_connect_manifest(
-    cli: &CliOverrides,
-    writes: bool,
-    report_refusal: bool,
-) -> crate::Result<ConnectManifest> {
+fn load_connect_manifest(writes: bool, report_refusal: bool) -> crate::Result<ConnectManifest> {
+    let cli = CliOverrides::default();
     if !writes {
-        let (manifest, resolution) = root::load_manifest_resolved(cli, false)?;
+        let (manifest, resolution) = root::load_manifest_resolved(&cli, false)?;
         return Ok(ConnectManifest {
             manifest,
             resolution,
@@ -351,7 +367,7 @@ fn load_connect_manifest(
         }
         refusal = Some(error.to_string());
     }
-    let manifest = load_manifest(&resolution.root, cli)?;
+    let manifest = load_manifest(&resolution.root, &cli)?;
     Ok(ConnectManifest {
         manifest,
         resolution,
@@ -420,7 +436,7 @@ impl<'a> PreparedPlan<'a> {
             .iter()
             .filter(|item| item.action.writes())
             .map(|item| {
-                let connection = if creates_link(item) {
+                let connection = if writes_link(item) {
                     Ok(None)
                 } else {
                     apply::prepare(item, &mut snapshots)
@@ -446,7 +462,7 @@ impl<'a> PreparedPlan<'a> {
         // Check the live canonical targets before creating even temporary
         // links. The old gate covers canonical, then any fallback has its
         // own checks on the bytes that will be installed.
-        for item in self.items.iter().filter(|item| creates_link(item)) {
+        for item in self.items.iter().filter(|item| writes_link(item)) {
             let prepared = apply::prepare(item, &mut self.snapshots);
             let skill = item.skill.as_str();
             let host = item.host.as_str();
@@ -478,8 +494,8 @@ impl<'a> PreparedPlan<'a> {
     }
 }
 
-fn creates_link(item: &PlanItem) -> bool {
-    item.action == Action::Create && item.mode == InstallMode::Link
+fn writes_link(item: &PlanItem) -> bool {
+    matches!(item.action, Action::Create | Action::Convert) && item.mode == InstallMode::Link
 }
 
 #[derive(Clone, Copy)]
@@ -745,10 +761,12 @@ impl ItemResult {
             Outcome::Created(_) => ApplyStatus::Created,
             Outcome::Updated | Outcome::Converted(_) => ApplyStatus::Updated,
             Outcome::Removed => ApplyStatus::Removed,
-            Outcome::Unchanged => ApplyStatus::Unchanged,
+            Outcome::KeptCopyFallback { .. } | Outcome::Unchanged => ApplyStatus::Unchanged,
         };
         let mut result = Self::new(status, Some(item.mode), None);
-        if let Outcome::Created(Connection::CopyFallback { reason }) = outcome {
+        if let Outcome::Created(Connection::CopyFallback { reason })
+        | Outcome::KeptCopyFallback { reason } = outcome
+        {
             result.mode = Some(InstallMode::Copy);
             result.fallback_reason = Some(reason.clone());
         }
@@ -904,6 +922,12 @@ fn apply_plan<'a>(
         };
         for target in std::iter::once(index).chain(peers) {
             batch.results[target] = row.clone();
+            if item.action == Action::Update && row.status == ApplyStatus::Updated {
+                let target_item = &plan.items[target];
+                batch.results[target].fallback_reason = state
+                    .get(&target_item.skill, &target_item.host)
+                    .and_then(|record| record.fallback_reason.clone());
+            }
         }
     }
     batch
@@ -933,8 +957,10 @@ fn print_result_line(item: &PlanItem, outcome: Option<&Outcome>) {
         (_, Some(Outcome::Converted(c))) => {
             println!("  converted: {pair}{}", connection_suffix(c))
         }
+        (_, Some(Outcome::KeptCopyFallback { reason })) => {
+            println!("  unchanged: {pair} [copy fallback: {reason}]")
+        }
         (Action::Noop, _) => println!("  unchanged: {pair}"),
-        (Action::SkipUnsupported, _) => println!("  skipped: {pair} ({})", item.reason),
         (action, _) if action.is_block() => {
             println!("  BLOCKED: {pair}");
             println!("    {}:", item.reason);
@@ -1214,7 +1240,9 @@ mod tests {
         for mode in [InstallMode::Link, InstallMode::Copy] {
             item.mode = mode;
             let items = std::slice::from_ref(&item);
-            let applied = apply_plan(PreparedPlan::new(items), &mut state, false, false);
+            let mut prepared = PreparedPlan::new(items);
+            assert!(prepared.prepare_links().is_empty());
+            let applied = apply_plan(prepared, &mut state, false, false);
             assert!(applied.succeeded());
             assert_eq!(applied.summary().updated, 1);
             let persisted = State::load(Some(&state_path)).unwrap();

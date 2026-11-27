@@ -63,9 +63,9 @@ fn assert_summary(
 }
 
 #[test]
-fn install_and_sync_report_creates_updates_prunes_and_noops() {
+fn sync_reports_creates_updates_prunes_and_noops() {
     let fixture = registry();
-    let install = result(&fixture, &["install", "alpha", "retired", "--yes"], 0);
+    let install = result(&fixture, &["sync", "alpha", "retired", "--yes"], 0);
     assert_eq!(install["dry_run"], false);
     assert_eq!(install["applied"], true);
     assert_eq!(install["applicable"], true);
@@ -135,38 +135,36 @@ fn install_and_sync_report_creates_updates_prunes_and_noops() {
 #[test]
 fn validation_and_confirmation_blocks_return_the_batch_document() {
     let fixture = registry();
-    for command in ["install", "sync"] {
-        fs::remove_file(fixture.canonical("alpha").join("SKILL.md")).unwrap();
-        let invalid = result(&fixture, &[command, "alpha", "beta", "--yes"], 1);
-        assert_eq!(invalid["applied"], false);
-        assert_eq!(invalid["blocked"], true);
-        assert_eq!(invalid["applicable"], false);
-        assert_summary(&invalid, [0, 0, 0, 0, 4, 0]);
-        assert!(
-            invalid["block_reasons"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|reason| reason["kind"] == "validation")
-        );
-        assert_eq!(row(&invalid, "beta", "claude")["result"], "blocked");
+    fs::remove_file(fixture.canonical("alpha").join("SKILL.md")).unwrap();
+    let invalid = result(&fixture, &["sync", "alpha", "beta", "--yes"], 1);
+    assert_eq!(invalid["applied"], false);
+    assert_eq!(invalid["blocked"], true);
+    assert_eq!(invalid["applicable"], false);
+    assert_summary(&invalid, [0, 0, 0, 0, 4, 0]);
+    assert!(
+        invalid["block_reasons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|reason| reason["kind"] == "validation")
+    );
+    assert_eq!(row(&invalid, "beta", "claude")["result"], "blocked");
 
-        skill(
-            &fixture.registry.join("skills"),
-            "alpha",
-            "A fixture skill.",
-            "Test body.",
-        );
-        let needs_yes = result(&fixture, &[command, "alpha"], 2);
-        assert_eq!(needs_yes["applied"], false);
-        assert_eq!(needs_yes["blocked"], false);
-        assert_eq!(needs_yes["applicable"], false);
-        assert_eq!(needs_yes["block_reasons"][0]["kind"], "needs_yes");
-        assert_summary(&needs_yes, [0, 0, 0, 0, 2, 0]);
-        assert!(!fixture.root.join("hosts").exists());
-        assert!(!fixture.state().exists());
-        assert!(!fixture.root.join("config/my-skills/root").exists());
-    }
+    skill(
+        &fixture.registry.join("skills"),
+        "alpha",
+        "A fixture skill.",
+        "Test body.",
+    );
+    let needs_yes = result(&fixture, &["sync", "alpha"], 2);
+    assert_eq!(needs_yes["applied"], false);
+    assert_eq!(needs_yes["blocked"], false);
+    assert_eq!(needs_yes["applicable"], false);
+    assert_eq!(needs_yes["block_reasons"][0]["kind"], "needs_yes");
+    assert_summary(&needs_yes, [0, 0, 0, 0, 2, 0]);
+    assert!(!fixture.root.join("hosts").exists());
+    assert!(!fixture.state().exists());
+    assert!(!fixture.root.join("config/my-skills/root").exists());
 }
 
 #[test]
@@ -180,21 +178,19 @@ fn inactive_registry_and_shared_destination_block_the_batch() {
         .success();
     let cache = fixture.root.join("config/my-skills/root");
     let before = fs::read(&cache).unwrap();
-    for command in ["install", "sync"] {
-        let blocked = fixture
-            .command()
-            .env_remove("MY_SKILLS_ROOT")
-            .args([command, "alpha", "--json", "--yes"])
-            .assert()
-            .code(2);
-        let report: Value = serde_json::from_slice(&blocked.get_output().stdout).unwrap();
-        assert_eq!(report["applied"], false);
-        assert_eq!(report["blocked"], true);
-        assert_eq!(report["block_reasons"][0]["kind"], "inactive_registry");
-        assert_summary(&report, [0, 0, 0, 0, 2, 0]);
-        assert_eq!(fs::read(&cache).unwrap(), before);
-        assert!(!fixture.state().exists());
-    }
+    let blocked = fixture
+        .command()
+        .env_remove("MY_SKILLS_ROOT")
+        .args(["sync", "alpha", "--json", "--yes"])
+        .assert()
+        .code(2);
+    let report: Value = serde_json::from_slice(&blocked.get_output().stdout).unwrap();
+    assert_eq!(report["applied"], false);
+    assert_eq!(report["blocked"], true);
+    assert_eq!(report["block_reasons"][0]["kind"], "inactive_registry");
+    assert_summary(&report, [0, 0, 0, 0, 2, 0]);
+    assert_eq!(fs::read(&cache).unwrap(), before);
+    assert!(!fixture.state().exists());
 
     let manifest = fixture.manifest();
     let contents = fs::read_to_string(&manifest).unwrap().replace(
@@ -202,7 +198,7 @@ fn inactive_registry_and_shared_destination_block_the_batch() {
         &serde_json::to_string(&fixture.host("claude")).unwrap(),
     );
     fs::write(manifest, contents).unwrap();
-    let batch = result(&fixture, &["install", "alpha", "--yes"], 1);
+    let batch = result(&fixture, &["sync", "alpha", "--yes"], 1);
     assert_eq!(batch["applied"], false);
     assert_eq!(batch["blocked"], true);
     assert!(!fixture.root.join("hosts").exists());
@@ -214,11 +210,7 @@ fn per_item_blocks_and_save_failures_do_not_claim_success() {
     let fixture = registry();
     let host = fixture.host("codex");
     fs::create_dir_all(host.join("alpha")).unwrap();
-    let partially_blocked = result(
-        &fixture,
-        &["install", "alpha", "beta", "--host", "codex"],
-        1,
-    );
+    let partially_blocked = result(&fixture, &["sync", "alpha", "beta", "--host", "codex"], 1);
     assert_eq!(partially_blocked["applied"], false);
     assert_eq!(
         row(&partially_blocked, "alpha", "codex")["result"],
@@ -236,7 +228,7 @@ fn per_item_blocks_and_save_failures_do_not_claim_success() {
         "Reserved.",
     )
     .unwrap();
-    let failed = result(&fixture, &["install", "retired", "--host", "codex"], 1);
+    let failed = result(&fixture, &["sync", "retired", "--host", "codex"], 1);
     assert_eq!(failed["applied"], false);
     assert_eq!(failed["applicable"], true);
     let row = row(&failed, "retired", "codex");
@@ -250,11 +242,9 @@ fn per_item_blocks_and_save_failures_do_not_claim_success() {
 #[test]
 fn configuration_errors_use_the_existing_error_document() {
     let fixture = registry();
-    for command in ["install", "sync"] {
-        let unknown = result(&fixture, &[command, "absent"], 2);
-        assert_eq!(unknown.as_object().unwrap().len(), 1);
-        assert_eq!(unknown["error"]["code"], "unknown_skill");
-    }
+    let unknown = result(&fixture, &["sync", "absent"], 2);
+    assert_eq!(unknown.as_object().unwrap().len(), 1);
+    assert_eq!(unknown["error"]["code"], "unknown_skill");
     let path = fixture.state().with_file_name("state.json.lock");
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     let lock = OpenOptions::new()
@@ -264,17 +254,15 @@ fn configuration_errors_use_the_existing_error_document() {
         .open(path)
         .unwrap();
     FileExt::lock(&lock).unwrap();
-    for command in ["install", "sync"] {
-        let busy = fixture
-            .command()
-            .args([command, "--json", "--yes"])
-            .env("MY_SKILLS_STATE_LOCK_TIMEOUT_MS", "0")
-            .assert()
-            .code(2);
-        let value: Value = serde_json::from_slice(&busy.get_output().stdout).unwrap();
-        assert_eq!(value.as_object().unwrap().len(), 1);
-        assert_eq!(value["error"]["code"], "state_busy");
-    }
+    let busy = fixture
+        .command()
+        .args(["sync", "--json", "--yes"])
+        .env("MY_SKILLS_STATE_LOCK_TIMEOUT_MS", "0")
+        .assert()
+        .code(2);
+    let value: Value = serde_json::from_slice(&busy.get_output().stdout).unwrap();
+    assert_eq!(value.as_object().unwrap().len(), 1);
+    assert_eq!(value["error"]["code"], "state_busy");
     assert!(!fixture.state().exists());
     assert!(!fixture.root.join("hosts").exists());
 }
@@ -298,15 +286,13 @@ fn dry_run_json_keeps_the_remaining_preview_fields() {
         ],
     });
     let expected = format!("{}\n", serde_json::to_string_pretty(&expected).unwrap());
-    for command in ["install", "sync"] {
-        let out = fixture
-            .command()
-            .args([command, "alpha", "--host", "codex", "--dry-run", "--json"])
-            .assert()
-            .success()
-            .stderr("");
-        assert_eq!(out.get_output().stdout, expected.as_bytes());
-    }
+    let out = fixture
+        .command()
+        .args(["sync", "alpha", "--host", "codex", "--dry-run", "--json"])
+        .assert()
+        .success()
+        .stderr("");
+    assert_eq!(out.get_output().stdout, expected.as_bytes());
     assert!(!fixture.state().exists());
     assert!(!fixture.root.join("hosts").exists());
 }
@@ -317,7 +303,7 @@ fn committed_cleanup_warning_has_the_backup_path_in_json() {
     let fixture = registry();
     fixture
         .command()
-        .args(["install", "alpha", "--host", "codex"])
+        .args(["sync", "alpha", "--host", "codex"])
         .assert()
         .success();
     let installed = fixture.host("codex").join("alpha");
@@ -414,18 +400,19 @@ fn a_target_too_long_for_a_windows_link_reports_the_copy_fallback() {
     let manifest = fixture.manifest();
     let text = fs::read_to_string(&manifest)
         .unwrap()
-        .replace("skills_root = \"skills\"", &format!("skills_root = {root}"));
+        .replace("skills_root = \"skills\"", &format!("skills_root = {root}"))
+        .replace("[skills.beta]\n[skills.retired]\n", "");
     fs::write(manifest, text).unwrap();
     skill(&skills_root, "alpha", "A fixture skill.", "Test body.");
 
-    let applied = result(&fixture, &["install", "alpha", "--host", "claude"], 0);
+    let applied = result(&fixture, &["sync", "alpha", "--host", "claude"], 0);
     assert_eq!(applied["applied"], true);
     assert_summary(&applied, [1, 0, 0, 0, 0, 0]);
-    let row = row(&applied, "alpha", "claude");
-    assert_eq!(row["requested_mode"], "link");
-    assert_eq!(row["mode"], "copy");
-    assert_eq!(row["result"], "created");
-    let reason = row["fallback_reason"].as_str().unwrap();
+    let created = row(&applied, "alpha", "claude");
+    assert_eq!(created["requested_mode"], "link");
+    assert_eq!(created["mode"], "copy");
+    assert_eq!(created["result"], "created");
+    let reason = created["fallback_reason"].as_str().unwrap();
     assert!(reason.contains("junction failed"), "{reason}");
     let state = State::load(Some(&fixture.state())).unwrap();
     assert_eq!(
@@ -440,4 +427,67 @@ fn a_target_too_long_for_a_windows_link_reports_the_copy_fallback() {
         link::entry_kind(&fixture.host("claude").join("alpha")).unwrap(),
         link::EntryKind::Dir
     );
+
+    // Simulate an existing intentional copy before explicitly retrying link mode.
+    let mut state = state;
+    let mut original = state.get("alpha", "claude").unwrap().clone();
+    original.fallback_reason = None;
+    state.put(original.clone());
+    state.save().unwrap();
+    let installed = fixture.host("claude").join("alpha/SKILL.md");
+    let contents = fs::read(&installed).unwrap();
+    let convert = ["sync", "alpha", "--host", "claude", "--mode", "link"];
+    let before = fs::read(fixture.state()).unwrap();
+    let blocker = fixture.state().with_file_name("state.json.tmp");
+    fs::write(&blocker, "Reserved staging file.").unwrap();
+    let failed = result(&fixture, &convert, 1);
+    assert_eq!(row(&failed, "alpha", "claude")["result"], "failed");
+    assert_eq!(fs::read(fixture.state()).unwrap(), before);
+    assert_eq!(fs::read(&installed).unwrap(), contents);
+    fs::remove_file(blocker).unwrap();
+
+    let converted = result(&fixture, &convert, 0);
+    assert_eq!(converted["applied"], true);
+    assert_summary(&converted, [0, 0, 0, 1, 0, 0]);
+    let kept = row(&converted, "alpha", "claude");
+    assert_eq!(kept["action"], "CONVERT");
+    assert_eq!(kept["result"], "unchanged");
+    assert_eq!(kept["mode"], "copy");
+    assert_eq!(kept["fallback_reason"], reason);
+    original.fallback_reason = Some(reason.into());
+    let state = State::load(Some(&fixture.state())).unwrap();
+    assert_eq!(state.get("alpha", "claude"), Some(&original));
+    assert_eq!(fs::read(&installed).unwrap(), contents);
+
+    fixture
+        .command()
+        .args(convert)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(format!(
+            "unchanged: alpha -> claude [copy fallback: {reason}]"
+        )));
+    fs::write(
+        fixture.registry.join("my-skills.local.toml"),
+        "[targets.claude]\ninstall_mode = 'link'\n",
+    )
+    .unwrap();
+    fs::write(skills_root.join("alpha/notes.md"), "New canonical content.").unwrap();
+    let updated = result(&fixture, &["sync", "--host", "claude"], 0);
+    let updated = row(&updated, "alpha", "claude");
+    assert_eq!(updated["action"], "UPDATE");
+    assert_eq!(updated["mode"], "copy");
+    assert_eq!(updated["fallback_reason"], reason);
+    assert_eq!(
+        fs::read_to_string(installed.with_file_name("notes.md")).unwrap(),
+        "New canonical content."
+    );
+
+    let before = fs::read(fixture.state()).unwrap();
+    let noop = result(&fixture, &["sync", "--host", "claude"], 0);
+    let noop = row(&noop, "alpha", "claude");
+    assert_eq!(noop["action"], "NOOP");
+    assert_eq!(noop["result"], "unchanged");
+    assert_eq!(noop["fallback_reason"], reason);
+    assert_eq!(fs::read(fixture.state()).unwrap(), before);
 }

@@ -7,6 +7,9 @@ use std::process::Output;
 
 use assert_cmd::assert::OutputAssertExt;
 use fs4::FileExt;
+use my_skills::drive::link::{self, EntryKind};
+use my_skills::drive::state::State;
+use my_skills::registry::manifest::InstallMode;
 use predicates::str::contains;
 use support_g::Fixture;
 
@@ -148,6 +151,35 @@ fn committing_a_skill_change_refreshes_the_copy_host_and_keeps_the_link_host_fre
     let text = stderr(&output);
     assert!(text.contains("updated: alpha -> codex"), "{text}");
     assert!(!text.contains("warning"), "{text}");
+}
+
+#[test]
+fn post_commit_keeps_legacy_copies_under_default_link_mode() {
+    let setup = Setup::synced();
+    let manifest = setup
+        .manifest("[skills.alpha]\n[skills.beta]\n")
+        .replace("install_mode = \"copy\"\n", "")
+        .replace(
+            "[targets.claude]",
+            "[defaults]\ninstall_mode = 'link'\n\n[targets.claude]",
+        );
+    setup.install_hooks();
+    setup.fixture.write("my-skills.toml", &manifest);
+    setup
+        .fixture
+        .write("skills/alpha/SKILL.md", &revision("alpha", 2));
+    setup.fixture.git(&["add", "my-skills.toml", "skills"]);
+    let output = setup.commit_output(&["commit", "-qm", "Refresh a legacy copy"]);
+
+    assert_eq!(setup.copy_revision("alpha"), 2, "{}", stderr(&output));
+    let dest = setup.copy_host.join("alpha");
+    assert_eq!(link::entry_kind(&dest).unwrap(), EntryKind::Dir);
+    let state_path = setup.fixture.base.join("xdg-state/my-skills/state.json");
+    let state = State::load(Some(&state_path)).unwrap();
+    let record = state.get("alpha", "codex").unwrap();
+    assert_eq!(record.mode, InstallMode::Copy);
+    assert_eq!(record.fallback_reason, None);
+    setup.assert_link_host_fresh();
 }
 
 #[test]

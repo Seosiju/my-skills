@@ -1,5 +1,4 @@
-//! Black-box tests for the integrator's commands: install, sync, uninstall,
-//! convert, bootstrap, validate, status, set-root, data-path.
+//! Black-box tests for sync, bootstrap, and connection inspection.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -65,7 +64,9 @@ impl Env {
     }
 
     fn write_manifest(&self, alpha_enabled: bool) {
-        let mut toml = String::from("schema_version = 1\nskills_root = \"skills\"\n");
+        let mut toml = String::from(
+            "schema_version = 1\nskills_root = \"skills\"\n\n[defaults]\ninstall_mode = 'link'\n",
+        );
         for (host, enabled) in [
             ("claude", true),
             ("codex", true),
@@ -105,11 +106,11 @@ fn is_link(path: &Path) -> bool {
 }
 
 #[test]
-fn install_dry_run_json_plans_links_by_default() {
+fn sync_dry_run_json_plans_links_by_default() {
     let env = Env::new();
     let out = env
         .cmd()
-        .args(["install", "--dry-run", "--json"])
+        .args(["sync", "--dry-run", "--json"])
         .output()
         .unwrap();
     assert!(
@@ -130,11 +131,11 @@ fn install_dry_run_json_plans_links_by_default() {
 }
 
 #[test]
-fn install_json_applies_by_default() {
+fn sync_json_applies_by_default() {
     let env = Env::new();
     let assert = env
         .cmd()
-        .args(["install", "alpha", "--host", "claude", "--json"])
+        .args(["sync", "alpha", "--host", "claude", "--json"])
         .assert()
         .success();
     let report: serde_json::Value = serde_json::from_slice(&assert.get_output().stdout).unwrap();
@@ -155,7 +156,7 @@ fn multi_host_write_needs_yes() {
 }
 
 #[test]
-fn sync_links_then_status_is_fresh_and_check_passes() {
+fn sync_links_then_skills_is_fresh_and_check_passes() {
     let env = Env::new();
     env.cmd()
         .args(["sync", "--yes"])
@@ -171,23 +172,25 @@ fn sync_links_then_status_is_fresh_and_check_passes() {
     );
 
     env.cmd()
-        .arg("status")
+        .arg("skills")
         .assert()
         .success()
-        .stdout(contains("claude   FRESH"));
+        .stdout(contains("fresh"));
     env.cmd().args(["sync", "--check"]).assert().success();
 
-    let out = env.cmd().args(["status", "--json"]).output().unwrap();
+    let out = env.cmd().args(["skills", "--json"]).output().unwrap();
     let rows: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    let alpha_claude = rows
+    let alpha = rows["skills"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|r| r["skill"] == "alpha" && r["host"] == "claude")
+        .find(|r| r["name"] == "alpha")
         .unwrap();
-    assert_eq!(alpha_claude["status"], "FRESH");
-    assert_eq!(alpha_claude["mode"], "link");
-    assert_eq!(alpha_claude["link_kind"], LINK_KIND);
+    assert_eq!(alpha["status"]["claude"], "FRESH");
+    let state = env.state();
+    let record = state.get("alpha", "claude").unwrap();
+    assert_eq!(record.mode, InstallMode::Link);
+    assert_eq!(serde_json::to_value(record.link_kind).unwrap(), LINK_KIND);
 }
 
 #[test]
@@ -219,11 +222,14 @@ fn sync_quiet_prints_nothing_when_up_to_date() {
 }
 
 #[test]
-fn uninstall_removes_one_host_link_only() {
+fn sync_no_prune_keeps_disabled_links_until_the_host_is_reconciled() {
     let env = Env::new();
     env.cmd().args(["sync", "--yes"]).assert().success();
+    env.cmd().args(["disable", "alpha"]).assert().success();
+    env.cmd().args(["sync", "--no-prune"]).assert().success();
+    assert!(is_link(&env.host("claude").join("alpha")));
     env.cmd()
-        .args(["uninstall", "alpha", "--host", "claude"])
+        .args(["sync", "alpha", "--host", "claude"])
         .assert()
         .success()
         .stdout(contains("removed: alpha -> claude"));
@@ -233,20 +239,43 @@ fn uninstall_removes_one_host_link_only() {
 }
 
 #[test]
-fn uninstall_requires_a_skill() {
+fn removed_command_hint() {
     let env = Env::new();
-    env.cmd()
-        .arg("uninstall")
-        .assert()
-        .code(2)
-        .stderr(contains("uninstall requires a skill name"));
+    for (command, replacement) in [
+        ("install", "my-skills sync"),
+        ("uninstall", "my-skills disable <skill>"),
+        ("convert", "my-skills sync --mode <link|copy>"),
+    ] {
+        let removed = format!("'{command}' was removed in v1.5.0");
+        env.cmd()
+            .arg(command)
+            .assert()
+            .code(2)
+            .stderr(contains(&removed).and(contains(replacement)));
+        let out = env.cmd().args([command, "--json"]).assert().code(2);
+        let error: serde_json::Value = serde_json::from_slice(&out.get_output().stdout).unwrap();
+        assert_eq!(error["error"]["code"], "usage");
+        assert!(
+            error["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains(&removed)
+        );
+        assert!(
+            error["error"]["hint"]
+                .as_str()
+                .unwrap()
+                .contains("my-skills sync")
+        );
+    }
+    assert!(!env.state_path().exists());
 }
 
 #[test]
 fn copy_install_then_convert_to_link() {
     let env = Env::new();
     env.cmd()
-        .args(["install", "--mode", "copy", "--yes"])
+        .args(["sync", "--mode", "copy", "--yes"])
         .assert()
         .success()
         .stdout(contains("created: alpha -> claude"));
@@ -254,12 +283,12 @@ fn copy_install_then_convert_to_link() {
     assert!(copy.is_dir() && !is_link(&copy));
 
     env.cmd()
-        .args(["convert", "--to", "link", "--dry-run"])
+        .args(["sync", "--mode", "link", "--dry-run"])
         .assert()
         .success()
         .stdout(contains("CONVERT"));
     env.cmd()
-        .args(["convert", "--to", "link", "--yes"])
+        .args(["sync", "--mode", "link", "--yes"])
         .assert()
         .success()
         .stdout(contains(format!(
@@ -267,8 +296,9 @@ fn copy_install_then_convert_to_link() {
         )));
     assert!(is_link(&copy));
     env.cmd()
-        .arg("status")
+        .args(["sync", "--check"])
         .assert()
+        .success()
         .stdout(contains("claude   FRESH"));
 }
 
@@ -293,7 +323,7 @@ fn invalid_skill_blocks_install_without_writing() {
     let env = Env::new();
     fs::remove_file(env.root().join("skills/alpha/SKILL.md")).unwrap();
     env.cmd()
-        .args(["install", "alpha", "--host", "claude"])
+        .args(["sync", "alpha", "--host", "claude"])
         .assert()
         .code(1)
         .stdout(contains("[BLOCKED] alpha: validation failed"));
@@ -372,7 +402,7 @@ fn bootstrap_connects_enabled_skills() {
 
 fn assert_install_retries_after_state_save_failure(mode: &str, expected_mode: InstallMode) {
     let env = Env::new();
-    let args = ["install", "alpha", "--host", "claude", "--mode", mode];
+    let args = ["sync", "alpha", "--host", "claude", "--mode", mode];
     let host = env.host("claude");
     fs::create_dir_all(&host).unwrap();
     let dest = host.join("alpha");
@@ -416,7 +446,7 @@ fn copy_install_retries_after_state_save_failure() {
 fn copy_update_retries_after_state_save_failure() {
     let env = Env::new();
     env.cmd()
-        .args(["install", "alpha", "--host", "claude", "--mode", "copy"])
+        .args(["sync", "alpha", "--host", "claude", "--mode", "copy"])
         .assert()
         .success();
     let host = env.host("claude");
@@ -452,10 +482,10 @@ fn copy_update_retries_after_state_save_failure() {
 }
 
 #[test]
-fn link_uninstall_retries_after_state_save_failure() {
+fn link_prune_retries_after_state_save_failure() {
     let env = Env::new();
     env.cmd()
-        .args(["install", "alpha", "--host", "claude", "--mode", "link"])
+        .args(["sync", "alpha", "--host", "claude", "--mode", "link"])
         .assert()
         .success();
     let host = env.host("claude");
@@ -467,13 +497,14 @@ fn link_uninstall_retries_after_state_save_failure() {
     fs::rename(&source, &moved_source).unwrap();
     let old_kind = link::entry_kind(&dest).unwrap();
     let old_target = link::link_target(&dest).unwrap();
+    env.write_manifest(false);
     let blocker = env.block_state_save();
-    let args = ["uninstall", "alpha", "--host", "claude"];
+    let args = ["sync", "alpha", "--host", "claude"];
     env.cmd()
         .args(args)
         .assert()
-        .code(2)
-        .stderr(contains("error:").and(contains("state.json.tmp")));
+        .code(1)
+        .stdout(contains("FAILED: alpha -> claude (state:").and(contains("state.json.tmp")));
     assert_eq!(link::entry_kind(&dest).unwrap(), old_kind);
     assert_eq!(link::link_target(&dest).unwrap(), old_target);
     assert_eq!(fs::read(env.state_path()).unwrap(), old_state);
@@ -495,7 +526,7 @@ fn link_uninstall_retries_after_state_save_failure() {
 fn copy_prune_retries_after_state_save_failure() {
     let env = Env::new();
     env.cmd()
-        .args(["install", "alpha", "--host", "claude", "--mode", "copy"])
+        .args(["sync", "alpha", "--host", "claude", "--mode", "copy"])
         .assert()
         .success();
     let host = env.host("claude");
@@ -526,22 +557,23 @@ fn copy_prune_retries_after_state_save_failure() {
 }
 
 #[test]
-fn uninstall_retries_record_removal_when_host_entry_is_already_missing() {
+fn prune_retries_record_removal_when_host_entry_is_already_missing() {
     let env = Env::new();
     env.cmd()
-        .args(["install", "alpha", "--host", "claude", "--mode", "link"])
+        .args(["sync", "alpha", "--host", "claude", "--mode", "link"])
         .assert()
         .success();
     let dest = env.host("claude").join("alpha");
     link::remove_link(&dest).unwrap();
     let old_state = fs::read(env.state_path()).unwrap();
+    env.write_manifest(false);
     let blocker = env.block_state_save();
-    let args = ["uninstall", "alpha", "--host", "claude"];
+    let args = ["sync", "alpha", "--host", "claude"];
     env.cmd()
         .args(args)
         .assert()
-        .code(2)
-        .stderr(contains("error:").and(contains("state.json.tmp")));
+        .code(1)
+        .stdout(contains("FAILED: alpha -> claude (state:").and(contains("state.json.tmp")));
     assert_eq!(link::entry_kind(&dest).unwrap(), EntryKind::Missing);
     assert_eq!(fs::read(env.state_path()).unwrap(), old_state);
 
@@ -573,14 +605,14 @@ fn sync_check_reports_prune_drift() {
 fn convert_rolls_back_when_state_cannot_be_saved() {
     let env = Env::new();
     env.cmd()
-        .args(["install", "--mode", "copy", "--yes"])
+        .args(["sync", "--mode", "copy", "--yes"])
         .assert()
         .success();
     // A leftover temp file makes the state writer refuse to save.
     let tmp = env.tmp.path().join("state/my-skills/state.json.tmp");
     fs::write(&tmp, "busy").unwrap();
     env.cmd()
-        .args(["convert", "--to", "link", "alpha", "--host", "claude"])
+        .args(["sync", "--mode", "link", "alpha", "--host", "claude"])
         .assert()
         .code(1)
         .stdout(contains("FAILED: alpha -> claude"));
@@ -591,11 +623,12 @@ fn convert_rolls_back_when_state_cannot_be_saved() {
     );
     fs::remove_file(&tmp).unwrap();
     env.cmd()
-        .arg("status")
+        .args(["sync", "--check"])
         .assert()
+        .success()
         .stdout(contains("claude   FRESH"));
     env.cmd()
-        .args(["convert", "--to", "link", "alpha", "--host", "claude"])
+        .args(["sync", "--mode", "link", "alpha", "--host", "claude"])
         .assert()
         .success();
     assert!(is_link(&copy));
@@ -605,12 +638,12 @@ fn convert_rolls_back_when_state_cannot_be_saved() {
 fn convert_blocks_when_canonical_is_missing() {
     let env = Env::new();
     env.cmd()
-        .args(["install", "--mode", "copy", "--yes"])
+        .args(["sync", "--mode", "copy", "--yes"])
         .assert()
         .success();
     fs::remove_dir_all(env.root().join("skills/alpha")).unwrap();
     env.cmd()
-        .args(["convert", "--to", "link", "alpha", "--dry-run"])
+        .args(["sync", "--mode", "link", "--dry-run"])
         .assert()
         .success()
         .stdout(contains("BLOCK_DRIFT").and(contains("canonical skill directory is missing")));
@@ -643,7 +676,9 @@ fn bootstrap_dry_run_shows_mode_override() {
         .args(["bootstrap", "--dry-run", "--mode", "copy"])
         .assert()
         .success()
-        .stdout(contains("with install mode: copy"));
+        .stdout(contains(
+            "would run: my-skills sync --mode copy --yes --dry-run",
+        ));
 }
 
 #[test]
@@ -652,19 +687,20 @@ fn only_hosts_a_skill_connects_to_report_display_warnings() {
     // beta is claude-only, despite exceeding both measured display limits.
     env.write_skill("beta", &"x".repeat(2000));
     env.cmd()
-        .args(["install", "beta", "--host", "codex"])
+        .args(["sync", "beta", "--host", "codex"])
         .assert()
         .success()
-        .stdout(contains("skipped: beta -> codex").and(contains("shows a shortened").not()));
+        .stdout(predicate::str::is_empty());
+    assert!(!env.host("codex").join("beta").exists());
     env.cmd()
-        .args(["install", "beta", "--host", "claude"])
+        .args(["sync", "beta", "--host", "claude"])
         .assert()
         .success()
         .stdout(contains("Claude Code shows a shortened").and(contains("Codex").not()));
 }
 
 #[test]
-fn install_and_sync_respect_cli_target_defaults_precedence_and_keep_recorded_mode() {
+fn sync_respects_cli_target_and_defaults_precedence() {
     let env = Env::new();
     fs::write(
         env.root().join("my-skills.local.toml"),
@@ -693,7 +729,7 @@ fn install_and_sync_respect_cli_target_defaults_precedence_and_keep_recorded_mod
     // Without CLI --mode: agy uses target copy, others use default link.
     let out = env
         .cmd()
-        .args(["install", "--dry-run", "--json"])
+        .args(["sync", "--dry-run", "--json"])
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -712,7 +748,7 @@ fn install_and_sync_respect_cli_target_defaults_precedence_and_keep_recorded_mod
     // CLI --mode link overrides [targets.agy] install_mode = "copy".
     let out = env
         .cmd()
-        .args(["install", "--mode", "link", "--dry-run", "--json"])
+        .args(["sync", "--mode", "link", "--dry-run", "--json"])
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -731,7 +767,7 @@ fn install_and_sync_respect_cli_target_defaults_precedence_and_keep_recorded_mod
     // CLI --mode copy overrides [defaults] install_mode = "link".
     let out = env
         .cmd()
-        .args(["install", "--mode", "copy", "--dry-run", "--json"])
+        .args(["sync", "--mode", "copy", "--dry-run", "--json"])
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -753,102 +789,60 @@ fn install_and_sync_respect_cli_target_defaults_precedence_and_keep_recorded_mod
     assert!(is_link(&env.host("codex").join("alpha")));
     let agy_alpha = env.host("agy").join("alpha");
     assert!(agy_alpha.is_dir() && !is_link(&agy_alpha));
-
-    // Recorded connections retain their mode even if target config or CLI --mode changes.
-    fs::write(
-        env.root().join("my-skills.local.toml"),
-        "[defaults]\ninstall_mode = \"link\"\n\n[targets.agy]\ninstall_mode = \"link\"\n",
-    )
-    .unwrap();
-    env.cmd()
-        .args(["install", "alpha", "--host", "agy", "--mode", "link"])
-        .assert()
-        .success()
-        .stdout(contains("unchanged: alpha -> agy"));
-    assert!(agy_alpha.is_dir() && !is_link(&agy_alpha));
 }
 
 #[test]
-fn convert_host_all_skips_explicit_differing_target_mode_and_explicit_host_converts() {
+fn bare_sync_preserves_legacy_copies_under_the_default_link_mode() {
     let env = Env::new();
-    // Start with all connections in copy mode.
     env.cmd()
-        .args(["install", "--mode", "copy", "--yes"])
+        .args(["sync", "--mode", "copy", "--yes"])
         .assert()
         .success();
-    // Pin agy to copy mode in local overlay.
+    let state = env.state();
+    let record = state.get("alpha", "agy").unwrap();
+    assert_eq!(record.mode, InstallMode::Copy);
+    assert_eq!(record.fallback_reason, None);
+    let before = fs::read(env.state_path()).unwrap();
+
+    env.cmd()
+        .arg("sync")
+        .assert()
+        .success()
+        .stdout(contains("unchanged: alpha -> agy"));
+    env.cmd().args(["sync", "--check"]).assert().success();
+    assert_eq!(fs::read(env.state_path()).unwrap(), before);
+    assert_eq!(
+        link::entry_kind(&env.host("agy").join("alpha")).unwrap(),
+        EntryKind::Dir
+    );
+}
+
+#[test]
+fn explicit_sync_mode_overrides_the_target_mode_for_all_selected_hosts() {
+    let env = Env::new();
+    env.cmd()
+        .args(["sync", "--mode", "copy", "--yes"])
+        .assert()
+        .success();
     fs::write(
         env.root().join("my-skills.local.toml"),
-        "[targets.agy]\ninstall_mode = \"copy\"\n",
+        "[targets.agy]\ninstall_mode = 'copy'\n",
     )
     .unwrap();
 
-    // Dry run with --host all skips agy and prints the informational line.
-    let dry = env
-        .cmd()
-        .args(["convert", "--to", "link", "--host", "all", "--dry-run"])
-        .output()
-        .unwrap();
-    assert!(dry.status.success());
-    let dry_stdout = String::from_utf8_lossy(&dry.stdout);
-    assert!(
-        dry_stdout.contains("CONVERT          alpha -> claude"),
-        "{dry_stdout}"
-    );
-    assert!(
-        dry_stdout.contains("CONVERT          alpha -> codex"),
-        "{dry_stdout}"
-    );
-    assert!(
-        !dry_stdout.contains("CONVERT          alpha -> agy"),
-        "{dry_stdout}"
-    );
-    assert!(
-        dry_stdout.contains("skipped host agy ([targets.agy] install_mode = \"copy\")"),
-        "{dry_stdout}"
-    );
-
-    // Apply with --host all skips agy and converts claude and codex.
-    let apply = env
-        .cmd()
-        .args(["convert", "--to", "link", "--host", "all", "--yes"])
-        .output()
-        .unwrap();
-    assert!(apply.status.success());
-    let apply_stdout = String::from_utf8_lossy(&apply.stdout);
-    assert!(
-        apply_stdout.contains("skipped host agy ([targets.agy] install_mode = \"copy\")"),
-        "{apply_stdout}"
-    );
-    assert!(is_link(&env.host("claude").join("alpha")));
-    assert!(is_link(&env.host("codex").join("alpha")));
-    let agy_alpha = env.host("agy").join("alpha");
-    assert!(agy_alpha.is_dir() && !is_link(&agy_alpha));
-
-    // Omitting --host behaves the same as --host all.
     env.cmd()
-        .args(["convert", "--to", "link", "--dry-run"])
+        .args(["sync", "--mode", "link", "--host", "all", "--dry-run"])
         .assert()
         .success()
-        .stdout(contains(
-            "skipped host agy ([targets.agy] install_mode = \"copy\")",
-        ));
-
-    // Explicit --host agy converts agy as requested.
+        .stdout(contains("CONVERT          alpha -> agy"));
     env.cmd()
-        .args(["convert", "--to", "link", "--host", "agy", "--dry-run"])
+        .args(["sync", "--mode", "link", "--host", "all", "--yes"])
         .assert()
         .success()
-        .stdout(contains("CONVERT          alpha -> agy"))
-        .stdout(predicate::str::contains("skipped host agy").not());
-    env.cmd()
-        .args(["convert", "--to", "link", "--host", "agy"])
-        .assert()
-        .success()
-        .stdout(contains(format!(
-            "converted: alpha -> agy (link: {LINK_KIND})"
-        )));
-    assert!(is_link(&agy_alpha));
+        .stdout(contains("converted: alpha -> agy"));
+    for host in ["agy", "claude", "codex"] {
+        assert!(is_link(&env.host(host).join("alpha")));
+    }
 }
 
 #[test]
@@ -862,7 +856,7 @@ fn cli_target_link_overrides_defaults_copy() {
 
     let out = env
         .cmd()
-        .args(["install", "--dry-run", "--json"])
+        .args(["sync", "--dry-run", "--json"])
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -892,7 +886,7 @@ fn cli_target_link_overrides_defaults_copy() {
         "{value}"
     );
 
-    env.cmd().args(["install", "--yes"]).assert().success();
+    env.cmd().args(["sync", "--yes"]).assert().success();
     assert!(is_link(&env.host("claude").join("alpha")));
     assert!(is_link(&env.host("claude").join("beta")));
     let codex_alpha = env.host("codex").join("alpha");
@@ -902,65 +896,72 @@ fn cli_target_link_overrides_defaults_copy() {
 }
 
 #[test]
-fn convert_to_copy_host_all_skips_link_pinned_host() {
+fn agy_target_copy_converts_its_link_and_reports_the_change() {
+    for json in [false, true] {
+        let env = Env::new();
+        env.cmd().args(["sync", "--yes"]).assert().success();
+        fs::write(
+            env.root().join("my-skills.local.toml"),
+            "[targets.agy]\ninstall_mode = 'copy'\n",
+        )
+        .unwrap();
+        env.cmd()
+            .args(["sync", "--check"])
+            .assert()
+            .code(1)
+            .stdout(contains("  agy      CONVERT (link -> copy)"));
+        env.cmd()
+            .args(["sync", "--dry-run"])
+            .assert()
+            .success()
+            .stdout(contains("CONVERT          alpha -> agy"));
+        assert!(is_link(&env.host("agy").join("alpha")));
+
+        let mut cmd = env.cmd();
+        cmd.args(["sync", "--yes"]);
+        if json {
+            let output = cmd.arg("--json").assert().success();
+            let report: serde_json::Value =
+                serde_json::from_slice(&output.get_output().stdout).unwrap();
+            let row = report["actions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["host"] == "agy")
+                .unwrap();
+            assert_eq!(report["applied"], true);
+            assert_eq!(row["action"], "CONVERT");
+            assert_eq!(row["result"], "updated");
+            assert_eq!(row["mode"], "copy");
+            assert!(row["fallback_reason"].is_null());
+        } else {
+            cmd.assert()
+                .success()
+                .stdout(contains("converted: alpha -> agy"));
+        }
+        assert_eq!(
+            link::entry_kind(&env.host("agy").join("alpha")).unwrap(),
+            EntryKind::Dir
+        );
+        assert!(is_link(&env.host("claude").join("alpha")));
+        env.cmd().args(["sync", "--check"]).assert().success();
+    }
+}
+
+#[test]
+fn bootstrap_mode_converts_an_existing_connection() {
     let env = Env::new();
-    env.cmd().args(["sync", "--yes"]).assert().success();
-    fs::write(
-        env.root().join("my-skills.local.toml"),
-        "[targets.claude]\ninstall_mode = \"link\"\n",
-    )
-    .unwrap();
-
-    // Dry run with --to copy --host all skips claude and plans codex/agy.
-    let dry = env
-        .cmd()
-        .args(["convert", "--to", "copy", "--host", "all", "--dry-run"])
-        .output()
-        .unwrap();
-    assert!(dry.status.success());
-    let dry_stdout = String::from_utf8_lossy(&dry.stdout);
-    assert!(
-        dry_stdout.contains("CONVERT          alpha -> codex"),
-        "{dry_stdout}"
-    );
-    assert!(
-        dry_stdout.contains("CONVERT          alpha -> agy"),
-        "{dry_stdout}"
-    );
-    assert!(
-        !dry_stdout.contains("CONVERT          alpha -> claude"),
-        "{dry_stdout}"
-    );
-    assert!(
-        dry_stdout.contains("skipped host claude ([targets.claude] install_mode = \"link\")"),
-        "{dry_stdout}"
-    );
-
-    // Apply with --to copy --host all converts codex/agy and leaves claude linked.
-    let apply = env
-        .cmd()
-        .args(["convert", "--to", "copy", "--host", "all", "--yes"])
-        .output()
-        .unwrap();
-    assert!(apply.status.success());
-    let apply_stdout = String::from_utf8_lossy(&apply.stdout);
-    assert!(
-        apply_stdout.contains("skipped host claude ([targets.claude] install_mode = \"link\")"),
-        "{apply_stdout}"
-    );
-    assert!(is_link(&env.host("claude").join("alpha")));
-    let codex_alpha = env.host("codex").join("alpha");
-    let agy_alpha = env.host("agy").join("alpha");
-    assert!(codex_alpha.is_dir() && !is_link(&codex_alpha));
-    assert!(agy_alpha.is_dir() && !is_link(&agy_alpha));
-
-    // Explicit --host claude still converts claude to copy.
+    env.cmd().args(["sync", "--host", "agy"]).assert().success();
     env.cmd()
-        .args(["convert", "--to", "copy", "--host", "claude"])
+        .args(["bootstrap", "--host", "agy", "--mode", "copy", "--no-hooks"])
         .assert()
         .success()
-        .stdout(contains("converted: alpha -> claude"))
-        .stdout(predicate::str::contains("skipped host claude").not());
-    let claude_alpha = env.host("claude").join("alpha");
-    assert!(claude_alpha.is_dir() && !is_link(&claude_alpha));
+        .stdout(contains("converted: alpha -> agy"));
+    let dest = env.host("agy").join("alpha");
+    assert_eq!(link::entry_kind(&dest).unwrap(), EntryKind::Dir);
+    env.cmd()
+        .args(["sync", "--host", "agy"])
+        .assert()
+        .success()
+        .stdout(contains("unchanged: alpha -> agy"));
 }

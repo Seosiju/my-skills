@@ -193,10 +193,10 @@ fn hooks_uninstall_dry_run_keeps_hooks() {
 }
 
 #[test]
-fn share_dry_run_is_a_plan() {
+fn import_from_host_dry_run_is_a_plan() {
     let env = Env::new();
     env.cmd()
-        .args(["share", "--from", "claude", "--dry-run", "--json"])
+        .args(["import", "--from", "claude", "--dry-run", "--json"])
         .assert()
         .success();
     assert_eq!(
@@ -223,14 +223,13 @@ fn dry_run_from_cwd_without_env_or_cache_leaves_config_home_empty() {
     let incoming_str = incoming.display().to_string();
 
     let manifest_dry_runs: &[&[&str]] = &[
-        &["install", "--dry-run"],
         &["sync", "--dry-run"],
-        &["uninstall", "alpha", "--dry-run"],
-        &["convert", "--to", "copy", "--dry-run"],
+        &["sync", "alpha", "--no-prune", "--dry-run"],
+        &["sync", "--mode", "copy", "--dry-run"],
         &["enable", "alpha", "--dry-run"],
         &["disable", "alpha", "--dry-run"],
         &["import", &incoming_str, "--dry-run"],
-        &["share", "--from", "claude", "--dry-run"],
+        &["import", "--from", "claude", "--dry-run"],
     ];
 
     for args in manifest_dry_runs {
@@ -265,8 +264,8 @@ fn dry_run_from_cwd_without_env_or_cache_leaves_config_home_empty() {
     }
 
     for args in [
-        &["install", "--dry-run", "--json"][..],
-        &["share", "--from", "claude", "--dry-run", "--json"][..],
+        &["sync", "--dry-run", "--json"][..],
+        &["import", "--from", "claude", "--dry-run", "--json"][..],
     ] {
         let out = env
             .cmd_in_registry_without_env()
@@ -316,7 +315,7 @@ fn dry_run_does_not_preview_or_repoint_when_cache_already_exists() {
 
     let out = env
         .cmd_in_registry_without_env()
-        .args(["install", "--dry-run"])
+        .args(["sync", "--dry-run"])
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -334,14 +333,7 @@ fn dry_run_does_not_preview_or_repoint_when_cache_already_exists() {
 
     let json_out = env
         .cmd_in_registry_without_env()
-        .args([
-            "install",
-            "alpha",
-            "--host",
-            "claude",
-            "--dry-run",
-            "--json",
-        ])
+        .args(["sync", "alpha", "--host", "claude", "--dry-run", "--json"])
         .output()
         .unwrap();
     let json_stdout = String::from_utf8_lossy(&json_out.stdout);
@@ -366,7 +358,7 @@ fn real_command_from_cwd_writes_root_cache_and_never_repoints_existing_cache() {
     let expected_root = env.root().canonicalize().unwrap();
 
     env.cmd_in_registry_without_env()
-        .args(["install", "alpha", "--host", "claude"])
+        .args(["sync", "alpha", "--host", "claude"])
         .assert()
         .success();
     let cached = fs::read_to_string(env.root_cache()).unwrap();
@@ -379,7 +371,7 @@ fn real_command_from_cwd_writes_root_cache_and_never_repoints_existing_cache() {
     env.cmd()
         .current_dir(&other)
         .env_remove("MY_SKILLS_ROOT")
-        .arg("status")
+        .arg("skills")
         .assert()
         .success()
         .stderr(contains("note: using ./my-skills.toml for this command"));
