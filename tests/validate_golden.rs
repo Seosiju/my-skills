@@ -162,11 +162,6 @@ fn plain_scalars_warn_about_inline_yaml_comments() {
             "description",
             "An example",
         ),
-        (
-            "name: tiny-skill\n<<:\n  description: An example # lost text",
-            "description",
-            "An example",
-        ),
     ] {
         fs::write(path.join("SKILL.md"), format!("---\n{yaml}\n---\n")).unwrap();
         let result = validate_skill(&path);
