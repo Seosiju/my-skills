@@ -1,74 +1,40 @@
-# Hosts, Install Modes, And Antigravity CLI (agy)
+# Host Connections
 
-## Link vs copy and `install_mode` precedence
+| Host | Default user skill directory |
+| --- | --- |
+| Claude Code | `~/.claude/skills` |
+| Codex | `~/.agents/skills` |
+| Antigravity CLI (`agy`) | `~/.gemini/config/skills` |
 
-Host directories are `~/.claude/skills` (Claude Code), `~/.agents/skills`
-(Codex), and `~/.gemini/config/skills` (Antigravity CLI). New registries use
-links by default so edits to canonical skills are visible immediately. In copy
-mode, the CLI detects local changes before replacing a copy.
+Links point to the canonical files and expose edits immediately. Copy mode tracks
+changes on both sides and protects local edits. Set `install_mode = "link"` or
+`"copy"` under `[targets.<host>]` in `my-skills.toml` or `my-skills.local.toml`.
+New connections use `sync --mode`, then the configured target mode, then the default.
 
-You can set `install_mode = "link" | "copy"` per host under `[targets.<host>]`
-in `my-skills.toml` or `my-skills.local.toml`. Precedence for new connections:
+A configured copy mode can move a clean link to copy on sync. A copy moves to
+link with `sync --mode link` or an explicit target link setting for a
+non-fallback copy. Fallback copies keep refreshing as copies on bare sync.
+Retry with `my-skills sync --host <host> --mode link` when link support becomes available.
+Scope `--mode link` or `--mode copy` with `--host <host>` because it applies to every selected host, including Windows agy configured for copy.
 
-1. `install --mode`
-2. `[targets.<host>] install_mode`
-3. `[defaults] install_mode`
+## Antigravity CLI on Windows
 
-Existing connections keep their recorded mode until converted with `convert`.
-Copy installs, refreshes, fallbacks, and `convert --to copy` validate
-and stage from one check snapshot per skill (so a canonical edit after checking
-leaves the installed copy `STALE`), and updates/conversions re-hash the host
-copy right before replacing it so a late host edit returns `CONFLICT` instead of
-being overwritten. Both real and `--dry-run` `convert --to copy` enforce the
-validation checks before replacing a link. If multiple hosts share the
-same physical destination path, select every sharing host (or omit `--host`)
-for `update`, `convert`, or `uninstall`; single-host writes there block with
-`SHARED_DESTINATION` (exit `1`).
+AGY is opt-in for new registries. Set `enabled = true` under `[targets.agy]`
+and include `agy` in the skill's hosts for default cross-host delivery.
+Windows junctions may be invisible to the CLI. Merge this into
+`my-skills.local.toml`.
 
-## Quick host diagnostics
-
-Run `my-skills doctor --quick --json` to see the registry, host settings,
-catalog description costs, and connection counts. Quick mode skips the update
-lookup, Git and hook diagnostics, full validation, and the link probe.
-
-Text output includes a `Catalog:` summary line per enabled host, and JSON adds
-`catalog: {skills, description_chars, longest, invalid}` to each enabled host
-row (omitted when disabled or without a loaded manifest). Each `hosts` row
-reports `configured_mode` (`link` or `copy` for new connections, or `null` when
-the manifest is unavailable). The `connections` counts cover records owned by
-the displayed registry. A copy fallback is included in both the `copy` and
-`fallback` counts. For full local diagnostics without the update lookup, use
-`--no-update-check` or `MY_SKILLS_NO_UPDATE_CHECK=1`.
-
-After adding or changing skills, start a new host session if needed: Claude Code
-picks up skills on restart, Codex detects changes automatically (restart if
-needed), and Antigravity CLI requires a new session and `/skills`.
-
-## Antigravity CLI (agy)
-
-AGY is a supported, opt-in host. Set `enabled = true` under `[targets.agy]` and
-include `agy` in the desired skill's `hosts` list to add it to default
-cross-host operations. An omitted target is disabled; an explicit `--host agy`
-still selects it, following the same explicit-host rules as other agents.
-
-- **Paths:** user-scope `~/.gemini/config/skills`; project-scope `.agents/skills`.
-- **Platform notes:** copy and symlink discovery were verified on macOS with
-  Antigravity CLI `1.2.16`. On Windows, `my-skills` links with junctions by
-  default, which Antigravity CLI `1.5.14` did not discover; Windows users can
-  set `[targets.agy] install_mode = "copy"` in `my-skills.local.toml` so `agy`
-  uses copies while other hosts keep links (`convert --to link --host all` skips
-  `agy` automatically, while `--host agy` still converts as requested). This
-  does not establish Antigravity IDE or other-version compatibility.
-- **Verify discovery:** after installation, start a new CLI session and use
-  `/skills` to check discovery (on Windows, run
-  `agy -p '/skills' --output-format json` from PowerShell rather than Git Bash,
-  which rewrites `/skills` into a Windows path):
-
-```bash
-my-skills install <skill> --host agy --dry-run --json
-my-skills skills --host agy --json
-agy -p '/skills' --output-format json
+```toml
+[targets.agy]
+install_mode = "copy"
 ```
 
-Preserve unmanaged AGY skills: compare and back them up outside its discovery
-path before migration. Confirm before forcing replacement.
+Run `my-skills sync --host agy --dry-run --json`, then
+`my-skills sync --host agy` after reviewing the plan.
+Check discovery from PowerShell with `agy -p '/skills'` because Git Bash rewrites `/skills` as a filesystem path.
+
+## Diagnose
+
+`my-skills doctor --quick --json` shows registry selection, host settings,
+catalog description counts, and connection counts. For complete local
+diagnostics without checking for an update, run `my-skills doctor --no-update-check`.
