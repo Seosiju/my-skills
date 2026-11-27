@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 This project follows a GitHub-first release flow. Git tags and GitHub Releases
 are the release source of truth while PyPI publishing remains undecided.
 
+## [1.5.0] - 2026-11-27
+
+### Changed
+
+- **15-command CLI surface (21 → 15):**
+  - Unified `install`, `uninstall`, and `convert` into `sync`. `sync` now handles creates, updates, prunes, and mode conversions (`--mode link|copy`). Existing clean `link` connections automatically convert to `copy` when the effective mode is `copy`; existing clean `copy` connections convert to `link` when `--mode link` is passed or when `[targets.<host>] install_mode = "link"` is explicitly configured and the copy has no `fallback_reason` (preserving legacy `v1.4.x` copies and fallback copies under default `link` mode).
+  - Updating a copy preserves its `fallback_reason`; a `copy` → `link` conversion that cannot create a link keeps the copy, records `fallback_reason`, and exits `0`. Shared-destination mode conflicts isolate only the conflicting group. `sync --check` now also reports pending `CONVERT` and `BLOCKED` entries.
+  - Unified `share` into `import --from <host> [skill]` (`--plan`, `--enable`/`--disable`, `--force`, `--dry-run`, `--json`). Directory imports (`import <path>`) also support `--json` and `--disable`. `import --dry-run` stages snapshots in the OS temp directory instead of writing inside the registry.
+  - Unified `status` into `skills`. Non-brief `skills --json` adds per-host `connections` (`{mode, link_kind, fallback_reason}`). Selection continues to intersect positional `SKILL...` names with `--group`, `--host`, and `--enabled`/`--disabled`.
+  - Kept `diff` (including `--patch` and `--json`) for inspecting copy-mode drift.
+- **YAML 1.2 frontmatter parser (`src/check/frontmatter.rs`):** Replaced the 1,444-line PyYAML 1.1 emulator with an iterative `yaml_rust2::parser::Parser` YAML 1.2 parser while keeping all measured 3-host (`claude`, `codex`, `agy`) display checks intact. YAML 1.2 scalars now format naturally in catalog JSON (for example `false` as `"false"`, `0123` as `"0123"`, `null` as `"null"`).
+- **Leaner seed skill, hub check, and test layout:**
+  - Compressed the bundled `my-skills` seed skill (`SKILL.md` to 55 lines + 3 reference docs: `setup.md`, `commands.md`, `hosts.md`).
+  - Slimmed `scripts/hub-check.py` from 1,942 to 899 lines while preserving full live verification across Claude Code, Codex, and Antigravity CLI.
+  - Consolidated 38 integration test files into 10 domain suites + `tests/common/mod.rs` with zero lost test scenarios.
+- **Upgrade note:** Existing registries keep their own copy of `skills/my-skills/`. Refresh that copy after upgrading if you want agents to follow the v1.5.0 15-command workflow instead of removed commands.
+
+### Removed
+
+- Removed 6 redundant subcommands: `install`, `uninstall`, `convert`, `status`, `share`, and `resolve`. Invoking any of them exits `2` with a migration hint pointing to its replacement.
+- Removed legacy flags `--with-governance` / `--with-status` from `skills` and `--skip-tool-install` from `bootstrap`.
+- Removed the legacy `Python:` / `"python"` field from `doctor` output.
+
 ## [1.4.2] - 2026-11-26
 
 ### Fixed

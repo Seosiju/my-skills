@@ -34,8 +34,8 @@ and isolate config, state, and data directories from your own.
 cargo run -- doctor --no-update-check
 cargo run -- skills --json
 cargo run -- bootstrap --dry-run
-cargo run -- install my-skills --host codex --dry-run
-cargo run -- install my-skills --host agy --dry-run
+cargo run -- sync my-skills --host codex --dry-run
+cargo run -- sync my-skills --host agy --dry-run
 ```
 
 Verify a manifest without `targets.agy` keeps AGY disabled and leaves it out of

@@ -19,7 +19,7 @@ Keep account settings and secrets under `my-skills data-path <name>`.
 ## Everyday work
 
 - List skills and host states with `my-skills skills [name...] --json`.
-  `fresh` means current, `stale` needs a refresh, `drifted` means locally edited, `foreign` means owned by another registry, `missing` means the connection is absent, and `-` means the host is excluded.
+  Statuses are uppercase in JSON: `FRESH` (current), `STALE` (needs refresh), `DRIFTED` (locally edited), `CONFLICT` (both sides edited), `FOREIGN` (another registry), `MISSING` (not connected), and `UNSUPPORTED` (excluded; `-` in tables).
 - Create a disabled draft with `my-skills new <name> [--host <host>]`, or use
   `my-skills import <directory>` for an existing skill.
 - Find host-local candidates with `my-skills import --from <host> --plan --json`.
