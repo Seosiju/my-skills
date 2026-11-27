@@ -37,15 +37,14 @@ macro_rules! seed_file {
 
 // Match the Python 0.4.x wheel's force-include list. Embedding the entire skills/ tree
 // would put untracked machine-local files into the binary.
-const SEED_FILES: [File<'static>; 10] = [
+const SEED_FILES: [File<'static>; 9] = [
     seed_file!("cli-inventory/SKILL.md"),
     seed_file!("cli-inventory/references/inventory-schema.md"),
     seed_file!("cli-inventory/scripts/scan_tools.py"),
     seed_file!("my-skills/SKILL.md"),
+    seed_file!("my-skills/references/commands.md"),
     seed_file!("my-skills/references/hosts.md"),
-    seed_file!("my-skills/references/json-and-dry-run.md"),
     seed_file!("my-skills/references/setup.md"),
-    seed_file!("my-skills/references/sharing.md"),
     seed_file!("my-jira/SKILL.md"),
     seed_file!("my-jira/config.example.json"),
 ];
