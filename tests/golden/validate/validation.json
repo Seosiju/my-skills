@@ -1,42 +1,4 @@
 {
-  "0o123": {
-    "agy": {
-      "errors": [],
-      "warnings": []
-    },
-    "claude": {
-      "errors": [],
-      "warnings": []
-    },
-    "codex": {
-      "errors": [],
-      "warnings": []
-    },
-    "standard": {
-      "errors": [],
-      "warnings": []
-    }
-  },
-  "83": {
-    "agy": {
-      "errors": [],
-      "warnings": []
-    },
-    "claude": {
-      "errors": [],
-      "warnings": []
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "Codex lists this skill as \"0123\" using the YAML name. The folder is \"83\" and the YAML name is \"0123\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": []
-    }
-  },
   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
     "agy": {
       "errors": [],
@@ -127,35 +89,6 @@
       "warnings": []
     }
   },
-  "bad-escape": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a double-quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"oops\\q\"\n                 ^\nfound unknown escape character 'q'\n  in \"<unicode string>\", line 2, column 20:\n    description: \"oops\\q\"\n                       ^",
-        "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a double-quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"oops\\q\"\n                 ^\nfound unknown escape character 'q'\n  in \"<unicode string>\", line 2, column 20:\n    description: \"oops\\q\"\n                       ^",
-        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a double-quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"oops\\q\"\n                 ^\nfound unknown escape character 'q'\n  in \"<unicode string>\", line 2, column 20:\n    description: \"oops\\q\"\n                       ^",
-        "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a double-quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"oops\\q\"\n                 ^\nfound unknown escape character 'q'\n  in \"<unicode string>\", line 2, column 20:\n    description: \"oops\\q\"\n                       ^"
-      ]
-    }
-  },
   "bad-name": {
     "agy": {
       "errors": [],
@@ -173,54 +106,6 @@
       "errors": [],
       "warnings": [
         "Codex lists this skill as \"Bad--Name\" using the YAML name. The folder is \"bad-name\" and the YAML name is \"Bad--Name\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": []
-    }
-  },
-  "big-integer": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "Antigravity CLI lists this skill as \"295147905179352825856\" using the YAML name. The folder is \"big-integer\" and the YAML name is \"295147905179352825856\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "Claude Code lists this skill as \"big-integer\" using the folder name. The folder is \"big-integer\" and the YAML name is \"295147905179352825856\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "Codex lists this skill as \"0x10_0000_0000_0000_0000\" using the YAML name. The folder is \"big-integer\" and the YAML name is \"0x10_0000_0000_0000_0000\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": []
-    }
-  },
-  "binary-name": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "Antigravity CLI lists this skill as \"b\\\"Hi'\\\\\\\\u\\\\x00\\\\xc3\\\\xa9\\\"\" using the YAML name. The folder is \"binary-name\" and the YAML name is \"b\\\"Hi'\\\\\\\\u\\\\x00\\\\xc3\\\\xa9\\\"\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "Claude Code lists this skill as \"binary-name\" using the folder name. The folder is \"binary-name\" and the YAML name is \"b\\\"Hi'\\\\\\\\u\\\\x00\\\\xc3\\\\xa9\\\"\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "Codex lists this skill as \"SGknXHUAw6k=\" using the YAML name. The folder is \"binary-name\" and the YAML name is \"SGknXHUAw6k=\". If you want the same name across services, make the two names match."
       ]
     },
     "standard": {
@@ -246,218 +131,6 @@
       "warnings": []
     }
   },
-  "bool-false": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "The YAML description is a non-text scalar. How Antigravity CLI displays it may vary. If you want a text description, put the value in quotes."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "Claude Code uses the first body line as the description because the YAML description is missing or empty. If you want a custom description, add one to the YAML frontmatter."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "Codex lists this skill as \"no\" using the YAML name. The folder is \"bool-false\" and the YAML name is \"no\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": []
-    }
-  },
-  "bool-true": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "Antigravity CLI lists this skill as \"True\" using the YAML name. The folder is \"bool-true\" and the YAML name is \"True\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "Claude Code lists this skill as \"bool-true\" using the folder name. The folder is \"bool-true\" and the YAML name is \"True\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "Codex lists this skill as \"YES\" using the YAML name. The folder is \"bool-true\" and the YAML name is \"YES\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": []
-    }
-  },
-  "boolean-frontmatter": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got bool",
-        "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got bool",
-        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got bool",
-        "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got bool"
-      ]
-    }
-  },
-  "date-frontmatter": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got date",
-        "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got date",
-        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got date",
-        "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got date"
-      ]
-    }
-  },
-  "date-name": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "Antigravity CLI lists this skill as \"2020-01-02\" using the YAML name. The folder is \"date-name\" and the YAML name is \"2020-01-02\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "Claude Code lists this skill as \"date-name\" using the folder name. The folder is \"date-name\" and the YAML name is \"2020-01-02\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "Codex lists this skill as \"2020-01-02\" using the YAML name. The folder is \"date-name\" and the YAML name is \"2020-01-02\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": []
-    }
-  },
-  "datetime-frontmatter": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got datetime",
-        "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got datetime",
-        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got datetime",
-        "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got datetime"
-      ]
-    }
-  },
-  "datetime-name": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "Antigravity CLI lists this skill as \"2020-01-02 03:04:05.120000-04:30\" using the YAML name. The folder is \"datetime-name\" and the YAML name is \"2020-01-02 03:04:05.120000-04:30\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "Claude Code lists this skill as \"datetime-name\" using the folder name. The folder is \"datetime-name\" and the YAML name is \"2020-01-02 03:04:05.120000-04:30\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "Codex lists this skill as \"2020-1-2t3:04:05.12-4:30\" using the YAML name. The folder is \"datetime-name\" and the YAML name is \"2020-1-2t3:04:05.12-4:30\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": []
-    }
-  },
-  "duplicate-anchor": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: found duplicate anchor 'meta'; first occurrence\n  in \"<unicode string>\", line 1, column 7:\n    name: &meta duplicate-anchor\n          ^\nsecond occurrence\n  in \"<unicode string>\", line 2, column 14:\n    description: &meta test\n                 ^",
-        "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: found duplicate anchor 'meta'; first occurrence\n  in \"<unicode string>\", line 1, column 7:\n    name: &meta duplicate-anchor\n          ^\nsecond occurrence\n  in \"<unicode string>\", line 2, column 14:\n    description: &meta test\n                 ^",
-        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: found duplicate anchor 'meta'; first occurrence\n  in \"<unicode string>\", line 1, column 7:\n    name: &meta duplicate-anchor\n          ^\nsecond occurrence\n  in \"<unicode string>\", line 2, column 14:\n    description: &meta test\n                 ^",
-        "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: found duplicate anchor 'meta'; first occurrence\n  in \"<unicode string>\", line 1, column 7:\n    name: &meta duplicate-anchor\n          ^\nsecond occurrence\n  in \"<unicode string>\", line 2, column 14:\n    description: &meta test\n                 ^"
-      ]
-    }
-  },
   "duplicates": {
     "agy": {
       "errors": [],
@@ -480,12 +153,14 @@
     "agy": {
       "errors": [],
       "warnings": [
+        "Antigravity CLI lists this skill as \"off\" using the YAML name. The folder is \"duplicates-invalid\" and the YAML name is \"off\". If you want the same name across services, make the two names match.",
         "Antigravity CLI shows an empty description because the YAML description is missing or empty. If you want a custom description, add one to the YAML frontmatter."
       ]
     },
     "claude": {
       "errors": [],
       "warnings": [
+        "Claude Code lists this skill as \"duplicates-invalid\" using the folder name. The folder is \"duplicates-invalid\" and the YAML name is \"off\". If you want the same name across services, make the two names match.",
         "Claude Code uses the first body line as the description because the YAML description is missing or empty. If you want a custom description, add one to the YAML frontmatter."
       ]
     },
@@ -655,119 +330,32 @@
       "warnings": []
     }
   },
-  "invalid-block-scalar": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a block scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: |bogus\n                 ^\nexpected chomping or indentation indicators, but found 'b'\n  in \"<unicode string>\", line 2, column 15:\n    description: |bogus\n                  ^",
-        "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a block scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: |bogus\n                 ^\nexpected chomping or indentation indicators, but found 'b'\n  in \"<unicode string>\", line 2, column 15:\n    description: |bogus\n                  ^",
-        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a block scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: |bogus\n                 ^\nexpected chomping or indentation indicators, but found 'b'\n  in \"<unicode string>\", line 2, column 15:\n    description: |bogus\n                  ^",
-        "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a block scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: |bogus\n                 ^\nexpected chomping or indentation indicators, but found 'b'\n  in \"<unicode string>\", line 2, column 15:\n    description: |bogus\n                  ^"
-      ]
-    }
-  },
-  "invalid-hex-escape": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a double-quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"bad\\u12z9\"\n                 ^\nexpected escape sequence of 4 hexadecimal numbers, but found 'z'\n  in \"<unicode string>\", line 2, column 20:\n    description: \"bad\\u12z9\"\n                       ^",
-        "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a double-quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"bad\\u12z9\"\n                 ^\nexpected escape sequence of 4 hexadecimal numbers, but found 'z'\n  in \"<unicode string>\", line 2, column 20:\n    description: \"bad\\u12z9\"\n                       ^",
-        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a double-quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"bad\\u12z9\"\n                 ^\nexpected escape sequence of 4 hexadecimal numbers, but found 'z'\n  in \"<unicode string>\", line 2, column 20:\n    description: \"bad\\u12z9\"\n                       ^",
-        "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a double-quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"bad\\u12z9\"\n                 ^\nexpected escape sequence of 4 hexadecimal numbers, but found 'z'\n  in \"<unicode string>\", line 2, column 20:\n    description: \"bad\\u12z9\"\n                       ^"
-      ]
-    }
-  },
   "invalid-indentation": {
     "agy": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a block mapping\n  in \"<unicode string>\", line 1, column 1:\n    name: invalid-indentation\n    ^\nexpected <block end>, but found '<block mapping start>'\n  in \"<unicode string>\", line 3, column 3:\n      extra: x\n      ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a block mapping, did not find expected key at byte 50 line 3 column 8",
         "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
       ]
     },
     "claude": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a block mapping\n  in \"<unicode string>\", line 1, column 1:\n    name: invalid-indentation\n    ^\nexpected <block end>, but found '<block mapping start>'\n  in \"<unicode string>\", line 3, column 3:\n      extra: x\n      ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a block mapping, did not find expected key at byte 50 line 3 column 8",
         "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a block mapping\n  in \"<unicode string>\", line 1, column 1:\n    name: invalid-indentation\n    ^\nexpected <block end>, but found '<block mapping start>'\n  in \"<unicode string>\", line 3, column 3:\n      extra: x\n      ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a block mapping, did not find expected key at byte 50 line 3 column 8",
         "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
       ]
     },
     "standard": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a block mapping\n  in \"<unicode string>\", line 1, column 1:\n    name: invalid-indentation\n    ^\nexpected <block end>, but found '<block mapping start>'\n  in \"<unicode string>\", line 3, column 3:\n      extra: x\n      ^"
-      ]
-    }
-  },
-  "invalid-merge": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while constructing a mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {<<: [x]}\n                 ^\nexpected a mapping for merging, but found scalar\n  in \"<unicode string>\", line 2, column 20:\n    description: {<<: [x]}\n                       ^",
-        "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while constructing a mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {<<: [x]}\n                 ^\nexpected a mapping for merging, but found scalar\n  in \"<unicode string>\", line 2, column 20:\n    description: {<<: [x]}\n                       ^",
-        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while constructing a mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {<<: [x]}\n                 ^\nexpected a mapping for merging, but found scalar\n  in \"<unicode string>\", line 2, column 20:\n    description: {<<: [x]}\n                       ^",
-        "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while constructing a mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {<<: [x]}\n                 ^\nexpected a mapping for merging, but found scalar\n  in \"<unicode string>\", line 2, column 20:\n    description: {<<: [x]}\n                       ^"
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a block mapping, did not find expected key at byte 50 line 3 column 8"
       ]
     }
   },
@@ -775,28 +363,28 @@
     "agy": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning for the next token\nfound character '@' that cannot start any token\n  in \"<unicode string>\", line 2, column 14:\n    description: @oops\n                 ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: unexpected character: `@' at byte 33 line 2 column 14",
         "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
       ]
     },
     "claude": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning for the next token\nfound character '@' that cannot start any token\n  in \"<unicode string>\", line 2, column 14:\n    description: @oops\n                 ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: unexpected character: `@' at byte 33 line 2 column 14",
         "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning for the next token\nfound character '@' that cannot start any token\n  in \"<unicode string>\", line 2, column 14:\n    description: @oops\n                 ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: unexpected character: `@' at byte 33 line 2 column 14",
         "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
       ]
     },
     "standard": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning for the next token\nfound character '@' that cannot start any token\n  in \"<unicode string>\", line 2, column 14:\n    description: @oops\n                 ^"
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: unexpected character: `@' at byte 33 line 2 column 14"
       ]
     }
   },
@@ -870,28 +458,28 @@
     "agy": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"oops\n                 ^\nfound unexpected end of stream\n  in \"<unicode string>\", line 2, column 19:\n    description: \"oops\n                      ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a quoted scalar, found unexpected end of stream at byte 41 line 2 column 14",
         "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
       ]
     },
     "claude": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"oops\n                 ^\nfound unexpected end of stream\n  in \"<unicode string>\", line 2, column 19:\n    description: \"oops\n                      ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a quoted scalar, found unexpected end of stream at byte 41 line 2 column 14",
         "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"oops\n                 ^\nfound unexpected end of stream\n  in \"<unicode string>\", line 2, column 19:\n    description: \"oops\n                      ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a quoted scalar, found unexpected end of stream at byte 41 line 2 column 14",
         "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
       ]
     },
     "standard": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"oops\n                 ^\nfound unexpected end of stream\n  in \"<unicode string>\", line 2, column 19:\n    description: \"oops\n                      ^"
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a quoted scalar, found unexpected end of stream at byte 41 line 2 column 14"
       ]
     }
   },
@@ -899,81 +487,28 @@
     "agy": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: mapping values are not allowed here\n  in \"<unicode string>\", line 2, column 17:\n    description: key: value\n                    ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: mapping values are not allowed in this context at byte 37 line 2 column 17",
         "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
       ]
     },
     "claude": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: mapping values are not allowed here\n  in \"<unicode string>\", line 2, column 17:\n    description: key: value\n                    ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: mapping values are not allowed in this context at byte 37 line 2 column 17",
         "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: mapping values are not allowed here\n  in \"<unicode string>\", line 2, column 17:\n    description: key: value\n                    ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: mapping values are not allowed in this context at byte 37 line 2 column 17",
         "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
       ]
     },
     "standard": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: mapping values are not allowed here\n  in \"<unicode string>\", line 2, column 17:\n    description: key: value\n                    ^"
-      ]
-    }
-  },
-  "merged": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "Antigravity CLI ignores these YAML fields: first, second. If you want Antigravity CLI to see that information, put it in a supported field or the skill body."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "Claude Code ignores these YAML fields: first, second. If you want Claude Code to see that information, put it in a supported field or the skill body."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "Codex ignores these YAML fields: first, second. If you want Codex to see that information, put it in a supported field or the skill body."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": []
-    }
-  },
-  "missing-alias": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: found undefined alias 'unknown'\n  in \"<unicode string>\", line 2, column 14:\n    description: *unknown\n                 ^",
-        "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: found undefined alias 'unknown'\n  in \"<unicode string>\", line 2, column 14:\n    description: *unknown\n                 ^",
-        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: found undefined alias 'unknown'\n  in \"<unicode string>\", line 2, column 14:\n    description: *unknown\n                 ^",
-        "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: found undefined alias 'unknown'\n  in \"<unicode string>\", line 2, column 14:\n    description: *unknown\n                 ^"
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: mapping values are not allowed in this context at byte 37 line 2 column 17"
       ]
     }
   },
@@ -981,28 +516,28 @@
     "agy": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a simple key\n  in \"<unicode string>\", line 2, column 1:\n    description\n    ^\ncould not find expected ':'\n  in \"<unicode string>\", line 2, column 12:\n    description\n               ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: simple key expected at byte 31 line 3 column 1",
         "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
       ]
     },
     "claude": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a simple key\n  in \"<unicode string>\", line 2, column 1:\n    description\n    ^\ncould not find expected ':'\n  in \"<unicode string>\", line 2, column 12:\n    description\n               ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: simple key expected at byte 31 line 3 column 1",
         "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a simple key\n  in \"<unicode string>\", line 2, column 1:\n    description\n    ^\ncould not find expected ':'\n  in \"<unicode string>\", line 2, column 12:\n    description\n               ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: simple key expected at byte 31 line 3 column 1",
         "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
       ]
     },
     "standard": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a simple key\n  in \"<unicode string>\", line 2, column 1:\n    description\n    ^\ncould not find expected ':'\n  in \"<unicode string>\", line 2, column 12:\n    description\n               ^"
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: simple key expected at byte 31 line 3 column 1"
       ]
     }
   },
@@ -1060,28 +595,28 @@
     "agy": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a flow mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {one: two\n                 ^\nexpected ',' or '}', but got '<stream end>'\n  in \"<unicode string>\", line 2, column 23:\n    description: {one: two\n                          ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a flow mapping, did not find expected ',' or '}' at byte 49 line 3 column 1",
         "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
       ]
     },
     "claude": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a flow mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {one: two\n                 ^\nexpected ',' or '}', but got '<stream end>'\n  in \"<unicode string>\", line 2, column 23:\n    description: {one: two\n                          ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a flow mapping, did not find expected ',' or '}' at byte 49 line 3 column 1",
         "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a flow mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {one: two\n                 ^\nexpected ',' or '}', but got '<stream end>'\n  in \"<unicode string>\", line 2, column 23:\n    description: {one: two\n                          ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a flow mapping, did not find expected ',' or '}' at byte 49 line 3 column 1",
         "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
       ]
     },
     "standard": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a flow mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {one: two\n                 ^\nexpected ',' or '}', but got '<stream end>'\n  in \"<unicode string>\", line 2, column 23:\n    description: {one: two\n                          ^"
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a flow mapping, did not find expected ',' or '}' at byte 49 line 3 column 1"
       ]
     }
   },
@@ -1089,28 +624,28 @@
     "agy": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a flow sequence\n  in \"<unicode string>\", line 2, column 14:\n    description: [one\n                 ^\nexpected ',' or ']', but got '<stream end>'\n  in \"<unicode string>\", line 2, column 18:\n    description: [one\n                     ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a flow sequence, expected ',' or ']' at byte 49 line 3 column 1",
         "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
       ]
     },
     "claude": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a flow sequence\n  in \"<unicode string>\", line 2, column 14:\n    description: [one\n                 ^\nexpected ',' or ']', but got '<stream end>'\n  in \"<unicode string>\", line 2, column 18:\n    description: [one\n                     ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a flow sequence, expected ',' or ']' at byte 49 line 3 column 1",
         "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a flow sequence\n  in \"<unicode string>\", line 2, column 14:\n    description: [one\n                 ^\nexpected ',' or ']', but got '<stream end>'\n  in \"<unicode string>\", line 2, column 18:\n    description: [one\n                     ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a flow sequence, expected ',' or ']' at byte 49 line 3 column 1",
         "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
       ]
     },
     "standard": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a flow sequence\n  in \"<unicode string>\", line 2, column 14:\n    description: [one\n                 ^\nexpected ',' or ']', but got '<stream end>'\n  in \"<unicode string>\", line 2, column 18:\n    description: [one\n                     ^"
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while parsing a flow sequence, expected ',' or ']' at byte 49 line 3 column 1"
       ]
     }
   },
@@ -1162,28 +697,28 @@
     "agy": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"unterminated\n                 ^\nfound unexpected end of stream\n  in \"<unicode string>\", line 3, column 10:\n    next: key\n             ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: invalid indentation in quoted scalar at byte 44 line 2 column 14",
         "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
       ]
     },
     "claude": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"unterminated\n                 ^\nfound unexpected end of stream\n  in \"<unicode string>\", line 3, column 10:\n    next: key\n             ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: invalid indentation in quoted scalar at byte 44 line 2 column 14",
         "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"unterminated\n                 ^\nfound unexpected end of stream\n  in \"<unicode string>\", line 3, column 10:\n    next: key\n             ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: invalid indentation in quoted scalar at byte 44 line 2 column 14",
         "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
       ]
     },
     "standard": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while scanning a quoted scalar\n  in \"<unicode string>\", line 2, column 14:\n    description: \"unterminated\n                 ^\nfound unexpected end of stream\n  in \"<unicode string>\", line 3, column 10:\n    next: key\n             ^"
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: invalid indentation in quoted scalar at byte 44 line 2 column 14"
       ]
     }
   },
@@ -1191,28 +726,28 @@
     "agy": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: expected a single document in the stream\n  in \"<unicode string>\", line 1, column 1:\n    name: multiple-documents\n    ^\nbut found another document\n  in \"<unicode string>\", line 4, column 1:\n    --- {name: x}\n    ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: expected a single YAML document",
         "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
       ]
     },
     "claude": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: expected a single document in the stream\n  in \"<unicode string>\", line 1, column 1:\n    name: multiple-documents\n    ^\nbut found another document\n  in \"<unicode string>\", line 4, column 1:\n    --- {name: x}\n    ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: expected a single YAML document",
         "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
       ]
     },
     "codex": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: expected a single document in the stream\n  in \"<unicode string>\", line 1, column 1:\n    name: multiple-documents\n    ^\nbut found another document\n  in \"<unicode string>\", line 4, column 1:\n    --- {name: x}\n    ^",
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: expected a single YAML document",
         "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
       ]
     },
     "standard": {
       "errors": [],
       "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: expected a single document in the stream\n  in \"<unicode string>\", line 1, column 1:\n    name: multiple-documents\n    ^\nbut found another document\n  in \"<unicode string>\", line 4, column 1:\n    --- {name: x}\n    ^"
+        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: expected a single YAML document"
       ]
     }
   },
@@ -1268,13 +803,13 @@
     "agy": {
       "errors": [],
       "warnings": [
-        "Antigravity CLI lists this skill as \"{'z': [True, 83, 1e-08, '2020-01-02'], 'a': [datetime.date(2020, 1, 2)]}\" using the YAML name. The folder is \"nested-name\" and the YAML name is \"{'z': [True, 83, 1e-08, '2020-01-02'], 'a': [datetime.date(2020, 1, 2)]}\". If you want the same name across services, make the two names match."
+        "Antigravity CLI lists this skill as \"{z: [yes, 0123, 0.00000001, 2020-01-02], a: [2020-01-02]}\" using the YAML name. The folder is \"nested-name\" and the YAML name is \"{z: [yes, 0123, 0.00000001, 2020-01-02], a: [2020-01-02]}\". If you want the same name across services, make the two names match."
       ]
     },
     "claude": {
       "errors": [],
       "warnings": [
-        "Claude Code lists this skill as \"nested-name\" using the folder name. The folder is \"nested-name\" and the YAML name is \"{'z': [True, 83, 1e-08, '2020-01-02'], 'a': [datetime.date(2020, 1, 2)]}\". If you want the same name across services, make the two names match."
+        "Claude Code lists this skill as \"nested-name\" using the folder name. The folder is \"nested-name\" and the YAML name is \"{z: [yes, 0123, 0.00000001, 2020-01-02], a: [2020-01-02]}\". If you want the same name across services, make the two names match."
       ]
     },
     "codex": {
@@ -1365,59 +900,6 @@
       "warnings": []
     }
   },
-  "octal-frontmatter": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got int",
-        "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got int",
-        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got int",
-        "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got int"
-      ]
-    }
-  },
-  "octal-zero": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "The YAML description is a non-text scalar. How Antigravity CLI displays it may vary. If you want a text description, put the value in quotes."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "Claude Code uses the first body line as the description because the YAML description is missing or empty. If you want a custom description, add one to the YAML frontmatter."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "Codex lists this skill as \"0_00\" using the YAML name. The folder is \"octal-zero\" and the YAML name is \"0_00\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": []
-    }
-  },
   "off": {
     "agy": {
       "errors": [],
@@ -1436,64 +918,10 @@
       "warnings": []
     }
   },
-  "ordered-pairs-name": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "Antigravity CLI lists this skill as \"[('a', 'b'), ('a', 'c')]\" using the YAML name. The folder is \"ordered-pairs-name\" and the YAML name is \"[('a', 'b'), ('a', 'c')]\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "Claude Code lists this skill as \"ordered-pairs-name\" using the folder name. The folder is \"ordered-pairs-name\" and the YAML name is \"[('a', 'b'), ('a', 'c')]\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "Codex may display the name differently or omit the skill when the YAML name is a list or mapping. If you want a predictable name, use a plain text name."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": []
-    }
-  },
-  "set-frontmatter": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got set",
-        "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got set",
-        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got set",
-        "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. frontmatter must be a YAML mapping, got set"
-      ]
-    }
-  },
   "standard-error-warnings": {
     "agy": {
       "errors": [],
       "warnings": [
-        "The YAML description is a non-text scalar. How Antigravity CLI displays it may vary. If you want a text description, put the value in quotes.",
         "Antigravity CLI ignores these YAML fields: allowed-tools, x-extra. If you want Antigravity CLI to see that information, put it in a supported field or the skill body.",
         "Referenced supporting file not found: missing.txt. If you want the link to work, add the file or update the link."
       ]
@@ -1501,7 +929,6 @@
     "claude": {
       "errors": [],
       "warnings": [
-        "Claude Code uses the first body line as the description because the YAML description is missing or empty. If you want a custom description, add one to the YAML frontmatter.",
         "Claude Code ignores these YAML fields: x-extra. If you want Claude Code to see that information, put it in a supported field or the skill body.",
         "Referenced supporting file not found: missing.txt. If you want the link to work, add the file or update the link."
       ]
@@ -1558,106 +985,6 @@
       "warnings": []
     }
   },
-  "tagged-scalars": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "Antigravity CLI lists this skill as \"True\" using the YAML name. The folder is \"tagged-scalars\" and the YAML name is \"True\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "Claude Code lists this skill as \"tagged-scalars\" using the folder name. The folder is \"tagged-scalars\" and the YAML name is \"True\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "Codex lists this skill as \"True\" using the YAML name. The folder is \"tagged-scalars\" and the YAML name is \"True\". If you want the same name across services, make the two names match."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": []
-    }
-  },
-  "timestamp-description": {
-    "agy": {
-      "errors": [],
-      "warnings": []
-    },
-    "claude": {
-      "errors": [],
-      "warnings": []
-    },
-    "codex": {
-      "errors": [],
-      "warnings": []
-    },
-    "standard": {
-      "errors": [],
-      "warnings": []
-    }
-  },
-  "unhashable-key": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while constructing a mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {[]: x}\n                 ^\nfound unhashable key\n  in \"<unicode string>\", line 2, column 15:\n    description: {[]: x}\n                  ^",
-        "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while constructing a mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {[]: x}\n                 ^\nfound unhashable key\n  in \"<unicode string>\", line 2, column 15:\n    description: {[]: x}\n                  ^",
-        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while constructing a mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {[]: x}\n                 ^\nfound unhashable key\n  in \"<unicode string>\", line 2, column 15:\n    description: {[]: x}\n                  ^",
-        "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: while constructing a mapping\n  in \"<unicode string>\", line 2, column 14:\n    description: {[]: x}\n                 ^\nfound unhashable key\n  in \"<unicode string>\", line 2, column 15:\n    description: {[]: x}\n                  ^"
-      ]
-    }
-  },
-  "unknown-tag": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: could not determine a constructor for the tag '!custom'\n  in \"<unicode string>\", line 2, column 14:\n    description: !custom text\n                 ^",
-        "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: could not determine a constructor for the tag '!custom'\n  in \"<unicode string>\", line 2, column 14:\n    description: !custom text\n                 ^",
-        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: could not determine a constructor for the tag '!custom'\n  in \"<unicode string>\", line 2, column 14:\n    description: !custom text\n                 ^",
-        "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: could not determine a constructor for the tag '!custom'\n  in \"<unicode string>\", line 2, column 14:\n    description: !custom text\n                 ^"
-      ]
-    }
-  },
   "unterminated-frontmatter": {
     "agy": {
       "errors": [],
@@ -1684,35 +1011,6 @@
       "errors": [],
       "warnings": [
         "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. unterminated frontmatter: no closing '---' delimiter found"
-      ]
-    }
-  },
-  "value-tag": {
-    "agy": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: could not determine a constructor for the tag 'tag:yaml.org,2002:value'\n  in \"<unicode string>\", line 2, column 14:\n    description: =\n                 ^",
-        "Antigravity CLI may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "claude": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: could not determine a constructor for the tag 'tag:yaml.org,2002:value'\n  in \"<unicode string>\", line 2, column 14:\n    description: =\n                 ^",
-        "If Claude Code cannot parse the YAML frontmatter, it loads the skill body without the YAML fields. If you want it to use those fields, fix the YAML."
-      ]
-    },
-    "codex": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: could not determine a constructor for the tag 'tag:yaml.org,2002:value'\n  in \"<unicode string>\", line 2, column 14:\n    description: =\n                 ^",
-        "Codex may not show this skill if it cannot read the YAML frontmatter. If you want to make it easier to load, fix the YAML."
-      ]
-    },
-    "standard": {
-      "errors": [],
-      "warnings": [
-        "my-skills could not read the YAML frontmatter. If you want its fields checked, fix the YAML. malformed YAML in frontmatter: could not determine a constructor for the tag 'tag:yaml.org,2002:value'\n  in \"<unicode string>\", line 2, column 14:\n    description: =\n                 ^"
       ]
     }
   }
