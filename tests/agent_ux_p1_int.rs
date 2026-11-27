@@ -12,7 +12,7 @@ fn a_wrong_root_is_a_usage_error_for_every_command() {
     fixture.write_manifest("");
     let missing = fixture.root.join("not-a-registry");
     // data-path never resolves the registry; it must still reject the flag.
-    for args in [&["data-path", "alpha"][..], &["skills"], &["status"]] {
+    for args in [&["data-path", "alpha"][..], &["skills"], &["sync"]] {
         fixture
             .command()
             .args(args)

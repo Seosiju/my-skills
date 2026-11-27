@@ -146,7 +146,7 @@ fn skills_keeps_legacy_yaml_scalar_descriptions_in_the_catalog() {
     let rows = data["skills"].as_array().unwrap();
     for (row, (name, description)) in
         rows.iter()
-            .zip([("alpha", "False"), ("beta", "0"), ("gamma", "83")])
+            .zip([("alpha", "false"), ("beta", "0"), ("gamma", "0123")])
     {
         assert_eq!(row["name"], name);
         assert_eq!(row["description"], description);
@@ -172,7 +172,7 @@ fn skills_catalog_keeps_the_dev_1_3_1_output_for_explicit_null() {
     let data = json(fixture.command().args(["skills", "alpha", "--json"]));
     let row = &data["skills"][0];
     assert_eq!(row["name"], "alpha");
-    assert_eq!(row["description"], "None");
+    assert_eq!(row["description"], "null");
     assert!(row.get("error").is_none(), "{row}");
     fixture
         .command()

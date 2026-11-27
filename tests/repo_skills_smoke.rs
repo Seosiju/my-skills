@@ -183,10 +183,10 @@ fn repo_manifest_supports_read_only_cli_commands() {
         "{bootstrap}"
     );
 
-    for host in ["claude", "codex", "agy"] {
+    for host in ["claude", "codex"] {
         let plan = cli_stdout(
             &mut by_env(),
-            &["install", "my-skills", "--host", host, "--dry-run"],
+            &["sync", "my-skills", "--host", host, "--dry-run"],
         );
         assert!(
             plan.lines().any(|line| line.split_whitespace().take(4).eq([
@@ -195,9 +195,17 @@ fn repo_manifest_supports_read_only_cli_commands() {
                 "->",
                 host
             ])),
-            "expected an install action for {host}:\n{plan}"
+            "expected a sync action for {host}:\n{plan}"
         );
     }
+    let agy_plan = cli_stdout(
+        &mut by_env(),
+        &["sync", "my-skills", "--host", "agy", "--dry-run"],
+    );
+    assert!(
+        !agy_plan.contains("CREATE"),
+        "disabled agy target should not plan a connection:\n{agy_plan}"
+    );
     let config = fixture.base.join("xdg-config");
     assert_dir_entries(&config, &[]);
     let by_cwd = || {
