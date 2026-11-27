@@ -23,7 +23,7 @@ fn repo() -> Fixture {
     }
     fixture
         .command()
-        .args(["install", "alpha", "--host", "claude", "--yes"])
+        .args(["sync", "alpha", "--host", "claude", "--yes"])
         .assert()
         .success();
     assert!(matches!(
@@ -109,7 +109,7 @@ fn group_validation_failure_prevents_a_good_skills_copy_update() {
     let fixture = repo();
     fixture
         .command()
-        .args(["install", "beta", "--host", "claude", "--mode", "copy"])
+        .args(["sync", "beta", "--host", "claude", "--mode", "copy"])
         .assert()
         .success();
     let state = fs::read(fixture.state()).unwrap();
@@ -138,7 +138,7 @@ fn explicit_sync_validates_fresh_links_across_hosts_without_yes() {
     let fixture = repo();
     fixture
         .command()
-        .args(["install", "alpha", "--host", "codex", "--yes"])
+        .args(["sync", "alpha", "--host", "codex", "--yes"])
         .assert()
         .success();
     break_alpha(&fixture);
@@ -168,15 +168,7 @@ fn converting_a_live_link_to_copy_checks_the_snapshot_before_replacing_it() {
     let state = fs::read(fixture.state()).unwrap();
     fixture
         .command()
-        .args([
-            "convert",
-            "alpha",
-            "--to",
-            "copy",
-            "--host",
-            "claude",
-            "--dry-run",
-        ])
+        .args(["sync", "--mode", "copy", "--host", "claude", "--dry-run"])
         .assert()
         .code(1)
         .stdout(contains("[BLOCKED] alpha: validation failed"))
@@ -188,9 +180,7 @@ fn converting_a_live_link_to_copy_checks_the_snapshot_before_replacing_it() {
     ));
     fixture
         .command()
-        .args([
-            "convert", "alpha", "--to", "copy", "--host", "claude", "--yes",
-        ])
+        .args(["sync", "--mode", "copy", "--host", "claude", "--yes"])
         .assert()
         .code(1)
         .stdout(contains("[BLOCKED] alpha: validation failed"));
@@ -257,7 +247,7 @@ fn mixed_modes_report_validation_once_per_skill() {
     let fixture = repo();
     fixture
         .command()
-        .args(["install", "alpha", "--host", "codex", "--mode", "copy"])
+        .args(["sync", "alpha", "--host", "codex", "--mode", "copy"])
         .assert()
         .success();
     let state = fs::read(fixture.state()).unwrap();
@@ -310,9 +300,9 @@ fn convert_to_copy_preserves_skill_content_with_remote_image() {
     fixture
         .command()
         .args([
-            "convert",
+            "sync",
             "alpha",
-            "--to",
+            "--mode",
             "copy",
             "--host",
             "claude",
@@ -324,7 +314,7 @@ fn convert_to_copy_preserves_skill_content_with_remote_image() {
     fixture
         .command()
         .args([
-            "convert", "alpha", "--to", "copy", "--host", "claude", "--yes",
+            "sync", "alpha", "--mode", "copy", "--host", "claude", "--yes",
         ])
         .assert()
         .success();

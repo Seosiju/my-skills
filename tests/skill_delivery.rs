@@ -7,7 +7,7 @@ use serde_json::json;
 use support_h::{Fixture, json as run_json, skill};
 
 #[test]
-fn skill_content_survives_import_install_sync_share_and_hooks() {
+fn skill_content_survives_import_sync_adoption_and_hooks() {
     let fixture = Fixture::repo();
     let source = skill(
         &fixture.root.join("external"),
@@ -57,7 +57,7 @@ fn skill_content_survives_import_install_sync_share_and_hooks() {
 
     fixture
         .command()
-        .args(["install", "example", "--host", "claude"])
+        .args(["sync", "example", "--host", "claude"])
         .assert()
         .success();
     let installed = fixture.host("claude").join("example");
@@ -98,7 +98,7 @@ fn skill_content_survives_import_install_sync_share_and_hooks() {
     fs::write(host_only.join("notes.bin"), attachment).unwrap();
     fixture
         .command()
-        .args(["share", "--from", "codex", "host-only", "--enable"])
+        .args(["import", "--from", "codex", "host-only", "--enable"])
         .assert()
         .success();
     let shared = fixture.canonical("host-only");
@@ -107,23 +107,17 @@ fn skill_content_survives_import_install_sync_share_and_hooks() {
         share_markdown.as_bytes()
     );
     assert_eq!(fs::read(shared.join("notes.bin")).unwrap(), attachment);
-    let catalog =
-        run_json(
-            fixture
-                .command()
-                .args(["skills", "host-only", "--with-status", "--json"]),
-        );
-    assert_eq!(
-        catalog["skills"][0]["provenance"]["trust_tier"],
-        "imported-local"
-    );
+    let catalog = run_json(fixture.command().args(["skills", "host-only", "--json"]));
+    assert_eq!(catalog["skills"][0]["status"]["codex"], "FRESH");
 }
 
 #[test]
 fn obsolete_manifest_audit_values_are_ignored_by_validate_hooks_and_doctor() {
     let fixture = Fixture::repo();
     fixture.write_manifest(concat!(
-        "[skills.example]\naudit_profile = false\n",
+        "[skills.example]\naudit_profile = false\ngroup = 'legacy'\n",
+        "source_type = 'canonical'\nsource_revision = 'initial'\n",
+        "[targets.hermes]\nenabled = false\n",
         "[audit]\nenabled = true\nprofile = 'unknown'\nthreshold = 'invalid'\n",
         "disabled_rules = [{ unexpected = true }]\n",
     ));
@@ -181,17 +175,11 @@ fn obsolete_manifest_audit_values_are_ignored_by_validate_hooks_and_doctor() {
         .success()
         .stdout("")
         .stderr("");
-    let catalog = run_json(
-        fixture
-            .command()
-            .args(["skills", "--with-governance", "--json"]),
-    );
-    assert_eq!(
-        catalog["skills"][0]["provenance"]["source_type"],
-        "canonical"
-    );
+    let catalog = run_json(fixture.command().args(["skills", "--json"]));
+    assert_eq!(catalog["skills"][0]["name"], "example");
+    assert_eq!(catalog["skills"][0]["group"], "legacy");
     assert!(catalog["skills"][0].get("audit").is_none());
-    fixture.command().arg("status").assert().success();
+    fixture.command().arg("skills").assert().success();
 }
 
 #[test]
@@ -204,9 +192,8 @@ fn clap_rejects_the_removed_audit_command_and_flags() {
         .code(2)
         .stderr(contains("unrecognized subcommand 'audit'"));
     for args in [
-        &["install", "--skip-audit"][..],
-        &["sync", "--skip-audit"],
-        &["share", "--from", "claude", "--skip-audit"],
+        &["sync", "--skip-audit"][..],
+        &["import", "--from", "claude", "--skip-audit"],
         &["import", "example", "--skip-audit"],
     ] {
         fixture

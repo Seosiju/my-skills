@@ -127,6 +127,23 @@ fn actions(items: &[plan::PlanItem]) -> Vec<(String, String, Action)> {
     out
 }
 
+fn plan_alpha(
+    manifest: &Manifest,
+    state: &State,
+    host: &str,
+    mode: Option<InstallMode>,
+) -> plan::PlanItem {
+    let scope = SyncScope {
+        skills: &[&manifest.skills["alpha"]],
+        hosts: &[host.into()],
+        include_orphans: false,
+        prune: true,
+    };
+    let mut items = plan::plan_sync(manifest, state, &scope, mode).unwrap();
+    assert_eq!(items.len(), 1);
+    items.remove(0)
+}
+
 fn assert_canonical_intact(registry: &Path, skill: &str) {
     let dir = registry.join("skills").join(skill);
     assert!(dir.join("SKILL.md").is_file(), "I1: {skill}/SKILL.md lost");
@@ -299,9 +316,7 @@ fn disabled_and_missing_target_installs_are_never_touched() {
     drive.write_custom_target(true);
     let manifest = drive.manifest();
     let mut state = drive.state();
-    let skill = &manifest.skills["alpha"];
-    let item =
-        plan::plan_install_one(&manifest, skill, "custom", &state, InstallMode::Copy).unwrap();
+    let item = plan_alpha(&manifest, &state, "custom", Some(InstallMode::Copy));
     assert_eq!(item.action, Action::Create);
     apply::apply(&item, &mut state).unwrap();
     let record = state.get("alpha", "custom").unwrap();
@@ -332,9 +347,7 @@ fn unmanaged_destination_blocks_and_is_left_alone() {
 
     let manifest = drive.manifest();
     let state = drive.state();
-    let skill = manifest.skills.get("alpha").unwrap();
-    let item =
-        plan::plan_install_one(&manifest, skill, "claude", &state, InstallMode::Link).unwrap();
+    let item = plan_alpha(&manifest, &state, "claude", None);
     assert_eq!(item.action, Action::BlockConflict);
     assert_eq!(
         fs::read_to_string(foreign.join("SKILL.md")).unwrap(),
@@ -369,7 +382,13 @@ fn copy_mode_install_then_convert_to_link() {
         .iter()
         .map(|h| h.to_string())
         .collect();
-    let plan = plan::plan_convert(&manifest, &state, &skills, &hosts, InstallMode::Link).unwrap();
+    let scope = SyncScope {
+        skills: &skills,
+        hosts: &hosts,
+        include_orphans: false,
+        prune: true,
+    };
+    let plan = plan::plan_sync(&manifest, &state, &scope, Some(InstallMode::Link)).unwrap();
     assert!(plan.iter().all(|i| i.action == Action::Convert), "{plan:?}");
     for item in &plan {
         let outcome = apply::apply(item, &mut state).unwrap();
@@ -397,23 +416,26 @@ fn drifted_copy_blocks_convert_and_prune() {
 
     let manifest = drive.manifest();
     let state = drive.state();
-    let skills: Vec<_> = manifest.skills.values().collect();
-    let hosts = vec!["codex".to_string()];
-    let plan = plan::plan_convert(&manifest, &state, &skills, &hosts, InstallMode::Link).unwrap();
-    let alpha = plan.iter().find(|i| i.skill == "alpha").unwrap();
+    let alpha = plan_alpha(&manifest, &state, "codex", Some(InstallMode::Link));
     assert_eq!(alpha.action, Action::BlockDrift);
+    assert_eq!(
+        alpha.reason,
+        "installed copy was modified locally; not converted"
+    );
+
+    fs::write(
+        drive.registry.join("skills/alpha/SKILL.md"),
+        "edited canonical",
+    )
+    .unwrap();
+    assert_eq!(drive.status("alpha", "codex"), Status::Conflict);
+    let alpha = plan_alpha(&manifest, &state, "codex", Some(InstallMode::Link));
+    assert_eq!(alpha.action, Action::Conflict);
+    assert!(alpha.reason.contains("both changed"));
 
     drive.write_manifest(false, true, "copy");
     let manifest = drive.manifest();
-    let skills: Vec<_> = manifest.skills.values().collect();
-    let scope = SyncScope {
-        skills: &skills,
-        hosts: &hosts,
-        include_orphans: true,
-        prune: true,
-    };
-    let items = plan::plan_sync(&manifest, &state, &scope, Some(InstallMode::Link)).unwrap();
-    let alpha = items.iter().find(|i| i.skill == "alpha").unwrap();
+    let alpha = plan_alpha(&manifest, &state, "codex", Some(InstallMode::Link));
     assert_eq!(
         alpha.action,
         Action::BlockDrift,
@@ -426,7 +448,31 @@ fn drifted_copy_blocks_convert_and_prune() {
 }
 
 #[test]
-fn sync_uses_per_target_install_mode_and_retains_recorded_mode() {
+fn conversion_keeps_a_link_replaced_with_another_target_after_planning() {
+    let drive = Drive::new();
+    drive.sync(true);
+    let manifest = drive.manifest();
+    let mut state = drive.state();
+    let planned = plan_alpha(&manifest, &state, "claude", Some(InstallMode::Copy));
+    assert_eq!(planned.action, Action::Convert);
+    let other = manifest.skill_dir("beta");
+    link::remove_link(&planned.destination).unwrap();
+    link::create_link(&planned.destination, &other).unwrap();
+
+    let blocked = plan_alpha(&manifest, &state, "claude", Some(InstallMode::Copy));
+    assert_eq!(blocked.action, Action::BlockDrift);
+    assert_eq!(blocked.reason, "cannot convert a DRIFTED connection");
+    assert!(apply::apply(&planned, &mut state).is_err());
+    assert!(link::is_managed_link(&planned.destination, &other));
+    assert_eq!(state, drive.state());
+    assert_eq!(
+        state.get("alpha", "claude").unwrap().mode,
+        InstallMode::Link
+    );
+}
+
+#[test]
+fn explicit_target_link_mode_converts_an_existing_copy() {
     let drive = Drive::new();
     fs::write(
         drive.registry.join("my-skills.local.toml"),
@@ -454,7 +500,6 @@ fn sync_uses_per_target_install_mode_and_retains_recorded_mode() {
         EntryKind::Link(_)
     ));
 
-    // Changing target install_mode in the manifest does not silently convert existing records.
     fs::write(
         drive.registry.join("my-skills.local.toml"),
         "[targets.agy]\ninstall_mode = \"link\"\n",
@@ -465,20 +510,20 @@ fn sync_uses_per_target_install_mode_and_retains_recorded_mode() {
         .iter()
         .find(|i| i.skill == "alpha" && i.host == "agy")
         .unwrap();
-    assert_eq!(agy_alpha_again.action, Action::Noop);
-    assert_eq!(agy_alpha_again.mode, InstallMode::Copy);
-    assert_eq!(
+    assert_eq!(agy_alpha_again.action, Action::Convert);
+    assert_eq!(agy_alpha_again.mode, InstallMode::Link);
+    assert!(matches!(
         link::entry_kind(&drive.host_dir("agy").join("alpha")).unwrap(),
-        EntryKind::Dir
-    );
+        EntryKind::Link(_)
+    ));
     assert_eq!(
         drive.state().get("alpha", "agy").unwrap().mode,
-        InstallMode::Copy
+        InstallMode::Link
     );
 }
 
 #[test]
-fn recorded_copy_updates_in_copy_mode_after_target_switches_to_link() {
+fn fallback_copy_updates_and_keeps_its_reason_under_explicit_target_link_mode() {
     let drive = Drive::new();
     fs::write(
         drive.registry.join("my-skills.local.toml"),
@@ -486,6 +531,12 @@ fn recorded_copy_updates_in_copy_mode_after_target_switches_to_link() {
     )
     .unwrap();
     drive.sync(true);
+    let mut state = drive.state();
+    let mut record = state.get("alpha", "agy").unwrap().clone();
+    let reason = "links unavailable";
+    record.fallback_reason = Some(reason.into());
+    state.put(record);
+    state.save().unwrap();
     assert_eq!(
         link::entry_kind(&drive.host_dir("agy").join("alpha")).unwrap(),
         EntryKind::Dir
@@ -524,4 +575,68 @@ fn recorded_copy_updates_in_copy_mode_after_target_switches_to_link() {
         drive.state().get("alpha", "agy").unwrap().mode,
         InstallMode::Copy
     );
+    let updated = drive.state();
+    assert_eq!(
+        updated
+            .get("alpha", "agy")
+            .unwrap()
+            .fallback_reason
+            .as_deref(),
+        Some(reason)
+    );
+    assert!(
+        drive
+            .sync(true)
+            .iter()
+            .all(|item| item.action == Action::Noop)
+    );
+    assert_eq!(drive.state(), updated);
+}
+
+#[test]
+fn conversion_blocks_at_a_changed_target_until_the_old_entry_is_gone() {
+    let drive = Drive::new();
+    drive.sync(true);
+    let dest = drive.host_dir("claude").join("alpha");
+    let new_host = drive.hosts_root.join("relocated");
+    fs::write(
+        drive.registry.join(LOCAL_MANIFEST_FILE),
+        format!(
+            "[targets.claude]\npath = {}\n",
+            serde_json::to_string(&new_host).unwrap()
+        ),
+    )
+    .unwrap();
+    let manifest = drive.manifest();
+    let state = drive.state();
+    let blocked = plan_alpha(&manifest, &state, "claude", Some(InstallMode::Copy));
+    assert_eq!(blocked.action, Action::BlockDrift);
+    assert_eq!(
+        blocked.reason,
+        "recorded destination differs from the manifest target"
+    );
+    assert!(link::is_managed_link(&dest, &manifest.skill_dir("alpha")));
+
+    link::remove_link(&dest).unwrap();
+    let create = plan_alpha(&manifest, &state, "claude", Some(InstallMode::Copy));
+    assert_eq!(create.action, Action::Create);
+    assert_eq!(create.mode, InstallMode::Copy);
+    assert_eq!(create.destination, new_host.join("alpha"));
+}
+
+#[cfg(windows)]
+#[test]
+fn conversion_accepts_windows_verbatim_and_case_variants_in_state() {
+    let drive = Drive::new();
+    drive.sync(true);
+    let manifest = drive.manifest();
+    let mut state = drive.state();
+    let mut record = state.get("alpha", "claude").unwrap().clone();
+    let parent = drive.host_dir("claude").canonicalize().unwrap();
+    record.destination = parent.join("ALPHA").to_string_lossy().into_owned();
+    state.put(record);
+
+    let planned = plan_alpha(&manifest, &state, "claude", Some(InstallMode::Copy));
+    assert_eq!(planned.action, Action::Convert);
+    assert_eq!(planned.mode, InstallMode::Copy);
 }
