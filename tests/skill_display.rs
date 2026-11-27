@@ -516,7 +516,7 @@ fn agy_distinguishes_non_text_scalars_from_a_missing_description() {
 #[test]
 fn sync_and_install_connect_every_canary_and_preserve_its_bytes() {
     let canaries = canaries();
-    for args in [&["sync"][..], &["install", "--mode", "copy"][..]] {
+    for args in [&["sync"][..], &["sync", "--mode", "copy"][..]] {
         let fixture = with_canaries(&canaries);
         let command = args[0];
         let result = support_h::json(fixture.command().args(args).args(["--yes", "--json"]));

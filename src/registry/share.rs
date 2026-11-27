@@ -247,7 +247,7 @@ fn candidate_metadata(source: &Path) -> (String, String) {
     let value = |key| {
         field(&meta, key)
             .filter(|node| node.truthy())
-            .map(Node::python_string)
+            .map(Node::to_text)
     };
     (
         if validate_name(name).is_empty() {

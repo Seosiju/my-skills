@@ -107,15 +107,7 @@ pub fn skills(args: &SkillsArgs) -> ExitCode {
         } else {
             args.enabled.then_some(true)
         };
-        let rows = catalog::rows(
-            &manifest,
-            &state,
-            host,
-            enabled,
-            &hosts,
-            selected,
-            args.with_governance,
-        )?;
+        let rows = catalog::rows(&manifest, &state, host, enabled, &hosts, selected, false)?;
         Ok(if args.json {
             if args.brief {
                 json_with_registry(rows.brief(), &resolution)
@@ -132,77 +124,6 @@ pub fn skills(args: &SkillsArgs) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(err) => super::config_error(err),
-    }
-}
-
-pub fn share(args: &ShareArgs) -> ExitCode {
-    if args.plan || args.dry_run {
-        let (manifest, resolution) = match load_resolved(false) {
-            Ok(loaded) => loaded,
-            Err(err) => return super::config_error(err),
-        };
-        return match share::plan_share(&manifest, &args.from_host) {
-            Ok(plan) => {
-                let output = if args.json {
-                    json_with_registry(plan, &resolution)
-                } else {
-                    plan.table()
-                };
-                println!("{output}");
-                if args.dry_run && !args.json {
-                    super::print_would_cache_root(&resolution);
-                }
-                ExitCode::SUCCESS
-            }
-            Err(err) => super::config_error(err),
-        };
-    }
-    let Some(skill) = args.skill.as_deref() else {
-        return super::config_error("share requires a skill name unless --plan is used");
-    };
-    if args.enable == args.disable {
-        return super::config_error("share requires exactly one of --enable or --disable");
-    }
-
-    let resolution = match root::resolve_root(None, false) {
-        Ok(resolution) => resolution,
-        Err(err) => return super::config_error(err),
-    };
-    if let Some(refusal) = resolution.write_refusal() {
-        return super::config_error(refusal);
-    }
-    match share::share(&resolution, &args.from_host, skill, args.enable, args.force) {
-        Ok(result) => {
-            if args.force {
-                println!("WARN: force overwrite allowed for existing canonical skill");
-            }
-            let name = result.name;
-            println!(
-                "shared: {name} -> {} ({})",
-                display_path(&result.canonical),
-                enabled_label(args.enable)
-            );
-            println!("adopted: {name} -> {}", args.from_host);
-            print_hint(&name, args.enable);
-            if let Some(warning) = result.cleanup_warning {
-                eprintln!("warning: {warning}");
-            }
-            ExitCode::SUCCESS
-        }
-        Err(Failure::Config(err)) => super::config_error(err),
-        Err(Failure::Link(path)) => {
-            println!("[BLOCKED] {skill}: share source contains symlink");
-            println!("  symlink: {}", display_path(&path));
-            ExitCode::from(1)
-        }
-        Err(Failure::Validation(errors)) => {
-            println!("[BLOCKED] {}", errors.join("; "));
-            ExitCode::from(1)
-        }
-        Err(Failure::Blocked(message)) => {
-            println!("[BLOCKED] {message}");
-            ExitCode::from(1)
-        }
     }
 }
 
@@ -274,11 +195,92 @@ fn set_enabled(args: &SkillNameArgs, enabled: bool) -> ExitCode {
 }
 
 pub fn import(args: &ImportArgs) -> ExitCode {
+    if let Some(from_host) = args.from_host.as_deref() {
+        if args.plan && args.target.is_some() {
+            return super::config_error("--plan cannot be combined with a skill name");
+        }
+        if args.plan || (args.dry_run && args.target.is_none()) {
+            let (manifest, resolution) = match load_resolved(false) {
+                Ok(loaded) => loaded,
+                Err(err) => return super::config_error(err),
+            };
+            return match share::plan_share(&manifest, from_host) {
+                Ok(plan) => {
+                    let output = if args.json {
+                        json_with_registry(plan, &resolution)
+                    } else {
+                        plan.table()
+                    };
+                    println!("{output}");
+                    if args.dry_run && !args.json {
+                        super::print_would_cache_root(&resolution);
+                    }
+                    ExitCode::SUCCESS
+                }
+                Err(err) => super::config_error(err),
+            };
+        }
+        let Some(skill) = args.target.as_deref() else {
+            return super::config_error(
+                "import --from requires a skill name unless --plan is used",
+            );
+        };
+        if args.enable == args.disable {
+            return super::config_error("import --from requires either --enable or --disable");
+        }
+        let resolution = match root::resolve_root(None, false) {
+            Ok(resolution) => resolution,
+            Err(err) => return super::config_error(err),
+        };
+        if let Some(refusal) = resolution.write_refusal() {
+            return super::config_error(refusal);
+        }
+        return match share::share(&resolution, from_host, skill, args.enable, args.force) {
+            Ok(result) => {
+                if args.force {
+                    println!("WARN: force overwrite allowed for existing canonical skill");
+                }
+                let name = result.name;
+                println!(
+                    "imported: {name} -> {} ({})",
+                    display_path(&result.canonical),
+                    enabled_label(args.enable)
+                );
+                println!("adopted: {name} -> {from_host}");
+                print_hint(&name, args.enable);
+                if let Some(warning) = result.cleanup_warning {
+                    eprintln!("warning: {warning}");
+                }
+                ExitCode::SUCCESS
+            }
+            Err(Failure::Config(err)) => super::config_error(err),
+            Err(Failure::Link(path)) => {
+                println!("[BLOCKED] {skill}: import source contains symlink");
+                println!("  symlink: {}", display_path(&path));
+                ExitCode::from(1)
+            }
+            Err(Failure::Validation(errors)) => {
+                println!("[BLOCKED] {}", errors.join("; "));
+                ExitCode::from(1)
+            }
+            Err(Failure::Blocked(message)) => {
+                println!("[BLOCKED] {message}");
+                ExitCode::from(1)
+            }
+        };
+    }
+
+    if args.plan {
+        return super::config_error("--plan requires --from <host>");
+    }
+    let Some(raw_source) = args.target.as_deref() else {
+        return super::config_error("import requires a source path unless --from is used");
+    };
     let (manifest, resolution) = match load_resolved(!args.dry_run) {
         Ok(loaded) => loaded,
         Err(err) => return super::config_error(err),
     };
-    let source = seeds::expand_user(&args.source);
+    let source = seeds::expand_user(raw_source);
     match share::import(&manifest, &source, args.enable, args.force, args.dry_run) {
         Ok(result) => {
             let name = result.name;

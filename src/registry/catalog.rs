@@ -7,7 +7,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::Result;
-use crate::check::frontmatter::{Mapping, Node, parse_document};
+use crate::check::frontmatter::{Mapping, Node, mapping_get, parse_document};
 use crate::drive::plan::{status_of, wants};
 use crate::drive::state::State;
 use crate::registry::manifest::{Manifest, Skill};
@@ -80,7 +80,7 @@ pub(crate) fn rows(
         let directory = skills_root.join(&skill.name);
         let (description, error) = match metadata(&directory) {
             Ok(meta) => (
-                field(&meta, "description").map_or_else(String::new, Node::python_string),
+                field(&meta, "description").map_or_else(String::new, Node::to_text),
                 None,
             ),
             Err(err) => (
@@ -286,9 +286,7 @@ pub(crate) fn metadata(path: &Path) -> std::result::Result<Mapping, String> {
 }
 
 pub(crate) fn field<'a>(meta: &'a Mapping, field: &str) -> Option<&'a Node> {
-    meta.iter().find_map(|(key, value)| {
-        matches!(&**key, Node::String(key) if key == field).then_some(value.as_ref())
-    })
+    mapping_get(meta, field)
 }
 
 /// Keep Windows verbatim prefixes for filesystem calls and omit them in

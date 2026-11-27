@@ -90,9 +90,15 @@ pub(crate) fn split_document(text: &str) -> Result<Option<(String, String)>, Fro
     ))
 }
 
-// Keep order and scalar types until validation has applied Python str() and
+// Keep order and scalar types until validation has applied display conversion and
 // truthiness. The public Value contract only supports string keys and i64.
 pub(crate) type Mapping = Vec<(Rc<Node>, Rc<Node>)>;
+
+pub(crate) fn mapping_get<'a>(metadata: &'a Mapping, name: &str) -> Option<&'a Node> {
+    metadata.iter().find_map(|(key, value)| {
+        matches!(&**key, Node::String(key) if key == name).then_some(value.as_ref())
+    })
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) struct Located {
@@ -148,6 +154,10 @@ impl Node {
             Self::Map(_) => "dict",
             Self::Set(_) => "set",
         }
+    }
+
+    pub(crate) fn to_text(&self) -> String {
+        self.python_string()
     }
 
     pub(crate) fn python_string(&self) -> String {

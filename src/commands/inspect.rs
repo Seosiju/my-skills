@@ -1,6 +1,4 @@
-//! validate, status, set-root, data-path. Integrator.
-//! Output follows v0.4.1 `inspection_commands.py`,
-//! `cli_runtime.cmd_set_root`, and `registry_commands.cmd_data_path`.
+//! validate, set-root, data-path.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,17 +9,10 @@ use serde_json::json;
 use super::config_error;
 use crate::check::validate::gate_validation;
 use crate::cli::*;
-use crate::drive::link::{self, EntryKind};
-use crate::drive::plan;
-use crate::drive::state::State;
 use crate::platform::data::skill_data_path;
 use crate::platform::paths;
-use crate::registry::manifest::{CliOverrides, InstallMode, Manifest, select_names};
+use crate::registry::manifest::{CliOverrides, Manifest, select_names};
 use crate::registry::root;
-
-fn load() -> Result<Manifest, ExitCode> {
-    root::load_manifest_from_cwd(&CliOverrides::default()).map_err(config_error)
-}
 
 fn skill_dirs(manifest: &Manifest) -> Vec<PathBuf> {
     let Ok(entries) = fs::read_dir(manifest.skills_dir()) else {
@@ -97,79 +88,6 @@ pub fn validate(args: &ValidateArgs) -> ExitCode {
         println!("{report:#}");
     }
     ExitCode::from(u8::from(!ok))
-}
-
-pub fn status(args: &StatusArgs) -> ExitCode {
-    let manifest = match load() {
-        Ok(m) => m,
-        Err(code) => return code,
-    };
-    let selected = match select_names(&manifest, &args.skills, &args.groups) {
-        Ok(names) => names,
-        Err(error) => return config_error(error),
-    };
-    let state = match State::load(None) {
-        Ok(s) => s,
-        Err(e) => return config_error(e),
-    };
-    let hosts: Vec<&str> = manifest
-        .targets
-        .values()
-        .filter(|t| t.enabled)
-        .map(|t| t.name.as_str())
-        .collect();
-    if manifest.skills.is_empty() {
-        if args.json {
-            println!("[]");
-        } else {
-            println!("no skills registered in manifest");
-        }
-        return ExitCode::SUCCESS;
-    }
-    let mut rows = Vec::new();
-    for skill in manifest.skills.values() {
-        if !selected.is_empty() && selected.binary_search(&skill.name).is_err() {
-            continue;
-        }
-        if !args.json {
-            println!("{}", skill.name);
-        }
-        for host in &hosts {
-            let status = match plan::status_of(&manifest, skill, host, &state) {
-                Ok(s) => s,
-                Err(e) => return config_error(e),
-            };
-            if args.json {
-                let record = state.get(&skill.name, host);
-                let link_kind = plan::destination(&manifest, host, &skill.name)
-                    .ok()
-                    .and_then(|dest| match link::entry_kind(&dest) {
-                        Ok(EntryKind::Link(kind)) => Some(kind),
-                        _ => None,
-                    });
-                rows.push(json!({
-                    "skill": skill.name,
-                    "host": host,
-                    "status": status.label(),
-                    "mode": record.map(|r| match r.mode {
-                        InstallMode::Link => "link",
-                        InstallMode::Copy => "copy",
-                    }),
-                    "link_kind": link_kind,
-                    "fallback_reason": record.and_then(|r| r.fallback_reason.clone()),
-                }));
-            } else {
-                println!("  {host:8} {}", status.label());
-            }
-        }
-    }
-    if args.json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&rows).expect("JSON values always serialize")
-        );
-    }
-    ExitCode::SUCCESS
 }
 
 pub fn set_root(args: &SetRootArgs) -> ExitCode {
