@@ -93,10 +93,12 @@ fn skills_json_filters_by_host_and_enabled_state() {
         json!({"skills": [
             {"name": "alpha", "enabled": true, "hosts": ["claude", "codex"], "description": "Alpha summary from frontmatter.",
              "path": std::path::Path::new("skills").join("alpha"), "status": {"codex": "MISSING"},
-             "canonical_path": display_path(&fixture.canonical("alpha")), "group": null},
+             "canonical_path": display_path(&fixture.canonical("alpha")), "group": null,
+             "connections": {"codex": {"mode": null, "link_kind": null, "fallback_reason": null}}},
             {"name": "gamma", "enabled": true, "hosts": [], "description": "Gamma summary from frontmatter.",
              "path": std::path::Path::new("skills").join("gamma"), "status": {"codex": "MISSING"},
-             "canonical_path": display_path(&fixture.canonical("gamma")), "group": null}
+             "canonical_path": display_path(&fixture.canonical("gamma")), "group": null,
+             "connections": {"codex": {"mode": null, "link_kind": null, "fallback_reason": null}}}
         ]})
     );
 }
@@ -181,21 +183,150 @@ fn skills_catalog_keeps_the_dev_1_3_1_output_for_explicit_null() {
 }
 
 #[test]
-fn skills_with_status_uses_selected_host_only() {
+fn skills_json_reports_connections_and_omits_them_in_brief_without_governance() {
     let fixture = catalog();
-    let data = json(fixture.command().args([
-        "skills",
-        "--json",
-        "--host",
-        "codex",
-        "--disabled",
-        "--with-status",
-    ]));
+    let alpha_canonical = fixture.canonical("alpha");
+    let claude_host = fixture.host("claude");
+    let codex_host = fixture.host("codex");
+    fs::create_dir_all(&claude_host).unwrap();
+    fs::create_dir_all(&codex_host).unwrap();
+    support_h::link_dir(&alpha_canonical, &claude_host.join("alpha"));
+    let codex_copy = codex_host.join("alpha");
+    fs::create_dir_all(&codex_copy).unwrap();
+    fs::copy(
+        alpha_canonical.join("SKILL.md"),
+        codex_copy.join("SKILL.md"),
+    )
+    .unwrap();
+    let hash = my_skills::drive::hash::hash_directory(&alpha_canonical).unwrap();
+
+    let state = fixture.state();
+    fs::create_dir_all(state.parent().unwrap()).unwrap();
+    fs::write(
+        &state,
+        serde_json::to_vec(&json!({
+            "schema_version": 1,
+            "installs": [
+                {
+                    "skill": "alpha",
+                    "host": "claude",
+                    "mode": "link",
+                    "source": plain(&alpha_canonical),
+                    "destination": plain(&claude_host.join("alpha")),
+                    "source_hash": "",
+                    "installed_hash": "",
+                    "installed_at": "2026-01-01T00:00:00Z"
+                },
+                {
+                    "skill": "alpha",
+                    "host": "codex",
+                    "mode": "copy",
+                    "source": plain(&alpha_canonical),
+                    "destination": plain(&codex_copy),
+                    "source_hash": hash,
+                    "installed_hash": hash,
+                    "installed_at": "2026-01-01T00:00:00Z",
+                    "fallback_reason": "fixture fallback"
+                }
+            ]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let expected_link_kind = if cfg!(windows) { "junction" } else { "symlink" };
+    let data = json(fixture.command().args(["skills", "--json"]));
     let rows = data["skills"].as_array().unwrap();
+    assert_eq!(rows[0]["name"], "alpha");
+    assert_eq!(
+        rows[0]["connections"],
+        json!({
+            "claude": {"mode": "link", "link_kind": expected_link_kind, "fallback_reason": null},
+            "codex": {"mode": "copy", "link_kind": null, "fallback_reason": "fixture fallback"}
+        })
+    );
+    assert_eq!(
+        rows[1]["connections"],
+        json!({
+            "claude": {"mode": null, "link_kind": null, "fallback_reason": null},
+            "codex": {"mode": null, "link_kind": null, "fallback_reason": null}
+        })
+    );
+    for row in rows {
+        assert!(row.get("governance").is_none(), "{row}");
+        assert!(row.get("provenance").is_none(), "{row}");
+    }
+
+    let brief = json(fixture.command().args(["skills", "--json", "--brief"]));
+    for row in brief["skills"].as_array().unwrap() {
+        assert!(row.get("connections").is_none(), "{row}");
+        assert!(row.get("governance").is_none(), "{row}");
+        assert!(row.get("provenance").is_none(), "{row}");
+    }
+
+    let host_only =
+        json(
+            fixture
+                .command()
+                .args(["skills", "--json", "--host", "codex", "--disabled"]),
+        );
+    let rows = host_only["skills"].as_array().unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["name"], "beta");
     assert_eq!(rows[0]["status"], json!({"codex": "MISSING"}));
-    assert_eq!(rows[0]["provenance"]["trust_tier"], "local-authored");
+    assert_eq!(
+        rows[0]["connections"],
+        json!({"codex": {"mode": null, "link_kind": null, "fallback_reason": null}})
+    );
+
+    fixture
+        .command()
+        .arg("skills")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("TRUST").not());
+    for removed_flag in ["--with-governance", "--with-status"] {
+        fixture
+            .command()
+            .args(["skills", removed_flag])
+            .assert()
+            .code(2);
+    }
+}
+
+#[test]
+fn removed_status_and_resolve_commands_return_guidance_exit_2() {
+    let fixture = catalog();
+    for (args, needle) in [
+        (
+            &["status"][..],
+            "'status' was removed in v1.5.0; use 'my-skills skills'",
+        ),
+        (
+            &["resolve", "alpha"][..],
+            "'resolve' was removed in v1.5.0; use 'my-skills skills <name> --json' for canonical_path",
+        ),
+    ] {
+        fixture
+            .command()
+            .args(args)
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains(needle));
+        let mut json_cmd = fixture.command();
+        json_cmd.args(args).arg("--json");
+        let assert = json_cmd.assert().code(2);
+        let payload: serde_json::Value =
+            serde_json::from_slice(&assert.get_output().stdout).unwrap();
+        assert_eq!(payload["error"]["code"], "usage");
+        assert!(
+            payload["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains(needle),
+            "{payload}"
+        );
+    }
 }
 
 #[test]

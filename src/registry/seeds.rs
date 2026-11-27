@@ -13,8 +13,8 @@ use crate::registry::catalog::display_path;
 use crate::registry::edit::native_text;
 use crate::registry::manifest::MANIFEST_FILE;
 use crate::{
-    Error, Result, drive::hosts, platform::paths, registry::manifest, registry::root,
-    registry::share,
+    Error, Result, drive::hosts, platform::paths, registry::import, registry::manifest,
+    registry::root,
 };
 
 const SEED_SKILLS: [(&str, bool); 3] = [
@@ -88,16 +88,15 @@ platform. See the [tool repo README](https://github.com/Seosiju/my-skills/tree/m
 Run `my-skills --version` to check the installation.
 
 Return to this registry. Create a draft with `my-skills new <name>` or edit
-canonical skills under `skills/<name>/SKILL.md` (run `my-skills resolve <path>`
-to find the canonical file from a host copy or path), then preview (`--dry-run`
-or `--dry-run --json` for agents) and apply. Add `--yes` after reviewing a plan
-for multiple hosts.
+canonical skills under `skills/<name>/SKILL.md` (run `my-skills skills <name> --json`
+to read its `canonical_path`), then preview (`--dry-run` or `--dry-run --json`
+for agents) and apply. Add `--yes` after reviewing a plan for multiple hosts.
 
 ```bash
 my-skills skills
 my-skills new my-skill
-my-skills install --dry-run
-my-skills install
+my-skills sync --dry-run
+my-skills sync --yes
 my-skills hooks status    # init-registry installed the hooks: check on commit, sync after
 ```
 
@@ -232,9 +231,9 @@ impl Scaffold {
                 .map(|host| manifest::expand_path(host.default_user_path))
         };
         let skills = target.join("skills");
-        share::ensure_outside_hosts(target, host_paths())?;
-        share::ensure_outside_hosts(&skills, host_paths())?;
-        share::ensure_outside_hosts(&root::root_cache_path(), host_paths())?;
+        import::ensure_outside_hosts(target, host_paths())?;
+        import::ensure_outside_hosts(&skills, host_paths())?;
+        import::ensure_outside_hosts(&root::root_cache_path(), host_paths())?;
         fs::create_dir_all(target).map_err(|err| Error::io(target, err))?;
         fs::create_dir(&skills).map_err(|err| Error::io(&skills, err))?;
         let mut created = Vec::new();

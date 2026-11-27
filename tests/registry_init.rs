@@ -31,9 +31,15 @@ fn git(fixture: &Fixture, args: &[&str]) -> String {
 fn init_registry_registers_seed_skills_in_manifest() {
     let fixture = Fixture::new();
     init(&fixture).arg("--no-git").assert().success().stdout(format!(
-        "Created private skill registry at {}\nNext: cd there, add skills/<name>/SKILL.md, then run `my-skills install --dry-run`.\n",
+        "Created private skill registry at {}\nNext: cd there, add skills/<name>/SKILL.md, then run 'my-skills sync --dry-run'.\n",
         plain(&fixture.registry)
     ));
+    let readme = fs::read_to_string(fixture.registry.join("README.md")).unwrap();
+    assert!(readme.contains("my-skills skills <name> --json"));
+    assert!(readme.contains("my-skills sync --dry-run"));
+    assert!(readme.contains("my-skills sync --yes"));
+    assert!(!readme.contains("my-skills resolve"));
+    assert!(!readme.contains("my-skills install"));
     let manifest = fixture.config();
     assert_eq!(manifest["defaults"]["install_mode"].as_str(), Some("link"));
     let skills = manifest["skills"].as_table().unwrap();
@@ -81,10 +87,10 @@ fn init_registry_does_not_restore_removed_skills_or_delete_local_data() {
 }
 
 #[test]
-fn init_registry_install_dry_run_has_seed_actions() {
+fn init_registry_sync_dry_run_has_seed_actions() {
     let fixture = Fixture::new();
     init(&fixture).arg("--no-git").assert().success();
-    let data = json(fixture.command().args(["install", "--dry-run", "--json"]));
+    let data = json(fixture.command().args(["sync", "--dry-run", "--json"]));
     let pairs = data["actions"]
         .as_array()
         .unwrap()
@@ -110,16 +116,21 @@ fn init_registry_install_dry_run_has_seed_actions() {
 }
 
 #[test]
-fn init_registry_allows_explicit_install_to_disabled_agy() {
+fn init_registry_syncs_agy_once_enabled_in_local_override() {
     let fixture = Fixture::new();
     init(&fixture).arg("--no-git").assert().success();
     assert_eq!(
         fixture.config()["targets"]["agy"]["enabled"].as_bool(),
         Some(false)
     );
+    fs::write(
+        fixture.registry.join("my-skills.local.toml"),
+        "[targets.agy]\nenabled = true\n",
+    )
+    .unwrap();
     fixture
         .command()
-        .args(["install", "my-skills", "--host", "agy", "--mode", "copy"])
+        .args(["sync", "my-skills", "--host", "agy", "--mode", "copy"])
         .assert()
         .success();
     assert_eq!(
@@ -134,27 +145,24 @@ fn init_registry_allows_explicit_install_to_disabled_agy() {
 }
 
 #[test]
-fn seed_default_install_requires_confirmation_for_custom_targets() {
+fn seed_default_sync_requires_confirmation_for_custom_targets() {
     let fixture = Fixture::new();
     init(&fixture).arg("--no-git").assert().success();
     let local = fixture.registry.join("my-skills.local.toml");
     fs::write(local, "[targets.claude]\npath = \"custom/claude\"\n").unwrap();
     fixture
         .command()
-        .arg("install")
+        .arg("sync")
         .assert()
         .code(2)
         .stderr(predicate::str::contains("writes to multiple hosts"));
 }
 
 #[test]
-fn seed_default_install_requires_confirmation_for_non_default_options() {
+fn seed_default_sync_requires_confirmation_for_non_default_options() {
     let fixture = Fixture::new();
     init(&fixture).arg("--no-git").assert().success();
-    for args in [
-        &["install", "--mode", "link"][..],
-        &["install", "--all"][..],
-    ] {
+    for args in [&["sync", "--mode", "link"][..], &["sync", "--all"][..]] {
         fixture
             .command()
             .args(args)

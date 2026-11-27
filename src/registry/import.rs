@@ -1,4 +1,4 @@
-//! Host-local skill share and import (v0.4.1 sharing.py, registry_commands.py). Stream H.
+//! Skill import from external paths and host directories.
 
 use std::fs;
 use std::io;
@@ -21,14 +21,15 @@ use crate::registry::edit::{self, ManifestEdit};
 use crate::registry::manifest::{
     CliOverrides, InstallMode, MANIFEST_FILE, Manifest, load_manifest,
 };
+use crate::registry::root::RootResolution;
 use crate::{Error, Result, platform::paths};
 
 #[derive(Debug)]
 pub(crate) enum Failure {
     Config(Error),
-    Link(PathBuf),
-    Validation(Vec<String>),
-    Blocked(String),
+    Link { skill: String, path: PathBuf },
+    Validation { skill: String, errors: Vec<String> },
+    Blocked { skill: String, message: String },
 }
 
 impl From<Error> for Failure {
@@ -40,7 +41,7 @@ impl From<Error> for Failure {
 type Operation<T> = std::result::Result<T, Failure>;
 
 #[derive(Serialize)]
-pub(crate) struct SharePlan {
+pub(crate) struct HostImportPlan {
     #[serde(rename = "from")]
     from_host: String,
     source: String,
@@ -78,7 +79,7 @@ impl Risk {
     }
 }
 
-pub(crate) fn plan_share(manifest: &Manifest, host: &str) -> Result<SharePlan> {
+pub(crate) fn plan_from_host(manifest: &Manifest, host: &str) -> Result<HostImportPlan> {
     let source_root = host_root(manifest, host)?;
     let children = match fs::read_dir(source_root) {
         Ok(children) => children,
@@ -88,7 +89,7 @@ pub(crate) fn plan_share(manifest: &Manifest, host: &str) -> Result<SharePlan> {
                 io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
             ) =>
         {
-            return Ok(SharePlan {
+            return Ok(HostImportPlan {
                 from_host: host.into(),
                 source: display_path(source_root),
                 candidates: Vec::new(),
@@ -118,7 +119,7 @@ pub(crate) fn plan_share(manifest: &Manifest, host: &str) -> Result<SharePlan> {
         }
         candidates.push(plan_candidate(manifest, host, &source, &state)?);
     }
-    Ok(SharePlan {
+    Ok(HostImportPlan {
         from_host: host.into(),
         source: display_path(source_root),
         candidates,
@@ -191,10 +192,12 @@ fn unsafe_candidate(
     failure: Failure,
 ) -> Result<(String, String, String, Vec<Risk>)> {
     let message = match failure {
-        Failure::Link(path) => format!("share source contains symlink: {}", display_path(&path)),
-        Failure::Blocked(message) => message,
+        Failure::Link { path, .. } => {
+            format!("import source contains symlink: {}", display_path(&path))
+        }
+        Failure::Blocked { message, .. } => message,
         Failure::Config(err) => return Err(err),
-        Failure::Validation(_) => unreachable!("classifying source entries"),
+        Failure::Validation { .. } => unreachable!("classifying source entries"),
     };
     Ok((
         basename(source).into(),
@@ -204,7 +207,7 @@ fn unsafe_candidate(
     ))
 }
 
-impl SharePlan {
+impl HostImportPlan {
     pub(crate) fn table(&self) -> String {
         if self.candidates.is_empty() {
             return format!("no skills found in {}", self.source);
@@ -229,6 +232,251 @@ impl SharePlan {
         });
         table(headers.into(), rows, false)
     }
+}
+
+pub(crate) struct ImportOutcome {
+    pub name: String,
+    pub canonical: PathBuf,
+    pub enabled: bool,
+    pub adopted_host: Option<String>,
+    pub identical: bool,
+    pub overwritten: bool,
+    pub warnings: Vec<String>,
+    pub cleanup_warning: Option<CleanupWarning>,
+}
+
+struct StagedImport {
+    snapshot: Snapshot,
+    name: String,
+    canonical: PathBuf,
+    old: Canonical,
+    hash: String,
+    status: &'static str,
+    warnings: Vec<String>,
+}
+
+fn stage_import(
+    manifest: &Manifest,
+    source: &Path,
+    force: bool,
+    dry_run: bool,
+    allow_non_dir_overwrite: bool,
+    inline_conflict_hint: bool,
+) -> Operation<StagedImport> {
+    let snapshot = Snapshot::new(manifest, source, dry_run)?;
+    let (name, _) = candidate_metadata(&snapshot.source);
+    let validation = validate_skill(&snapshot.source);
+    if !validation.ok() {
+        return Err(Failure::Validation {
+            skill: name,
+            errors: validation.errors,
+        });
+    }
+    if let Some(error) = invalid_registration_name(&name) {
+        return Err(Failure::Blocked {
+            skill: name,
+            message: error,
+        });
+    }
+    let canonical = manifest.skill_dir(&name);
+    let old = Canonical::read(&canonical)?;
+    let hash = hash_directory(&snapshot.source)?;
+    let status = old.status(&hash);
+    if status == "different" && !force {
+        let message = if inline_conflict_hint {
+            format!(
+                "{name}: a different canonical skill already exists at {}; re-run with --force to overwrite it",
+                display_path(&canonical)
+            )
+        } else {
+            format!(
+                "{name}: a different canonical skill already exists at\n  {}",
+                display_path(&canonical)
+            )
+        };
+        return Err(Failure::Blocked {
+            skill: name,
+            message,
+        });
+    }
+    if !allow_non_dir_overwrite && matches!(old, Canonical::Other(_)) {
+        return Err(Failure::Blocked {
+            skill: name,
+            message: format!(
+                "canonical skill is not a real directory: {}",
+                display_path(&canonical)
+            ),
+        });
+    }
+    Ok(StagedImport {
+        snapshot,
+        name,
+        canonical,
+        old,
+        hash,
+        status,
+        warnings: validation.warnings,
+    })
+}
+
+pub(crate) fn import_path(
+    resolution: &RootResolution,
+    source: &Path,
+    enable: bool,
+    force: bool,
+    dry_run: bool,
+) -> Operation<ImportOutcome> {
+    let manifest = load_manifest(&resolution.root, &CliOverrides::default())?;
+    let staged = stage_import(&manifest, source, force, dry_run, false, false)?;
+    let current = manifest
+        .skills
+        .get(&staged.name)
+        .is_some_and(|skill| skill.enabled);
+    let (edit, enabled) = edit::prepare_import(
+        &manifest.root.join(MANIFEST_FILE),
+        &staged.name,
+        enable,
+        current,
+        &enabled_hosts(&manifest),
+        dry_run,
+    )?;
+    // A dry run uses the staged snapshot without acquiring the edit lock.
+    let cleanup_warning = if dry_run {
+        None
+    } else {
+        resolution.recheck_write()?;
+        let warning = staged.snapshot.publish(
+            &manifest,
+            &staged.canonical,
+            &staged.old,
+            &staged.hash,
+            &edit,
+            || Ok(()),
+        )?;
+        resolution.remember();
+        warning
+    };
+    Ok(ImportOutcome {
+        name: staged.name,
+        canonical: staged.canonical,
+        enabled,
+        adopted_host: None,
+        identical: staged.status == "identical",
+        overwritten: staged.status == "different",
+        warnings: staged.warnings,
+        cleanup_warning,
+    })
+}
+
+pub(crate) fn import_from_host(
+    resolution: &RootResolution,
+    host: &str,
+    skill: &str,
+    enabled: bool,
+    force: bool,
+    dry_run: bool,
+) -> Operation<ImportOutcome> {
+    let registry_root = &resolution.root;
+    let manifest = load_manifest(registry_root, &CliOverrides::default())?;
+    let manifest_path = registry_root.join(MANIFEST_FILE);
+    let state_path = default_state_path();
+    ensure_outside_hosts(registry_root, target_paths(&manifest))?;
+    ensure_outside_hosts(&state_path, target_paths(&manifest))?;
+    // Adopting a host copy edits the manifest and state. Always take the edit
+    // lock before the state lock; dry runs acquire neither lock.
+    let edit_lock = (!dry_run)
+        .then(|| edit::EditLock::acquire(&manifest_path))
+        .transpose()?;
+    let _state_lock = (!dry_run)
+        .then(|| StateLock::acquire(&state_path))
+        .transpose()?;
+    if !dry_run {
+        resolution.recheck_write()?;
+    }
+    let mut state = State::load(Some(&state_path))?;
+    if let Some(reason) = foreign_record_reason(&manifest, &state, skill, host) {
+        return Err(Failure::Blocked {
+            skill: skill.into(),
+            message: format!("{skill}: {reason}"),
+        });
+    }
+    let root = host_root(&manifest, host)?;
+    let path = Path::new(skill);
+    if path.components().count() != 1 || path.file_name() != Some(path.as_os_str()) {
+        return Err(Error::Manifest(format!(
+            "invalid skill name '{skill}': expected one path component"
+        ))
+        .into());
+    }
+    let source = root.join(skill);
+    let staged = stage_import(&manifest, &source, force, dry_run, true, true)?;
+    if staged.status == "identical" {
+        let validation = validate_skill(&staged.canonical);
+        if !validation.ok() {
+            return Err(Failure::Blocked {
+                skill: staged.name.clone(),
+                message: format!(
+                    "{}: canonical validation failed after import: {}",
+                    staged.name,
+                    validation.errors.join("; ")
+                ),
+            });
+        }
+    }
+    if staged.name != skill
+        && let Some(reason) = foreign_record_reason(&manifest, &state, &staged.name, host)
+    {
+        return Err(Failure::Blocked {
+            skill: staged.name.clone(),
+            message: format!("{}: {reason}", staged.name),
+        });
+    }
+    let cleanup_warning = if let Some(edit_lock) = edit_lock {
+        let edit = edit::prepare_registration_locked(
+            &manifest_path,
+            &staged.name,
+            enabled,
+            &enabled_hosts(&manifest),
+            edit_lock,
+        )?;
+        state.put(InstallRecord {
+            skill: staged.name.clone(),
+            host: host.into(),
+            mode: InstallMode::Copy,
+            source: display_path(&staged.canonical),
+            destination: display_path(&source),
+            source_hash: staged.hash.clone(),
+            installed_hash: staged.hash.clone(),
+            installed_at: utc_now(),
+            source_type: "host".into(),
+            source_url: display_path(&source),
+            source_revision: staged.hash.clone(),
+            link_kind: None,
+            fallback_reason: None,
+        });
+        let warning = staged.snapshot.publish(
+            &manifest,
+            &staged.canonical,
+            &staged.old,
+            &staged.hash,
+            &edit,
+            || state.save(),
+        )?;
+        resolution.remember();
+        warning
+    } else {
+        None
+    };
+    Ok(ImportOutcome {
+        name: staged.name,
+        canonical: staged.canonical,
+        enabled,
+        adopted_host: Some(host.into()),
+        identical: staged.status == "identical",
+        overwritten: staged.status == "different",
+        warnings: staged.warnings,
+        cleanup_warning,
+    })
 }
 
 fn host_root<'a>(manifest: &'a Manifest, host: &str) -> Result<&'a Path> {
@@ -278,185 +526,6 @@ fn risks(source: &Path) -> Vec<Risk> {
     risks
 }
 
-pub(crate) struct ImportOutcome {
-    pub name: String,
-    pub canonical: PathBuf,
-    pub enabled: bool,
-    pub identical: bool,
-    pub overwritten: bool,
-    pub warnings: Vec<String>,
-    pub cleanup_warning: Option<CleanupWarning>,
-}
-
-pub(crate) fn import(
-    manifest: &Manifest,
-    source: &Path,
-    enable: bool,
-    force: bool,
-    dry_run: bool,
-) -> Operation<ImportOutcome> {
-    let snapshot = Snapshot::new(manifest, source)?;
-    let validation = validate_skill(&snapshot.source);
-    if !validation.ok() {
-        return Err(Failure::Validation(validation.errors));
-    }
-    let (name, _) = candidate_metadata(&snapshot.source);
-    if let Some(error) = invalid_registration_name(&name) {
-        return Err(Failure::Blocked(error));
-    }
-    let canonical = manifest.skill_dir(&name);
-    let old = Canonical::read(&canonical)?;
-    let hash = hash_directory(&snapshot.source)?;
-    let status = old.status(&hash);
-    if status == "different" && !force {
-        return Err(Failure::Blocked(format!(
-            "{name}: a different canonical skill already exists at\n  {}",
-            display_path(&canonical)
-        )));
-    }
-    if matches!(old, Canonical::Other(_)) {
-        return Err(Failure::Blocked(format!(
-            "canonical skill is not a real directory: {}",
-            display_path(&canonical)
-        )));
-    }
-    let current = manifest
-        .skills
-        .get(&name)
-        .is_some_and(|skill| skill.enabled);
-    let (edit, enabled) = edit::prepare_import(
-        &manifest.root.join(MANIFEST_FILE),
-        &name,
-        enable,
-        current,
-        &enabled_hosts(manifest),
-        dry_run,
-    )?;
-    // A dry run uses the staged snapshot without acquiring the edit lock.
-    let cleanup_warning = if dry_run {
-        None
-    } else {
-        snapshot.publish(manifest, &canonical, &old, &hash, &edit, || Ok(()))?
-    };
-    Ok(ImportOutcome {
-        name,
-        canonical,
-        enabled,
-        identical: status == "identical",
-        overwritten: status == "different",
-        warnings: validation.warnings,
-        cleanup_warning,
-    })
-}
-
-pub(crate) struct ShareOutcome {
-    pub name: String,
-    pub canonical: PathBuf,
-    pub cleanup_warning: Option<CleanupWarning>,
-}
-
-pub(crate) fn share(
-    resolution: &crate::registry::root::RootResolution,
-    host: &str,
-    skill: &str,
-    enabled: bool,
-    force: bool,
-) -> Operation<ShareOutcome> {
-    let registry_root = &resolution.root;
-    let manifest = &load_manifest(registry_root, &CliOverrides::default())?;
-    let manifest_path = registry_root.join(MANIFEST_FILE);
-    let state_path = default_state_path();
-    ensure_outside_hosts(registry_root, target_paths(manifest))?;
-    ensure_outside_hosts(&state_path, target_paths(manifest))?;
-    // Sharing edits the manifest and adopts a host copy. Always take the
-    // edit lock before the state lock.
-    let edit_lock = edit::EditLock::acquire(&manifest_path)?;
-    let _state_lock = StateLock::acquire(&state_path)?;
-    resolution.recheck_write()?;
-    let mut state = State::load(Some(&state_path))?;
-    if let Some(reason) = foreign_record_reason(manifest, &state, skill, host) {
-        return Err(Failure::Blocked(format!("{skill}: {reason}")));
-    }
-    let root = host_root(manifest, host)?;
-    let path = Path::new(skill);
-    if path.components().count() != 1 || path.file_name() != Some(path.as_os_str()) {
-        return Err(Error::Manifest(format!(
-            "invalid skill name '{skill}': expected one path component"
-        ))
-        .into());
-    }
-    let source = root.join(skill);
-    let snapshot = Snapshot::new(manifest, &source)?;
-    let (name, _) = candidate_metadata(&snapshot.source);
-    let errors = risks(&snapshot.source)
-        .into_iter()
-        .filter(|risk| risk.blocks)
-        .map(|risk| risk.message)
-        .collect::<Vec<_>>();
-    if !errors.is_empty() {
-        return Err(Failure::Validation(vec![format!(
-            "{name}: validation failed: {}",
-            errors.join("; ")
-        )]));
-    }
-    if let Some(error) = invalid_registration_name(&name) {
-        return Err(Failure::Blocked(error));
-    }
-    let canonical = manifest.skill_dir(&name);
-    let old = Canonical::read(&canonical)?;
-    let hash = hash_directory(&snapshot.source)?;
-    if old.status(&hash) == "different" && !force {
-        return Err(Failure::Blocked(format!(
-            "{name}: a different canonical skill already exists at {}; re-run with --force to overwrite it",
-            display_path(&canonical)
-        )));
-    }
-    if old.status(&hash) == "identical" {
-        let validation = validate_skill(&canonical);
-        if !validation.ok() {
-            return Err(Failure::Blocked(format!(
-                "{name}: canonical validation failed after import: {}",
-                validation.errors.join("; ")
-            )));
-        }
-    }
-    let edit = edit::prepare_registration_locked(
-        &manifest_path,
-        &name,
-        enabled,
-        &enabled_hosts(manifest),
-        edit_lock,
-    )?;
-    if name != skill
-        && let Some(reason) = foreign_record_reason(manifest, &state, &name, host)
-    {
-        return Err(Failure::Blocked(format!("{name}: {reason}")));
-    }
-    state.put(InstallRecord {
-        skill: name.clone(),
-        host: host.into(),
-        mode: InstallMode::Copy,
-        source: display_path(&canonical),
-        destination: display_path(&source),
-        source_hash: hash.clone(),
-        installed_hash: hash.clone(),
-        installed_at: utc_now(),
-        source_type: "host".into(),
-        source_url: display_path(&source),
-        source_revision: hash.clone(),
-        link_kind: None,
-        fallback_reason: None,
-    });
-    let cleanup_warning =
-        snapshot.publish(manifest, &canonical, &old, &hash, &edit, || state.save())?;
-    resolution.remember();
-    Ok(ShareOutcome {
-        name,
-        canonical,
-        cleanup_warning,
-    })
-}
-
 fn enabled_hosts(manifest: &Manifest) -> Vec<String> {
     manifest
         .targets
@@ -473,8 +542,14 @@ pub(crate) fn basename(path: &Path) -> &str {
 }
 
 fn open_source(path: &Path) -> Operation<Dir> {
+    let skill = basename(path);
     match entry_kind(path)? {
-        EntryKind::Link(_) => return Err(Failure::Link(PathBuf::from("."))),
+        EntryKind::Link(_) => {
+            return Err(Failure::Link {
+                skill: skill.into(),
+                path: PathBuf::from("."),
+            });
+        }
         EntryKind::Dir => {}
         _ => return Err(not_a_skill(path)),
     }
@@ -494,7 +569,10 @@ fn open_source(path: &Path) -> Operation<Dir> {
         .open_dir_nofollow(name)
         .map_err(|err| Error::io(path, err))?;
     match dir.symlink_metadata("SKILL.md") {
-        Ok(meta) if meta.is_symlink() => Err(Failure::Link(PathBuf::from("SKILL.md"))),
+        Ok(meta) if meta.is_symlink() => Err(Failure::Link {
+            skill: skill.into(),
+            path: PathBuf::from("SKILL.md"),
+        }),
         Ok(meta) if meta.is_file() => Ok(dir),
         Ok(_) => Err(not_a_skill(path)),
         Err(err) if err.kind() == io::ErrorKind::NotFound => Err(not_a_skill(path)),
@@ -513,6 +591,7 @@ fn not_a_skill(path: &Path) -> Failure {
 // Use held directory handles for traversal, and no-follow opens for both kinds
 // of entries. A link substituted after entry_kind cannot redirect the copy.
 fn visit(dir: &Dir, root: &Path, relative: &Path, dest: Option<&Path>) -> Operation<()> {
+    let skill = basename(root);
     let source = root.join(relative);
     let mut entries = dir
         .entries()
@@ -532,7 +611,10 @@ fn visit(dir: &Dir, root: &Path, relative: &Path, dest: Option<&Path>) -> Operat
             .symlink_metadata(&name)
             .map_err(|err| Error::io(&path, err))?;
         if matches!(kind, EntryKind::Link(_)) || meta.is_symlink() {
-            return Err(Failure::Link(rel));
+            return Err(Failure::Link {
+                skill: skill.into(),
+                path: rel,
+            });
         }
         let output = dest.map(|dest| dest.join(&name));
         match kind {
@@ -570,7 +652,7 @@ fn visit(dir: &Dir, root: &Path, relative: &Path, dest: Option<&Path>) -> Operat
                         .map_err(|err| Error::io(&path, err))?
                         .is_file()
                     {
-                        return Err(unsupported_entry(&rel));
+                        return Err(unsupported_entry(skill, &rel));
                     }
                     let mut file =
                         fs::File::create(&output).map_err(|err| Error::io(&output, err))?;
@@ -578,7 +660,7 @@ fn visit(dir: &Dir, root: &Path, relative: &Path, dest: Option<&Path>) -> Operat
                     apply_metadata(&file, &meta).map_err(|err| Error::io(&output, err))?;
                 }
             }
-            _ => return Err(unsupported_entry(&rel)),
+            _ => return Err(unsupported_entry(skill, &rel)),
         }
     }
     Ok(())
@@ -596,11 +678,14 @@ fn apply_metadata(file: &fs::File, meta: &cap_std::fs::Metadata) -> io::Result<(
     file.set_permissions(meta.permissions().into_std(file)?)
 }
 
-fn unsupported_entry(path: &Path) -> Failure {
-    Failure::Blocked(format!(
-        "source contains an unsupported entry: {}",
-        display_path(path)
-    ))
+fn unsupported_entry(skill: &str, path: &Path) -> Failure {
+    Failure::Blocked {
+        skill: skill.into(),
+        message: format!(
+            "source contains an unsupported entry: {}",
+            display_path(path)
+        ),
+    }
 }
 
 #[derive(PartialEq, Eq)]
@@ -634,28 +719,38 @@ struct Snapshot {
 }
 
 impl Snapshot {
-    fn new(manifest: &Manifest, source: &Path) -> Operation<Self> {
+    fn new(manifest: &Manifest, source: &Path, dry_run: bool) -> Operation<Self> {
+        let skill = basename(source);
         let dir = open_source(source)?;
         let resolved_source = physical_path(source)?.0;
         let data = physical_path(&paths::data_root())?.0;
         if same_or_below(&resolved_source, &data) || same_or_below(&data, &resolved_source) {
-            return Err(Failure::Blocked(
-                "source overlaps the machine-local skill data directory".into(),
-            ));
+            return Err(Failure::Blocked {
+                skill: skill.into(),
+                message: "source overlaps the machine-local skill data directory".into(),
+            });
         }
         // Check the complete tree before staging so a late link cannot leave
         // a partial copy in the registry, even in an ignored directory.
         visit(&dir, source, Path::new(""), None)?;
         let canonical_root = manifest.skills_dir();
-        let (_, stage_parent) = physical_path(&canonical_root)?;
+        let (_, canonical_stage_parent) = physical_path(&canonical_root)?;
         ensure_outside_hosts(&canonical_root, target_paths(manifest))?;
-        ensure_outside_hosts(&stage_parent, target_paths(manifest))?;
+        ensure_outside_hosts(&canonical_stage_parent, target_paths(manifest))?;
         ensure_outside_hosts(&manifest.root, target_paths(manifest))?;
-        if same_or_below(&physical_path(&stage_parent)?.0, &resolved_source) {
-            return Err(Failure::Blocked(
-                "source contains the registry staging directory".into(),
-            ));
+        if same_or_below(&physical_path(&canonical_stage_parent)?.0, &resolved_source) {
+            return Err(Failure::Blocked {
+                skill: skill.into(),
+                message: "source contains the registry staging directory".into(),
+            });
         }
+        // Dry runs never publish via rename, so stage under the OS temp dir
+        // instead of touching the registry's skills/ directory.
+        let stage_parent = if dry_run {
+            std::env::temp_dir()
+        } else {
+            canonical_stage_parent
+        };
         let temp = Builder::new()
             .prefix(".my-skills-")
             .tempdir_in(&stage_parent)
@@ -692,10 +787,13 @@ impl Snapshot {
             }
         }
         if Canonical::read(dest)? != *previous {
-            return Err(Failure::Blocked(format!(
-                "{} changed during the operation; re-run the command",
-                display_path(dest)
-            )));
+            return Err(Failure::Blocked {
+                skill: basename(dest).into(),
+                message: format!(
+                    "{} changed during the operation; re-run the command",
+                    display_path(dest)
+                ),
+            });
         }
         let status = previous.status(source_hash);
         let backup = self.temp.path().join("previous");

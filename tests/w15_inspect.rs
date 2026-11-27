@@ -38,12 +38,7 @@ fn output(command: &mut Command, code: i32) -> Value {
 #[test]
 fn skills_intersects_names_with_group_host_and_enabled_filters() {
     let fixture = fixture();
-    for flags in [
-        &[][..],
-        &["--brief"],
-        &["--with-governance"],
-        &["--brief", "--with-governance"],
-    ] {
+    for flags in [&[][..], &["--brief"]] {
         let all = output(fixture.command().args(["skills", "--json"]).args(flags), 0);
         let rows = all["skills"].as_array().unwrap();
         let expected = |names: &[&str]| {
@@ -96,32 +91,24 @@ fn skills_intersects_names_with_group_host_and_enabled_filters() {
 }
 
 #[test]
-fn status_unions_names_and_groups_with_existing_disabled_skill_labels() {
+fn removed_status_and_resolve_return_usage_error_in_json() {
     let fixture = fixture();
-    let all = output(fixture.command().args(["status", "--json"]), 0);
-    let rows = all.as_array().unwrap();
-    for (selection, names) in [
-        (&["alpha"][..], &["alpha"][..]),
-        (&["gamma", "alpha", "alpha"], &["alpha", "gamma"]),
-        (&["gamma", "--group", "second"], &["beta", "delta", "gamma"]),
-        (&["--group", "first"], &["alpha", "gamma"]),
-    ] {
-        let actual = output(
-            fixture.command().args(["status", "--json"]).args(selection),
-            0,
-        );
-        let expected = rows
-            .iter()
-            .filter(|row| names.iter().any(|name| row["skill"] == *name))
-            .collect::<Vec<_>>();
-        assert_eq!(actual, json!(expected), "{selection:?}");
-    }
+    let status_err = output(fixture.command().args(["status", "--json"]), 2);
+    assert_eq!(status_err["error"]["code"], "usage");
     assert!(
-        rows.iter()
-            .any(|row| row["skill"] == "gamma" && row["status"] == "MISSING")
+        status_err["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("'status' was removed in v1.5.0; use 'my-skills skills'")
     );
-    let error = output(fixture.command().args(["status", "absent", "--json"]), 2);
-    assert_eq!(error["error"]["code"], "unknown_skill");
+    let resolve_err = output(fixture.command().args(["resolve", "alpha", "--json"]), 2);
+    assert_eq!(resolve_err["error"]["code"], "usage");
+    assert!(
+        resolve_err["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("'resolve' was removed in v1.5.0; use 'my-skills skills <name> --json'")
+    );
 }
 
 #[test]
