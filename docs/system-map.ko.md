@@ -1,6 +1,6 @@
 # my-skills 시스템 지도
 
-이 문서는 my-skills가 **무엇을 어디에 두고, 어떤 순서로 움직이며, 코드의 어느 파일이 그 일을 하는지**를 그림으로 정리한다. 기준은 v1.4.0이다.
+이 문서는 my-skills가 **무엇을 어디에 두고, 어떤 순서로 움직이며, 코드의 어느 파일이 그 일을 하는지**를 그림으로 정리한다. 기준은 v1.5.0이다.
 
 - 명령과 옵션의 세부 동작은 [reference.md](reference.md)에 있다.
 - 개발자용 모듈 설명(영어)은 [architecture.md](architecture.md)에 있다.
@@ -54,7 +54,7 @@
 └── my-skills/
     ├── src/                      ← CLI 소스 (6장)
     ├── skills/                   ← 시드 스킬 3개 (바이너리에 들어감)
-    ├── tests/                    ← 통합 테스트 37개 파일
+    ├── tests/                    ← 기능별 통합 테스트 10개 + 공통 헬퍼
     └── docs/
 
 레지스트리 (내 스킬, private Git)
@@ -102,11 +102,11 @@ flowchart LR
 
 - **link:** 정본을 고치는 순간 에이전트에게 보인다. sync가 필요 없다.
 - **copy:** 복사한 시점의 내용이 남는다. 정본이 바뀌면 STALE이 되고, sync나 post-commit hook이 다시 복사한다. 누가 호스트 쪽 복사본을 직접 고쳤다면 DRIFTED가 되고, 그 수정은 덮어쓰지 않는다.
-- **연결 방식 우선순위:** 명령의 `--mode`, `my-skills.local.toml`의 `[targets.<호스트>] install_mode`, `my-skills.toml`의 같은 항목, `[defaults] install_mode` 순으로 앞의 것이 이긴다. link를 만들 수 없으면 copy로 바꾸고 그 이유를 기록한다.
+- **연결 방식 우선순위:** 명령의 `--mode`, `my-skills.local.toml`의 `[targets.<호스트>] install_mode`, `my-skills.toml`의 같은 항목, `[defaults] install_mode` 순으로 앞의 것이 이긴다. 설정이 `copy`면 기존 clean `link`는 `sync`가 자동으로 `copy`로 바꾸고, 기존 `copy`는 `--mode link`를 주거나 fallback이 아닌 copy에 `[targets.<호스트>] install_mode = "link"`가 명시됐을 때 `link`로 바꾼다. link를 만들 수 없으면 copy를 유지하고 그 이유(`fallback_reason`)를 기록한다.
 
 ### 상태는 이렇게 정해진다
 
-`my-skills status`와 `skills --json`이 보여 주는 값이다. 연결 하나마다 다음 순서로 판정한다.
+`my-skills skills`와 `skills --json`이 보여 주는 값이다. 연결 하나마다 다음 순서로 판정한다.
 
 ```mermaid
 flowchart TD
@@ -172,16 +172,16 @@ sequenceDiagram
 - post-commit은 항상 성공(exit 0)으로 끝나서 커밋을 막지 않는다.
 - 코드: `src/commands/hooks.rs`(실행), `src/git/hooks.rs`(판단과 pre-commit 검증).
 
-### 5.2 `install` / `sync` 안에서 일어나는 일
+### 5.2 `sync` 안에서 일어나는 일
 
 ```mermaid
 flowchart TD
-  A["install / sync 시작"] --> B["레지스트리 결정<br/>--root → MY_SKILLS_ROOT → 현재 폴더 → 저장된 root"]
+  A["sync 시작"] --> B["레지스트리 결정<br/>--root → MY_SKILLS_ROOT → 현재 폴더 → 저장된 root"]
   B --> C{"실제 쓰기인데 현재 폴더의<br/>레지스트리가 활성 레지스트리와 다른가?"}
   C -- 예 --> X1["거부 (exit 2)"]
   C -- 아니오 --> D["실제 쓰기라면 state.json.lock 잡기<br/>최대 30초 대기, 넘으면 state_busy (exit 2)<br/>미리보기는 잠그지 않음"]
   D --> E["manifest와 state.json 읽기"]
-  E --> F["계획: 스킬 × 호스트마다<br/>CREATE · UPDATE · REMOVE · NOOP · BLOCK"]
+  E --> F["계획: 스킬 × 호스트마다<br/>CREATE · UPDATE · CONVERT · REMOVE · NOOP · BLOCK"]
   F --> G["같은 실제 경로를 쓰는 대상 묶기<br/>안 고른 쪽을 깨뜨리면 막음"]
   G --> H["copy 대상은 검사용 snapshot 만들기"]
   H --> I["검증: frontmatter, 호스트 규칙"]
@@ -197,7 +197,7 @@ flowchart TD
 
 - **미리보기와 적용:** 미리보기는 항상 `--dry-run --json`이다. 적용할 때는 `--dry-run`만 빼면 된다.
 - **명시 `sync`의 검사 범위:** `sync <스킬>`이나 `--group`처럼 대상을 명시하면, 그대로 연결될 스킬은 이미 FRESH인 link라도 검증한다. 꺼져서 제거만 남은 스킬은 검사하지 않고 연결만 정리한다.
-- **인자 없는 `sync`:** hook이 쓰는 방식이다. 바뀔 항목만 검사한다.
+- **인자 없는 `sync`:** hook이 쓰는 방식이다. 생성·갱신·전환 항목만 검사한다.
 - 코드: `src/commands/connect.rs`(흐름), `src/drive/plan.rs`(계획), `src/drive/apply.rs`(적용과 되돌림), `src/drive/lock.rs`(잠금), `src/drive/state.rs`(기록).
 
 ### 5.3 새 스킬 만들기
@@ -221,33 +221,7 @@ flowchart LR
 - 등록에 실패하면 자기가 만든 파일만 지운다.
 - 코드: `src/commands/registry.rs`의 `new_skill`, `src/registry/edit.rs`.
 
-### 5.4 정본 찾기 (`resolve`)
-
-에이전트가 어떤 경로를 보고 있을 때, 고쳐야 할 정본 파일이 어디인지 한 번에 알려 준다. 파일을 해시하지 않아서 빠르다.
-
-```mermaid
-flowchart TD
-  I["my-skills resolve 대상 --json"] --> Q{"경로인가?<br/>절대경로, ., ~로 시작하거나 구분자 포함"}
-  Q -- "아니오 (이름)" --> NM{"등록된 이름인가?"}
-  NM -- 예 --> OK1["registered (exit 0)"]
-  NM -- 아니오 --> E2["unknown_skill (exit 2)"]
-  Q -- 예 --> W{"어디 아래 경로인가?<br/>(링크를 풀기 전에 경로 문자열로 판단)"}
-  W -- "레지스트리 skills/ 아래" --> RG{"매니페스트에 있나?"}
-  RG -- 예 --> OK2["registered (exit 0)"]
-  RG -- 아니오 --> OK3["unregistered 초안 (exit 0)"]
-  W -- "호스트 폴더 아래" --> HR{"설치 기록과 실제 항목 확인"}
-  HR -- "이 레지스트리의 정상 연결" --> OK4["registered (exit 0)<br/>canonical_path = 정본의 같은 파일"]
-  HR -- "다른 레지스트리" --> F1["foreign (exit 1)"]
-  HR -- "기록 없음, 종류 불일치, 호스트에만 있는 파일" --> F2["unmanaged (exit 1)"]
-  HR -- "경로 탈출, 이상한 링크" --> F3["unsafe (exit 1)"]
-  W -- "어디에도 속하지 않음" --> F4["unmanaged (exit 1)"]
-```
-
-- link 호스트에서 보이는 경로는 이미 정본과 같다. 그래서 대개 `resolve`가 필요 없다.
-- copy 호스트, 하위 파일, 확실하지 않은 경로일 때 한 번 부른다.
-- 코드: `src/commands/resolve.rs`.
-
-### 5.5 어느 레지스트리를 쓰는가
+### 5.4 어느 레지스트리를 쓰는가
 
 ```mermaid
 flowchart LR
@@ -297,10 +271,9 @@ flowchart TD
 
 | 명령 | 흐름 (commands/) | 실제 일을 하는 곳 |
 | --- | --- | --- |
-| `install`, `sync`, `uninstall`, `convert`, `bootstrap` | `connect.rs` | `drive/plan.rs`, `drive/apply.rs`, `drive/lock.rs`, `drive/state.rs`, `check/`. `bootstrap`은 끝에 `git/hooks.rs`의 `fill`로 빠진 hook을 설치 |
-| `status`, `validate`, `set-root`, `data-path` | `inspect.rs` | `drive/plan.rs`, `check/`, `registry/root.rs`, `platform/data.rs` |
-| `skills`, `enable`, `disable`, `share`, `import`, `init-registry`, `new` | `registry.rs` | `registry/catalog.rs`, `registry/edit.rs`, `registry/share.rs`, `registry/seeds.rs`. `init-registry`는 git init 뒤 `git/hooks.rs`의 `fill`로 hook 설치 |
-| `resolve` | `resolve.rs` | `drive/state.rs`, `drive/link.rs`, `registry/root.rs` |
+| `sync`, `bootstrap` | `connect.rs` | `drive/plan.rs`, `drive/apply.rs`, `drive/lock.rs`, `drive/state.rs`, `check/`. `bootstrap`은 끝에 `git/hooks.rs`의 `fill`로 빠진 hook을 설치 |
+| `validate`, `set-root`, `data-path` | `inspect.rs` | `check/`, `registry/root.rs`, `platform/data.rs` |
+| `skills`, `enable`, `disable`, `import`, `init-registry`, `new` | `registry.rs` | `registry/catalog.rs`, `registry/edit.rs`, `registry/import.rs`, `registry/seeds.rs`. `init-registry`는 git init 뒤 `git/hooks.rs`의 `fill`로 hook 설치 |
 | `diff` | `diff.rs` | `drive/diff.rs`, `drive/plan.rs` |
 | `doctor` | `doctor.rs` | `registry/catalog.rs`, `git/hooks.rs`, `drive/` |
 | `hooks install/status/uninstall/run` | `hooks.rs` | `git/hooks.rs`, 그리고 sync를 위해 `connect.rs`. `hooks run`은 먼저 빠진 hook을 채움(`fill`) |
@@ -311,21 +284,21 @@ flowchart TD
 
 | 폴더 | 파일 | 역할 |
 | --- | --- | --- |
-| `registry/` | `root.rs` | 어느 레지스트리를 쓸지 정하고(5.5), 활성 레지스트리를 저장하고, 쓰기 거부를 판단한다 |
+| `registry/` | `root.rs` | 어느 레지스트리를 쓸지 정하고(5.4), 활성 레지스트리를 저장하고, 쓰기 거부를 판단한다 |
 | | `manifest.rs` | `my-skills.toml`과 `.local.toml`을 합쳐 읽는다. 스킬 이름과 `--group`을 실제 목록으로 바꾼다(`select_names`) |
 | | `edit.rs` | 주석을 지키면서 manifest를 고친다(enable/disable/등록). 편집 잠금을 건다 |
-| | `catalog.rs` | `skills` 목록 행과 doctor의 `Catalog:`(설명 글자 수) 계산 |
+| | `catalog.rs` | `skills` 목록·호스트 상태·연결 세부 정보와 doctor의 `Catalog:`(설명 글자 수) 계산 |
 | | `seeds.rs` | 시드 스킬과 `init-registry` 템플릿 |
-| | `share.rs` | 호스트에만 있는 스킬을 정본으로 가져오기(`share`), 외부 폴더 들이기(`import`) |
+| | `import.rs` | 외부 폴더 들이기(`import <경로>`)와 호스트 로컬 스킬 회수(`import --from <호스트>`) |
 | `drive/` | `hosts.rs` | 세 호스트의 기본 경로, 설명 한도, 재시작 안내 |
-| | `plan.rs` | 쓰지 않고 계획만 세운다. 상태 판정(4장), 같은 경로 묶기 |
+| | `plan.rs` | 쓰지 않고 계획만 세운다. 상태 판정(4장), 자동 `link`↔`copy` 전환, 같은 경로 묶기 |
 | | `apply.rs` | 계획을 실제로 적용한다. 임시 폴더에 준비한 뒤 바꿔 끼우고, 실패하면 되돌린다. 정리 실패는 경고로 처리한다 |
 | | `link.rs` | symlink·junction 만들기와 읽기, 관리 링크 판별 |
 | | `state.rs` | `state.json` 읽기·쓰기, 이 레지스트리의 기록인지 판별(`belongs_to`) |
 | | `lock.rs` | `state.json.lock` 쓰기 잠금 |
 | | `hash.rs`, `ignore.rs` | 폴더 해시(`.git`, `__pycache__`, `.DS_Store` 등은 제외) |
 | | `diff.rs` | 정본과 호스트 복사본의 파일 단위 비교 |
-| `check/` | `frontmatter.rs` | SKILL.md 머리말(YAML) 해석 |
+| `check/` | `frontmatter.rs` | SKILL.md 머리말(YAML 1.2) 해석 |
 | | `validate.rs` | 형식과 호스트 규칙 검증. pre-commit과 `validate`가 같은 판정을 쓴다 |
 | `git/` | `hooks.rs` | hook 설치·상태 확인, pre-commit 검증, post-commit에서 무엇을 sync할지 판단 |
 | `platform/` | `paths.rs`, `data.rs` | 홈·설정·상태·데이터 폴더 위치, Windows 경로 표시 |
@@ -360,6 +333,6 @@ flowchart LR
   RELW --> UPD["각 기기에서 my-skills update"]
 ```
 
-- **통합 테스트:** `tests/`에 37개 파일이 있다. 실제 사용자 폴더를 건드리지 않도록, 테스트마다 HOME·XDG·LOCALAPPDATA를 임시 폴더로 바꿔서 돌린다.
+- **통합 테스트:** `tests/`에 기능별 10개 파일(+ 공통 헬퍼 `tests/common/mod.rs`)이 있다. 실제 사용자 폴더를 건드리지 않도록, 테스트마다 HOME·XDG·LOCALAPPDATA를 임시 폴더로 바꿔서 돌린다.
 - **릴리스 절차:** `docs/release-checklist.md`
 - **GitHub 워크플로:** `.github/workflows/ci.yml`, `.github/workflows/release-rust.yml`

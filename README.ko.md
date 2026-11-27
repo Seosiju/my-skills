@@ -51,8 +51,8 @@ Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Seosiju/my-skills/main
 
 ```bash
 my-skills init-registry
-my-skills install --dry-run   # 무엇을 연결할지 미리 보기
-my-skills install             # 에이전트에 연결
+my-skills sync --dry-run      # 무엇을 연결할지 미리 보기
+my-skills sync --yes          # 에이전트에 연결
 ```
 
 다른 기기에 이미 레지스트리가 있다면 clone해서 연결합니다.
@@ -68,15 +68,18 @@ Windows PowerShell에서는 `~/my-agent-skills` 대신 `"$HOME/my-agent-skills"`
 
 ## 자주 하는 일
 
-새 스킬 추가: 폴더와 `SKILL.md`를 만들고, 등록한 뒤 연결합니다.
+새 스킬 추가: 초안을 만들고 `SKILL.md`를 편집한 뒤, 켜고 연결합니다.
 
 ```bash
-cd ~/my-agent-skills
-mkdir skills/my-skill                       # skills/my-skill/SKILL.md 작성
-my-skills import skills/my-skill --enable   # 등록
-my-skills install my-skill --dry-run
-my-skills install my-skill --yes
+my-skills new my-skill --description "언제 이 스킬을 쓸지 한 줄 설명"
+# skills/my-skill/SKILL.md 편집
+my-skills enable my-skill
+my-skills sync my-skill --dry-run
+my-skills sync my-skill --yes
 ```
+
+이미 만들어 둔 폴더나 에이전트 폴더 안의 스킬은 `my-skills import <폴더>`나
+`my-skills import --from <호스트> --plan`으로 들여올 수 있습니다.
 
 지금 어떤 스킬이 어디에 연결돼 있는지 보기:
 

@@ -9,7 +9,7 @@
 //! |---|---|
 //! | `cli` | command-line definitions and dispatch |
 //! | `commands` | one handler per command group: flow and output only |
-//! | `registry` | the canonical side: root resolution, manifest, edits, catalog, seeds, share/import |
+//! | `registry` | the canonical side: root resolution, manifest, edits, catalog, seeds, import |
 //! | `drive` | the connection side: hosts, links, planning, applying, state, content hash |
 //! | `check` | Agent Skills validation and host display diagnostics |
 //! | `git` | registry git hooks |

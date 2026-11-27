@@ -1,26 +1,18 @@
-//! Command handlers. Each submodule is owned by one stream; `cli::run`
-//! dispatches to them. Handlers print their own output and return the exit
-//! code. Exit codes follow v0.4.1: 0 ok, 1 blocked/failed check, 2 usage or
+//! Command handlers. `cli::run` dispatches to them. Handlers print their own
+//! output and return the exit code: 0 ok, 1 blocked/failed check, 2 usage or
 //! configuration error.
 
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-pub mod connect; // integrator: install, sync, uninstall, convert, bootstrap
-pub mod diff; // wave14 stream B: read-only canonical vs host comparison
-pub mod doctor; // stream G
-pub mod first_run; // v1.4.1 stream B: first-run guidance
-pub mod hooks; // stream G
-pub mod inspect; // integrator: validate, status, set-root, data-path
-pub mod registry; // stream H: init-registry, skills, share, enable, disable, import
-pub mod resolve; // wave15 S2: read-only name/path -> canonical lookup
-pub mod update; // stream I
-
-/// Placeholder until a command is wired; keeps alpha builds honest.
-pub fn not_implemented(name: &str) -> ExitCode {
-    eprintln!("my-skills {name}: not implemented yet in this v1 alpha build");
-    ExitCode::from(2)
-}
+pub mod connect; // sync, bootstrap
+pub mod diff; // read-only canonical vs host comparison
+pub mod doctor; // health report
+pub mod first_run; // first-run guidance
+pub mod hooks; // git hooks install/uninstall/status/run
+pub mod inspect; // validate, set-root, data-path
+pub mod registry; // init-registry, skills, enable, disable, import, new
+pub mod update; // self-update
 
 /// Print a configuration error to stderr and, for JSON invocations, stdout.
 pub fn config_error(err: impl std::fmt::Display) -> ExitCode {
@@ -34,7 +26,7 @@ pub fn config_error(err: impl std::fmt::Display) -> ExitCode {
 }
 
 /// Every "state lock timed out" message starts with this; `config_error` maps
-/// it to the `state_busy` JSON code (exit 2). Wave 15 S1 produces it.
+/// it to the `state_busy` JSON code (exit 2).
 pub const STATE_BUSY_PREFIX: &str = "state is busy: ";
 
 /// Stable codes for errors currently passed through the display-only handler.
@@ -44,9 +36,11 @@ fn config_error_details(message: &str) -> (&'static str, Option<&'static str>) {
         "sync --json is not supported with --check; use --dry-run --json" => {
             ("usage", Some("Use --dry-run --json to request a plan."))
         }
-        "share requires a skill name unless --plan is used"
-        | "share requires exactly one of --enable or --disable"
-        | "uninstall requires a skill name"
+        "import requires a source path unless --from is used"
+        | "--plan requires --from <host>"
+        | "--plan cannot be combined with a skill name"
+        | "import --from requires a skill name unless --plan is used"
+        | "import --from requires either --enable or --disable"
         | "enable requires a skill name"
         | "disable requires a skill name"
         | crate::cli::ROOT_WITH_SET_ROOT => ("usage", None),
@@ -71,7 +65,7 @@ fn config_error_details(message: &str) -> (&'static str, Option<&'static str>) {
         ),
         m if m.starts_with("skill already exists: ") => (
             "already_exists",
-            Some("Pick another name, or edit the existing skill (my-skills resolve <name>)."),
+            Some("Pick another name, or edit the existing skill (my-skills skills <name>)."),
         ),
         m if m.starts_with("invalid skill name ") || m.starts_with("invalid group name ") => (
             "invalid_name",

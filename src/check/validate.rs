@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 use crate::check::frontmatter::{
-    FrontmatterError, Mapping, Node, YamlDiagnostics, load_yaml, split_document,
+    FrontmatterError, Mapping, Node, YamlDiagnostics, load_yaml, mapping_get, split_document,
 };
 use crate::drive::hosts::{HostConfig, MissingDescription};
 
@@ -201,9 +201,9 @@ fn host_diagnostics(
     hosts: &[&HostConfig],
     result: &mut ValidationResult,
 ) {
-    let name_node = get(metadata, "name");
+    let name_node = mapping_get(metadata, "name");
     let legacy_name = field_text(metadata, "name");
-    let description_node = get(metadata, "description");
+    let description_node = mapping_get(metadata, "description");
     let name_is_collection = is_yaml_collection(name_node);
     let description_is_collection = is_yaml_collection(description_node);
     for host in hosts {
@@ -262,7 +262,7 @@ fn host_diagnostics(
         let description = description_node
             .filter(|node| !description_is_collection && !matches!(node, Node::Null))
             .filter(|node| display.expects_text_name_and_description || node.truthy())
-            .map(Node::python_string)
+            .map(Node::to_text)
             .filter(|text| !display.collapse_whitespace || !text.trim().is_empty());
         if description_is_collection {
             let rejects_type =
@@ -334,10 +334,9 @@ fn host_diagnostics(
         let fields: BTreeSet<_> = metadata
             .iter()
             .filter(|(key, _)| {
-                !matches!(&**key, Node::String(key)
-                    if display.frontmatter_keep_fields.contains(&key.as_str()))
+                !matches!(key, Node::String(key) if display.frontmatter_keep_fields.contains(&key.as_str()))
             })
-            .map(|(key, _)| key.python_string())
+            .map(|(key, _)| key.to_text())
             .collect();
         if !fields.is_empty() {
             let fields = fields.into_iter().collect::<Vec<_>>().join(", ");
@@ -349,10 +348,7 @@ fn host_diagnostics(
 }
 
 fn is_yaml_collection(node: Option<&Node>) -> bool {
-    matches!(
-        node,
-        Some(Node::List(_) | Node::Map(_) | Node::Set(_) | Node::Pair(..))
-    )
+    matches!(node, Some(Node::List(_) | Node::Map(_)))
 }
 
 pub(crate) fn description_warning(
@@ -389,15 +385,9 @@ fn display_text<'a>(host: &HostConfig, text: &'a str) -> Cow<'a, str> {
 }
 
 fn field_text(metadata: &Mapping, name: &str) -> Option<String> {
-    get(metadata, name)
+    mapping_get(metadata, name)
         .filter(|node| node.truthy())
-        .map(Node::python_string)
-}
-
-fn get<'a>(metadata: &'a Mapping, name: &str) -> Option<&'a Node> {
-    metadata.iter().find_map(|(key, value)| {
-        matches!(&**key, Node::String(key) if key == name).then_some(value.as_ref())
-    })
+        .map(Node::to_text)
 }
 
 /// Errors used by the pre-commit hook and doctor's full validation.
