@@ -1,9 +1,11 @@
 //! Command-line surface. Owned by the integrator.
 //!
-//! Commands and flags match v0.4.1 (spec §6.9), plus the v1 additions:
-//! `sync --no-prune/--dry-run/--quiet`, `convert`, `hooks`, and
-//! `doctor --json`. Each command's handler lives in `crate::commands`.
+//! v1.5.0 surface (15 subcommands): `init-registry`, `bootstrap`, `set-root`,
+//! `update`, `sync`, `skills`, `enable`, `disable`, `new`, `import`,
+//! `validate`, `diff`, `doctor`, `hooks`, and `data-path`. Each command's
+//! handler lives in `crate::commands`.
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -30,9 +32,9 @@ which adds every skill whose manifest `group` matches.
 Hosts: without --host, a command acts on every enabled [targets.*] host.
 
 Exit codes: 0 ok; 1 blocked or failed check; 2 usage or configuration error.
-`install --dry-run` and `sync --dry-run` exit 1 only on validation failure; read
-`blocked` and `applicable` in their --json output, or use `sync --check`, which
-exits 1 when anything is out of date."
+`sync --dry-run` exits 1 only on validation failure; read `blocked` and
+`applicable` in its --json output, or use `sync --check`, which exits 1 when
+anything is out of date."
 )]
 pub struct Cli {
     /// Use this registry for this command only (overrides MY_SKILLS_ROOT, the
@@ -74,40 +76,28 @@ pub enum Command {
     Doctor(DoctorArgs),
     /// Update the installed my-skills binary
     Update(UpdateArgs),
-    /// Connect enabled skills for this machine
+    /// Connect enabled skills and install git hooks for this machine
     Bootstrap(BootstrapArgs),
     /// Create a private canonical skill registry scaffold
     InitRegistry(InitRegistryArgs),
     /// Set the active registry root used when running outside a registry
     SetRoot(SetRootArgs),
-    /// Connect skills into host directories (link by default)
-    Install(InstallArgs),
-    /// Plan sharing host-local skills into canonical
-    Share(ShareArgs),
     /// Enable registered skills in the manifest
     Enable(SkillNameArgs),
     /// Disable registered skills in the manifest
     Disable(SkillNameArgs),
-    /// Show connection status per skill and host
-    Status(StatusArgs),
-    /// List registered canonical skills
+    /// List registered canonical skills and their per-host connection status
     Skills(SkillsArgs),
-    /// Reconcile host directories with the manifest (connect and prune)
+    /// Reconcile host directories with the manifest (connect, convert, and prune)
     Sync(SyncArgs),
-    /// Remove managed connections (never the canonical source)
-    Uninstall(UninstallArgs),
-    /// Import an external skill directory into canonical skills/
+    /// Import an external skill directory or a host-local skill into canonical skills/
     Import(ImportArgs),
     /// Print a skill's shared machine-local data directory
     DataPath(DataPathArgs),
-    /// Switch existing connections between link and copy
-    Convert(ConvertArgs),
     /// Install, remove, or inspect the registry's git hooks
     Hooks(HooksArgs),
     /// Show how a host connection differs from its canonical skill (read-only)
     Diff(DiffArgs),
-    /// Find the canonical source behind a skill name or a skill path (read-only)
-    Resolve(ResolveArgs),
     /// Create a skill draft in skills/<name>/ and register it, disabled
     New(NewArgs),
 }
@@ -160,9 +150,6 @@ pub struct BootstrapArgs {
     /// Show the plan; write nothing
     #[arg(long)]
     pub dry_run: bool,
-    /// Accepted for v0.4.1 compatibility; v1 has no tool install step
-    #[arg(long)]
-    pub skip_tool_install: bool,
     /// Skip connecting skills
     #[arg(long)]
     pub skip_skill_install: bool,
@@ -172,7 +159,8 @@ pub struct BootstrapArgs {
     /// Also connect disabled skills
     #[arg(long)]
     pub all: bool,
-    /// Override the install mode for new connections
+    /// Install mode for this run (new connections and mode conversions); later
+    /// bare sync and hooks follow the manifest
     #[arg(long, value_enum)]
     pub mode: Option<ModeArg>,
     /// Do not install the my-skills git hooks
@@ -211,63 +199,6 @@ pub struct SetRootArgs {
 }
 
 #[derive(Debug, Args)]
-pub struct InstallArgs {
-    /// Skills to connect (default: every enabled skill)
-    pub skills: Vec<String>,
-    /// Also connect every skill in this manifest group (repeatable)
-    #[arg(long = "group", value_name = "GROUP")]
-    pub groups: Vec<String>,
-    /// Connect only to this host (default: every enabled host)
-    #[arg(long)]
-    pub host: Option<String>,
-    /// Also connect disabled skills
-    #[arg(long)]
-    pub all: bool,
-    /// Override the install mode for new connections (link or copy)
-    #[arg(long, value_enum)]
-    pub mode: Option<ModeArg>,
-    /// Show the plan and validation; write nothing.
-    /// Exits 1 only on validation failure
-    #[arg(long)]
-    pub dry_run: bool,
-    /// Machine-readable output. With --dry-run: the plan, with `blocked` and
-    /// `applicable`. Without it: the plan is applied and the result is
-    /// reported per action (`result`), with `applied` and `summary`
-    #[arg(long)]
-    pub json: bool,
-    /// Confirm a write to more than one host
-    #[arg(long)]
-    pub yes: bool,
-}
-
-#[derive(Debug, Args)]
-pub struct ShareArgs {
-    /// Host-local skill to copy into the registry (required unless --plan)
-    pub skill: Option<String>,
-    /// Host whose local skills to read
-    #[arg(long = "from")]
-    pub from_host: String,
-    /// List which host-local skills could be shared; write nothing
-    #[arg(long)]
-    pub plan: bool,
-    /// Machine-readable plan output
-    #[arg(long)]
-    pub json: bool,
-    /// Register the shared skill as enabled
-    #[arg(long, conflicts_with = "disable")]
-    pub enable: bool,
-    /// Register the shared skill as disabled
-    #[arg(long)]
-    pub disable: bool,
-    /// Overwrite a different canonical skill with the same name
-    #[arg(long)]
-    pub force: bool,
-    /// Same as --plan: show what would be shared; write nothing
-    #[arg(long)]
-    pub dry_run: bool,
-}
-
-#[derive(Debug, Args)]
 pub struct SkillNameArgs {
     /// Registered skill names (required unless --group is given)
     #[arg(required_unless_present = "groups")]
@@ -281,23 +212,11 @@ pub struct SkillNameArgs {
 }
 
 #[derive(Debug, Args)]
-pub struct StatusArgs {
-    /// Only these skills (default: every registered skill)
-    pub skills: Vec<String>,
-    /// Also show every skill in this manifest group (repeatable)
-    #[arg(long = "group", value_name = "GROUP")]
-    pub groups: Vec<String>,
-    /// Machine-readable output (v1)
-    #[arg(long)]
-    pub json: bool,
-}
-
-#[derive(Debug, Args)]
 pub struct SkillsArgs {
     /// Only these skills (default: every registered skill); combines with
     /// the filters below as AND
     pub skills: Vec<String>,
-    /// Machine-readable output (per-host connection status is always included)
+    /// Machine-readable output (per-host connection status and details included)
     #[arg(long)]
     pub json: bool,
     /// Only skills that target this host, with its status column
@@ -313,12 +232,9 @@ pub struct SkillsArgs {
     #[arg(long = "group", value_name = "GROUP")]
     pub groups: Vec<String>,
     /// With --json: compact rows (name, enabled, hosts, group, status, plus
-    /// error and governance when present); the table is unchanged
+    /// error when present); the table is unchanged
     #[arg(long)]
     pub brief: bool,
-    /// Add provenance details (source type and trust tier)
-    #[arg(long = "with-governance", alias = "with-status")]
-    pub with_governance: bool,
 }
 
 #[derive(Debug, Default, Args)]
@@ -335,6 +251,10 @@ pub struct SyncArgs {
     /// Also connect disabled skills
     #[arg(long)]
     pub all: bool,
+    /// Install mode for this run (new connections and mode conversions); later
+    /// bare sync and hooks follow the manifest
+    #[arg(long, value_enum)]
+    pub mode: Option<ModeArg>,
     /// Report drift only; change nothing. Exits 1 when anything is out of date.
     /// Does not validate (use --dry-run --json for that). Takes
     /// precedence over --dry-run; not combinable with --json
@@ -365,37 +285,30 @@ pub struct SyncArgs {
 }
 
 #[derive(Debug, Args)]
-pub struct UninstallArgs {
-    /// Skills whose connections to remove (required unless --group); the
-    /// registry copies stay
-    pub skills: Vec<String>,
-    /// Also select every skill in this manifest group (repeatable)
-    #[arg(long = "group", value_name = "GROUP")]
-    pub groups: Vec<String>,
-    /// Remove only from this host (default: every enabled host)
-    #[arg(long)]
-    pub host: Option<String>,
-    /// Confirm a write to more than one host
-    #[arg(long)]
-    pub yes: bool,
-    /// Show what would be removed; write nothing
-    #[arg(long)]
-    pub dry_run: bool,
-}
-
-#[derive(Debug, Args)]
 pub struct ImportArgs {
-    /// Skill directory (containing SKILL.md) to copy into skills/
-    pub source: String,
+    /// Skill directory path (without --from) or host-local skill name (with --from)
+    pub target: Option<String>,
+    /// Import a host-local skill from this host instead of a directory path
+    #[arg(long = "from", value_name = "HOST")]
+    pub from_host: Option<String>,
+    /// With --from: list host-local skills that could be imported; write nothing
+    #[arg(long)]
+    pub plan: bool,
     /// Overwrite a different canonical skill with the same name
     #[arg(long)]
     pub force: bool,
     /// Register the imported skill as enabled
-    #[arg(long)]
+    #[arg(long, conflicts_with = "disable")]
     pub enable: bool,
+    /// Register the imported skill as disabled
+    #[arg(long)]
+    pub disable: bool,
     /// Show what would change; write nothing
     #[arg(long)]
     pub dry_run: bool,
+    /// Machine-readable output
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -405,27 +318,6 @@ pub struct DataPathArgs {
     /// Create the directory if it does not exist
     #[arg(long)]
     pub create: bool,
-}
-
-#[derive(Debug, Args)]
-pub struct ConvertArgs {
-    /// Skill to convert (default: every registered skill's connections)
-    pub skill: Option<String>,
-    /// Target mode
-    #[arg(long, value_enum)]
-    pub to: ModeArg,
-    /// Convert only on this host (default: every enabled host)
-    #[arg(long)]
-    pub host: Option<String>,
-    /// Accepted for compatibility; convert already covers every registered skill
-    #[arg(long)]
-    pub all: bool,
-    /// Show what would change; write nothing
-    #[arg(long)]
-    pub dry_run: bool,
-    /// Confirm a write to more than one host
-    #[arg(long)]
-    pub yes: bool,
 }
 
 #[derive(Debug, Args)]
@@ -439,21 +331,6 @@ pub struct DiffArgs {
     /// Also print a unified diff for changed text files
     #[arg(long)]
     pub patch: bool,
-    /// Machine-readable output
-    #[arg(long)]
-    pub json: bool,
-}
-
-#[derive(Debug, Args)]
-pub struct ResolveArgs {
-    /// A registered skill name, or a path to a skill directory or any file
-    /// inside one: canonical (skills/<name>/...) or a host connection such as
-    /// ~/.claude/skills/<name>/references/setup.md. TARGET is a path when it
-    /// is absolute, starts with '.' or '~', or contains a path separator;
-    /// otherwise it is a skill name. Exit 0 resolved (including an
-    /// unregistered draft under skills/), 1 unresolved or unsafe path,
-    /// 2 unknown skill name.
-    pub target: String,
     /// Machine-readable output
     #[arg(long)]
     pub json: bool,
@@ -526,6 +403,55 @@ pub struct HooksRunArgs {
 /// `--root` never saves anything, so the two cannot be combined.
 pub const ROOT_WITH_SET_ROOT: &str = "--root cannot be combined with set-root or init-registry; pass the registry path as their argument";
 
+/// If argv invokes one of the six subcommands removed in v1.5.0, return a
+/// migration error message and hint so callers get actionable guidance with
+/// exit code 2 (without acting as an executable alias).
+pub fn removed_command_hint(raw_args: &[OsString]) -> Option<(&'static str, &'static str)> {
+    let mut index = 1;
+    while index < raw_args.len() {
+        let arg = raw_args[index].to_str()?;
+        if arg == "--root" {
+            index += 2;
+            continue;
+        }
+        if arg.starts_with("--root=") {
+            index += 1;
+            continue;
+        }
+        if arg.starts_with('-') {
+            return None;
+        }
+        return match arg {
+            "install" => Some((
+                "'install' was removed in v1.5.0; use 'my-skills sync'",
+                "Use 'my-skills sync' (add --no-prune to skip removals).",
+            )),
+            "uninstall" => Some((
+                "'uninstall' was removed in v1.5.0; use 'my-skills disable <skill>' followed by 'my-skills sync'",
+                "Run 'my-skills disable <skill>' and then 'my-skills sync'.",
+            )),
+            "convert" => Some((
+                "'convert' was removed in v1.5.0; set install_mode in my-skills.toml (or my-skills.local.toml) and run 'my-skills sync', or pass 'my-skills sync --mode <link|copy>'",
+                "Set install_mode in my-skills.toml or my-skills.local.toml and run 'my-skills sync'.",
+            )),
+            "status" => Some((
+                "'status' was removed in v1.5.0; use 'my-skills skills'",
+                "Use 'my-skills skills' (or 'my-skills skills --json').",
+            )),
+            "share" => Some((
+                "'share' was removed in v1.5.0; use 'my-skills import --from <host>'",
+                "Use 'my-skills import --from <host> --plan' or 'my-skills import --from <host> <skill> --enable|--disable'.",
+            )),
+            "resolve" => Some((
+                "'resolve' was removed in v1.5.0; use 'my-skills skills <name> --json' for canonical_path",
+                "Use 'my-skills skills <name> --json' to read canonical_path.",
+            )),
+            _ => None,
+        };
+    }
+    None
+}
+
 impl Command {
     /// True when the user asked for machine-readable output, so errors should
     /// be machine-readable too.
@@ -533,13 +459,10 @@ impl Command {
         match self {
             Command::Validate(args) => args.json,
             Command::Doctor(args) => args.json,
-            Command::Install(args) => args.json,
-            Command::Share(args) => args.json,
-            Command::Status(args) => args.json,
             Command::Skills(args) => args.json,
             Command::Sync(args) => args.json,
+            Command::Import(args) => args.json,
             Command::Diff(args) => args.json,
-            Command::Resolve(args) => args.json,
             Command::New(args) => args.json,
             _ => false,
         }
@@ -569,20 +492,14 @@ pub fn run(cli: Cli) -> ExitCode {
         Command::Bootstrap(args) => commands::connect::bootstrap(&args),
         Command::InitRegistry(args) => commands::registry::init_registry(&args),
         Command::SetRoot(args) => commands::inspect::set_root(&args),
-        Command::Install(args) => commands::connect::install(&args),
-        Command::Share(args) => commands::registry::share(&args),
         Command::Enable(args) => commands::registry::enable(&args),
         Command::Disable(args) => commands::registry::disable(&args),
-        Command::Status(args) => commands::inspect::status(&args),
         Command::Skills(args) => commands::registry::skills(&args),
         Command::Sync(args) => commands::connect::sync(&args),
-        Command::Uninstall(args) => commands::connect::uninstall(&args),
         Command::Import(args) => commands::registry::import(&args),
         Command::DataPath(args) => commands::inspect::data_path(&args),
-        Command::Convert(args) => commands::connect::convert(&args),
         Command::Hooks(args) => commands::hooks::run(&args),
         Command::Diff(args) => commands::diff::run(&args),
-        Command::Resolve(args) => commands::resolve::run(&args),
         Command::New(args) => commands::registry::new_skill(&args),
     }
 }

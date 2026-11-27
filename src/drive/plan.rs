@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use crate::drive::hash::hash_directory;
 use crate::drive::link::{self, EntryKind};
 use crate::drive::state::{InstallRecord, State};
+use crate::platform::paths::display_path;
 use crate::registry::manifest::{InstallMode, Manifest, Skill};
 use crate::{Error, Result};
 
@@ -57,8 +58,6 @@ pub enum Action {
     Conflict,
     /// An unselected connection shares this entry and would be invalidated.
     SharedDestination,
-    SkipUnsupported,
-    NotManaged,
 }
 
 impl Action {
@@ -74,8 +73,6 @@ impl Action {
             Action::BlockForeign => "BLOCK_FOREIGN",
             Action::Conflict => "CONFLICT",
             Action::SharedDestination => "SHARED_DESTINATION",
-            Action::SkipUnsupported => "SKIP_UNSUPPORTED",
-            Action::NotManaged => "NOT_MANAGED",
         }
     }
 
@@ -264,7 +261,7 @@ pub(crate) fn physical_destination(path: &Path) -> Result<PathBuf> {
                     .expect("ancestor is a path prefix");
                 let entry = real.join(suffix);
                 #[cfg(windows)]
-                let entry = PathBuf::from(entry.to_string_lossy().to_lowercase());
+                let entry = PathBuf::from(display_path(&entry).to_lowercase());
                 return Ok(entry);
             }
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
@@ -290,20 +287,43 @@ pub(crate) fn group_destinations(
 ) -> Result<SharedDestinations> {
     let mut indices: BTreeMap<PathBuf, Vec<usize>> = BTreeMap::new();
     for (index, item) in items.iter().enumerate() {
-        if !matches!(item.action, Action::SkipUnsupported | Action::NotManaged) {
-            indices
-                .entry(physical_destination(&item.destination)?)
-                .or_default()
-                .push(index);
-        }
+        indices
+            .entry(physical_destination(&item.destination)?)
+            .or_default()
+            .push(index);
     }
     let mut result = SharedDestinations::default();
     for group in indices.into_values().filter(|group| group.len() > 1) {
         let first = &items[group[0]];
-        let same_items = group.iter().all(|&idx| {
+        let same_source = group.iter().all(|&idx| {
             let item = &items[idx];
-            item.skill == first.skill && item.source == first.source && item.mode == first.mode
+            item.skill == first.skill && item.source == first.source
         });
+        let same_mode = group.iter().all(|&idx| items[idx].mode == first.mode);
+        let mut kept_modes = group
+            .iter()
+            .map(|&idx| &items[idx])
+            .filter(|item| item.action != Action::Remove)
+            .map(|item| item.mode);
+        if same_source
+            && kept_modes
+                .next()
+                .is_some_and(|mode| kept_modes.any(|other| other != mode))
+            && group
+                .iter()
+                .all(|&idx| items[idx].action != Action::BlockForeign)
+        {
+            let reason = format!(
+                "hosts sharing {} want different install modes",
+                display_path(&first.destination)
+            );
+            for idx in group {
+                items[idx].action = Action::BlockDrift;
+                items[idx].reason.clone_from(&reason);
+            }
+            continue;
+        }
+        let same_items = same_source && same_mode;
         let same_action = group.iter().all(|&idx| items[idx].action == first.action);
         if same_action && first.action == Action::Remove {
             continue;
@@ -438,19 +458,17 @@ fn guard_unselected_peers(
     Ok(())
 }
 
-/// Plan connecting one skill to one host. An existing record keeps its own
-/// mode; a new connection uses `requested_mode` (D1).
-pub fn plan_install_one(
+fn plan_wanted(
     manifest: &Manifest,
     skill: &Skill,
     host: &str,
     state: &State,
-    requested_mode: InstallMode,
+    requested_mode: Option<InstallMode>,
 ) -> Result<PlanItem> {
     let source = manifest.skill_dir(&skill.name);
     let dest = destination(manifest, host, &skill.name)?;
     let record = state.get(&skill.name, host);
-    let mode = record.map_or(requested_mode, |r| r.mode);
+    let desired = requested_mode.unwrap_or_else(|| manifest.effective_install_mode(host));
     let item = |action, reason: &str, mode| {
         PlanItem::new(
             &skill.name,
@@ -463,28 +481,78 @@ pub fn plan_install_one(
         )
     };
 
-    if !host_supported(skill, host) {
-        return Ok(item(
-            Action::SkipUnsupported,
-            &format!("{host} not in skill.hosts"),
-            mode,
-        ));
-    }
     if let Some(record) = record.filter(|record| !record.belongs_to(&manifest.skills_dir())) {
         return Ok(PlanItem::block_foreign(source, record));
     }
 
     let kind = link::entry_kind(&dest)?;
+    let Some(record) = record else {
+        return Ok(if kind == EntryKind::Missing {
+            item(Action::Create, "destination missing", desired)
+        } else {
+            item(
+                Action::BlockConflict,
+                "destination exists and is not managed by my-skills",
+                desired,
+            )
+        });
+    };
+
+    if should_convert(record, manifest, host, requested_mode, desired) {
+        let recorded = Path::new(&record.destination);
+        let same_destination = physical_destination(recorded)? == physical_destination(&dest)?;
+        if kind == EntryKind::Missing
+            && (same_destination || link::entry_kind(recorded)? == EntryKind::Missing)
+        {
+            return Ok(item(Action::Create, "destination missing", desired));
+        }
+        if !same_destination {
+            return Ok(item(
+                Action::BlockDrift,
+                "recorded destination differs from the manifest target",
+                desired,
+            ));
+        }
+        if !source.is_dir() {
+            return Ok(item(
+                Action::BlockDrift,
+                "canonical skill directory is missing",
+                desired,
+            ));
+        }
+        let status = connection_status(&dest, &source, Some(record))?;
+        let (action, reason) = match (desired, status) {
+            (InstallMode::Copy, Status::Fresh) => (Action::Convert, "mode changed: link -> copy"),
+            (InstallMode::Link, Status::Fresh | Status::Stale) => {
+                (Action::Convert, "mode changed: copy -> link")
+            }
+            (InstallMode::Link, Status::Conflict) => (
+                Action::Conflict,
+                "canonical and installed copy both changed; resolve first",
+            ),
+            (InstallMode::Link, Status::Drifted) => (
+                Action::BlockDrift,
+                "installed copy was modified locally; not converted",
+            ),
+            (_, other) => {
+                return Ok(item(
+                    Action::BlockDrift,
+                    &format!("cannot convert a {} connection", other.label()),
+                    desired,
+                ));
+            }
+        };
+        return Ok(item(action, reason, desired));
+    }
+
     if kind == EntryKind::Missing {
+        let mode = if record.fallback_reason.is_some() {
+            desired
+        } else {
+            record.mode
+        };
         return Ok(item(Action::Create, "destination missing", mode));
     }
-    let Some(record) = record else {
-        return Ok(item(
-            Action::BlockConflict,
-            "destination exists and is not managed by my-skills",
-            mode,
-        ));
-    };
 
     match record.mode {
         InstallMode::Link => Ok(match link_status(&dest, &source, kind) {
@@ -531,35 +599,45 @@ pub fn plan_install_one(
     }
 }
 
-/// Plan removing one managed connection. Uses the recorded destination.
-pub fn plan_uninstall_one(
+fn should_convert(
+    record: &InstallRecord,
     manifest: &Manifest,
-    skill_name: &str,
     host: &str,
-    state: &State,
-) -> Result<PlanItem> {
-    let source = manifest.skill_dir(skill_name);
-    let Some(record) = state.get(skill_name, host) else {
-        let dest = destination(manifest, host, skill_name)?;
-        return Ok(PlanItem::new(
-            skill_name,
-            host,
-            source,
-            dest,
-            Action::NotManaged,
-            "not recorded as managed",
-            InstallMode::Link,
-        ));
-    };
-    if !record.belongs_to(&manifest.skills_dir()) {
-        return Ok(PlanItem::block_foreign(source, record));
+    requested_mode: Option<InstallMode>,
+    desired: InstallMode,
+) -> bool {
+    match (record.mode, desired) {
+        // A copy desire already came from either the CLI or the effective manifest mode.
+        (InstallMode::Link, InstallMode::Copy) => true,
+        (InstallMode::Copy, InstallMode::Link) => {
+            requested_mode == Some(InstallMode::Link)
+                || (record.fallback_reason.is_none()
+                    && manifest
+                        .targets
+                        .get(host)
+                        .and_then(|target| target.install_mode)
+                        == Some(InstallMode::Link))
+        }
+        _ => false,
     }
+}
+
+/// Prune a managed connection at its recorded destination.
+fn plan_prune(
+    manifest: &Manifest,
+    record: &InstallRecord,
+    reason: &str,
+) -> Result<Option<PlanItem>> {
+    if !record.belongs_to(&manifest.skills_dir()) {
+        return Ok(None);
+    }
+    let source = manifest.skill_dir(&record.skill);
     let dest = PathBuf::from(&record.destination);
     let kind = link::entry_kind(&dest)?;
     let item = |action, reason: &str| {
         PlanItem::new(
-            skill_name,
-            host,
+            &record.skill,
+            &record.host,
             source.clone(),
             dest.clone(),
             action,
@@ -567,7 +645,7 @@ pub fn plan_uninstall_one(
             record.mode,
         )
     };
-    Ok(match record.mode {
+    let mut planned = match record.mode {
         InstallMode::Link => match kind {
             EntryKind::Missing => item(Action::Remove, "managed link (already gone)"),
             EntryKind::Link(_) if link::is_managed_link(&dest, &source) => {
@@ -582,7 +660,11 @@ pub fn plan_uninstall_one(
             }
             _ => item(Action::BlockDrift, "installed copy was modified locally"),
         },
-    })
+    };
+    if planned.action == Action::Remove {
+        planned.reason = format!("{} ({reason})", planned.reason);
+    }
+    Ok(Some(planned))
 }
 
 /// What `sync` should look at.
@@ -600,7 +682,7 @@ pub struct SyncScope<'a> {
 /// connections it no longer wants. Disabled targets are never touched (I7).
 ///
 /// When `requested_mode` is `Some(mode)`, it overrides the manifest mode for
-/// new connections; otherwise each host uses `manifest.effective_install_mode(host)`.
+/// new connections and conversions; otherwise each host follows the manifest.
 pub fn plan_sync(
     manifest: &Manifest,
     state: &State,
@@ -613,154 +695,21 @@ pub fn plan_sync(
         if !target_enabled {
             continue;
         }
-        let host_mode = requested_mode.unwrap_or_else(|| manifest.effective_install_mode(host));
         for skill in scope.skills {
             if wants(manifest, skill, host) {
-                items.push(plan_install_one(manifest, skill, host, state, host_mode)?);
-            } else if scope.prune && state.get(&skill.name, host).is_some() {
-                items.extend(plan_prune(
-                    manifest,
-                    &skill.name,
-                    host,
-                    state,
-                    "no longer wanted",
-                )?);
+                items.push(plan_wanted(manifest, skill, host, state, requested_mode)?);
+            } else if scope.prune
+                && let Some(record) = state.get(&skill.name, host)
+            {
+                items.extend(plan_prune(manifest, record, "no longer wanted")?);
             }
         }
         if scope.prune && scope.include_orphans {
             for record in state.records() {
                 if &record.host == host && !manifest.skills.contains_key(&record.skill) {
-                    items.extend(plan_prune(
-                        manifest,
-                        &record.skill,
-                        host,
-                        state,
-                        "skill no longer registered",
-                    )?);
+                    items.extend(plan_prune(manifest, record, "skill no longer registered")?);
                 }
             }
-        }
-    }
-    Ok(items)
-}
-
-fn plan_prune(
-    manifest: &Manifest,
-    skill: &str,
-    host: &str,
-    state: &State,
-    reason: &str,
-) -> Result<Option<PlanItem>> {
-    let mut item = plan_uninstall_one(manifest, skill, host, state)?;
-    match item.action {
-        Action::BlockForeign => return Ok(None),
-        Action::Remove => item.reason = format!("{} ({reason})", item.reason),
-        _ => {}
-    }
-    Ok(Some(item))
-}
-
-/// Partition hosts for `convert --to <mode>`.
-///
-/// When `explicit_host` is false (`--host all` or omitted), any host whose
-/// `[targets.<host>] install_mode` is set explicitly and differs from `to`
-/// is returned in the skipped list rather than the active list. An explicit
-/// `--host <name>` is never skipped.
-pub fn filter_convert_hosts(
-    manifest: &Manifest,
-    hosts: &[String],
-    to: InstallMode,
-    explicit_host: bool,
-) -> (Vec<String>, Vec<(String, InstallMode)>) {
-    if explicit_host {
-        return (hosts.to_vec(), Vec::new());
-    }
-    let mut active = Vec::new();
-    let mut skipped = Vec::new();
-    for host in hosts {
-        if let Some(mode) = manifest
-            .targets
-            .get(host)
-            .and_then(|target| target.install_mode)
-            .filter(|&mode| mode != to)
-        {
-            skipped.push((host.clone(), mode));
-        } else {
-            active.push(host.clone());
-        }
-    }
-    (active, skipped)
-}
-
-/// Plan switching existing connections to `to` (spec §6.6).
-pub fn plan_convert(
-    manifest: &Manifest,
-    state: &State,
-    skills: &[&Skill],
-    hosts: &[String],
-    to: InstallMode,
-) -> Result<Vec<PlanItem>> {
-    let mut items = Vec::new();
-    for skill in skills {
-        for host in hosts {
-            let Some(record) = state.get(&skill.name, host) else {
-                continue;
-            };
-            let source = manifest.skill_dir(&skill.name);
-            if !record.belongs_to(&manifest.skills_dir()) {
-                items.push(PlanItem::block_foreign(source, record));
-                continue;
-            }
-            let dest = PathBuf::from(&record.destination);
-            let expected = destination(manifest, host, &skill.name)?;
-            let status = if host_supported(skill, host) {
-                connection_status(&expected, &source, Some(record))?
-            } else {
-                Status::Unsupported
-            };
-            let item = |action, reason: &str| {
-                PlanItem::new(
-                    &skill.name,
-                    host,
-                    source.clone(),
-                    dest.clone(),
-                    action,
-                    reason,
-                    to,
-                )
-            };
-            let planned = if record.mode == to {
-                item(Action::Noop, "already in the requested mode")
-            } else if dest != expected {
-                // connection_status judged the manifest's current path; converting a
-                // connection recorded elsewhere would act on a different entry.
-                item(
-                    Action::BlockDrift,
-                    "recorded destination differs from the manifest target; run sync first",
-                )
-            } else if !source.is_dir() {
-                item(Action::BlockDrift, "canonical skill directory is missing")
-            } else {
-                match (to, status) {
-                    (InstallMode::Link, Status::Fresh | Status::Stale) => {
-                        item(Action::Convert, "copy has no local edits")
-                    }
-                    (InstallMode::Copy, Status::Fresh) => item(Action::Convert, "link is healthy"),
-                    (_, Status::Conflict) => item(
-                        Action::Conflict,
-                        "canonical and installed copy both changed; resolve first",
-                    ),
-                    (_, Status::Missing) => item(
-                        Action::BlockDrift,
-                        "connection is missing; run sync instead",
-                    ),
-                    (_, other) => item(
-                        Action::BlockDrift,
-                        &format!("cannot convert a {} connection", other.label()),
-                    ),
-                }
-            };
-            items.push(planned);
         }
     }
     Ok(items)

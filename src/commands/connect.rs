@@ -1,8 +1,4 @@
-//! install, sync, uninstall, convert, bootstrap. Integrator.
-//!
-//! Output lines and exit codes follow v0.4.1 `install_commands.py` and
-//! `bootstrap_commands.py`. v1 changes: links are the default mode, sync
-//! reconciles (connects and prunes, D3), and `convert` is new (spec §6.6).
+//! sync and bootstrap command handlers.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -17,146 +13,15 @@ use crate::Error;
 use crate::check::validate::{ValidationResult, validate_skill, validate_skill_for_host};
 use crate::cli::*;
 use crate::drive::apply::{self, Connection, CopySnapshot, Outcome, PreparedConnection};
-use crate::drive::hosts::{self, get_host};
+use crate::drive::hosts::get_host;
 use crate::drive::link::LinkKind;
 use crate::drive::plan::{self, Action, PlanItem, SyncScope};
 use crate::drive::state::{State, StateLock, default_state_path};
 use crate::platform::paths::display_path;
 use crate::registry::manifest::{
-    CliOverrides, InstallMode, Manifest, Skill, expand_path, load_manifest, select_names,
-    selected_skills,
+    CliOverrides, InstallMode, Manifest, Skill, load_manifest, select_names, selected_skills,
 };
 use crate::registry::root::{self, confirm_multi_host_write, resolve_hosts};
-
-// ---------------------------------------------------------------- install
-
-pub fn install(args: &InstallArgs) -> ExitCode {
-    let cli = CliOverrides {
-        install_mode: args.mode.map(Into::into),
-        ..CliOverrides::default()
-    };
-    let ConnectManifest {
-        manifest,
-        resolution,
-        _state_lock,
-        refusal,
-    } = match load_connect_manifest(&cli, !args.dry_run, args.json) {
-        Ok(loaded) => loaded,
-        Err(e) => return config_error(e),
-    };
-    let skills = match select_names(&manifest, &args.skills, &args.groups)
-        .and_then(|names| selected_skills(&manifest, &names, args.all))
-    {
-        Ok(skills) => skills,
-        Err(e) => return config_error(e),
-    };
-    let hosts = match resolve_hosts(&manifest, args.host.as_deref()) {
-        Ok(hosts) => hosts,
-        Err(e) => return config_error(e),
-    };
-    let allow = is_builtin_seed_default_install(args, &manifest, &skills, &hosts);
-    let needs_yes = !allow && hosts.len() > 1 && !args.yes;
-    let mut state = match State::load(None) {
-        Ok(s) => s,
-        Err(e) => return config_error(e),
-    };
-    let mut items = Vec::new();
-    for skill in &skills {
-        for host in &hosts {
-            let mode = manifest.effective_install_mode(host);
-            match plan::plan_install_one(&manifest, skill, host, &state, mode) {
-                Ok(item) => items.push(item),
-                Err(e) => return config_error(e),
-            }
-        }
-    }
-
-    let shared = match plan::group_destinations(&manifest, &state, &mut items) {
-        Ok(shared) => shared,
-        Err(err) => return config_error(err),
-    };
-    let mut report = PlanReport::unchecked(&items, Some(&resolution), needs_yes);
-    if let Some(refusal) = &refusal {
-        return report.stop(BatchStop::Inactive(refusal), args.json);
-    }
-    if shared.incompatible && !args.dry_run {
-        if !args.json {
-            print_plan_results_noop(&items);
-        }
-        return report.stop(BatchStop::Blocked, args.json);
-    }
-
-    let prepared = PreparedPlan::new(&items).with_groups(shared.groups);
-    let checks = check_targets(&manifest, &skills, &hosts, &prepared, CheckScope::AllHosts);
-    let validation = validate_selected(&checks, Some(&prepared));
-    report.validation = &validation;
-    if !args.dry_run {
-        print_validation(&validation, args.json);
-    }
-    if validation.iter().any(|check| !check.ok) {
-        if !args.dry_run {
-            return report.stop(BatchStop::Blocked, args.json);
-        }
-        report.items = &[];
-        report.print_preview(args.json);
-        if !args.json {
-            print_confirmation_hint(&hosts, needs_yes);
-        }
-        return ExitCode::from(1);
-    }
-
-    if args.dry_run {
-        report.print_preview(args.json);
-        if !args.json {
-            println!("Dry run — planned actions (nothing written):");
-            print_plan(&items);
-            super::print_would_cache_root(&resolution);
-            print_confirmation_hint(&hosts, needs_yes);
-        }
-        return ExitCode::SUCCESS;
-    }
-
-    if !allow && !confirm_multi_host_write(&hosts, args.yes) {
-        return report.stop(BatchStop::NeedsYes, args.json);
-    }
-    apply_connections(
-        prepared,
-        &mut state,
-        report,
-        ApplyOptions {
-            json: args.json,
-            quiet: false,
-        },
-    )
-}
-
-/// v0.4.1 `is_builtin_seed_default_install`: a plain `install` of only
-/// built-in seeds into built-in default paths needs no `--yes`.
-fn is_builtin_seed_default_install(
-    args: &InstallArgs,
-    manifest: &Manifest,
-    skills: &[&Skill],
-    hosts_: &[String],
-) -> bool {
-    if !args.skills.is_empty()
-        || !args.groups.is_empty()
-        || args.host.is_some()
-        || args.all
-        || args.mode.is_some()
-        || skills.is_empty()
-        || skills.iter().any(|s| s.source_type != "builtin-seed")
-    {
-        return false;
-    }
-    hosts_.iter().all(|host| {
-        hosts::get_host(host).is_some_and(|config| {
-            manifest
-                .targets
-                .get(host)
-                .is_some_and(|t| t.path == expand_path(config.default_user_path))
-        })
-    })
-}
 
 // ---------------------------------------------------------------- sync
 
@@ -169,11 +34,7 @@ pub fn sync(args: &SyncArgs) -> ExitCode {
         resolution,
         _state_lock,
         refusal,
-    } = match load_connect_manifest(
-        &CliOverrides::default(),
-        !args.dry_run && !args.check,
-        args.json,
-    ) {
+    } = match load_connect_manifest(!args.dry_run && !args.check, args.json) {
         Ok(loaded) => loaded,
         Err(e) => return config_error(e),
     };
@@ -244,12 +105,16 @@ fn sync_manifest_with_resolution(
         include_orphans: requested.is_empty(),
         prune: !args.no_prune,
     };
-    let mut items = match plan::plan_sync(manifest, &state, &scope, None) {
+    let mut items = match plan::plan_sync(manifest, &state, &scope, args.mode.map(Into::into)) {
         Ok(items) => items,
         Err(e) => return config_error(e),
     };
     // Excluded skills are untouched, including by the orphan prune.
     items.retain(|item| !args.exclude.contains(&item.skill));
+    let shared = match plan::group_destinations(manifest, &state, &mut items) {
+        Ok(shared) => shared,
+        Err(err) => return config_error(err),
+    };
 
     if args.check {
         // Status of every wanted pair (v0.4.1 output), plus what a real sync
@@ -257,6 +122,10 @@ fn sync_manifest_with_resolution(
         let mut drift = items
             .iter()
             .any(|i| i.action.writes() || i.action.is_block());
+        let by_pair: BTreeMap<_, _> = items
+            .iter()
+            .map(|item| ((item.skill.as_str(), item.host.as_str()), item))
+            .collect();
         for skill in &skills {
             if !skill.enabled {
                 continue;
@@ -265,8 +134,26 @@ fn sync_manifest_with_resolution(
             for host in &hosts {
                 match plan::status_of(manifest, skill, host, &state) {
                     Ok(status) => {
-                        println!("  {host:8} {}", status.label());
-                        drift |= !matches!(status, plan::Status::Fresh | plan::Status::Unsupported);
+                        let item = by_pair.get(&(skill.name.as_str(), host.as_str()));
+                        if let Some(item) = item.filter(|item| item.action == Action::Convert) {
+                            let from = state
+                                .get(&skill.name, host)
+                                .expect("conversion requires an existing record")
+                                .mode;
+                            println!(
+                                "  {host:8} CONVERT ({} -> {})",
+                                mode_label(from),
+                                mode_label(item.mode)
+                            );
+                        } else if let Some(item) = item.filter(|item| item.action.is_block())
+                            && matches!(status, plan::Status::Fresh | plan::Status::Stale)
+                        {
+                            println!("  {host:8} BLOCKED ({})", item.reason);
+                        } else {
+                            println!("  {host:8} {}", status.label());
+                            drift |=
+                                !matches!(status, plan::Status::Fresh | plan::Status::Unsupported);
+                        }
                     }
                     Err(e) => return config_error(e),
                 }
@@ -279,10 +166,6 @@ fn sync_manifest_with_resolution(
         return exit(drift);
     }
 
-    let shared = match plan::group_destinations(manifest, &state, &mut items) {
-        Ok(shared) => shared,
-        Err(err) => return config_error(err),
-    };
     let writes = items.iter().any(|i| i.action.writes());
     let explicit = !requested.is_empty();
     let mut report =
@@ -319,7 +202,8 @@ fn sync_manifest_with_resolution(
         .filter(|s| {
             explicit
                 || items.iter().any(|i| {
-                    i.skill == s.name && matches!(i.action, Action::Create | Action::Update)
+                    i.skill == s.name
+                        && matches!(i.action, Action::Create | Action::Update | Action::Convert)
                 })
         })
         .collect();
@@ -368,194 +252,6 @@ fn print_plan_results_noop(items: &[PlanItem]) {
     }
 }
 
-// ---------------------------------------------------------------- uninstall
-
-pub fn uninstall(args: &UninstallArgs) -> ExitCode {
-    if args.skills.is_empty() && args.groups.is_empty() {
-        return config_error("uninstall requires a skill name");
-    }
-    let ConnectManifest {
-        manifest,
-        resolution,
-        _state_lock,
-        ..
-    } = match load_connect_manifest(&CliOverrides::default(), !args.dry_run, false) {
-        Ok(loaded) => loaded,
-        Err(e) => return config_error(e),
-    };
-    let names = match select_names(&manifest, &args.skills, &args.groups) {
-        Ok(names) => names,
-        // A v1.1 single-name uninstall can remove a managed orphan record.
-        Err(_) if args.skills.len() == 1 && args.groups.is_empty() => args.skills.clone(),
-        Err(e) => return config_error(e),
-    };
-    let hosts = match resolve_hosts(&manifest, args.host.as_deref()) {
-        Ok(h) => h,
-        Err(e) => return config_error(e),
-    };
-    let mut state = match State::load(None) {
-        Ok(s) => s,
-        Err(e) => return config_error(e),
-    };
-    let mut items = Vec::new();
-    for name in &names {
-        for host in &hosts {
-            match plan::plan_uninstall_one(&manifest, name, host, &state) {
-                Ok(item) => items.push(item),
-                Err(e) => return config_error(e),
-            }
-        }
-    }
-    // Removing an entry that an unselected host also records would break it.
-    // A missing host directory cannot share anything, so grouping is skipped.
-    let shared = plan::group_destinations(&manifest, &state, &mut items).unwrap_or_default();
-    if args.dry_run {
-        print_write_refusal(resolution.write_refusal().as_deref());
-        println!("Dry run — planned actions (nothing written):");
-        print_plan(&items);
-        super::print_would_cache_root(&resolution);
-        print_confirmation_hint(&hosts, hosts.len() > 1 && !args.yes);
-        return exit(shared.incompatible);
-    }
-    if shared.incompatible {
-        print_plan_results_noop(&items);
-        return ExitCode::from(1);
-    }
-    if !confirm_multi_host_write(&hosts, args.yes) {
-        return ExitCode::from(2);
-    }
-    remember_write_root(Some(&resolution), &items);
-    let mut warned = false;
-    let mut failed = false;
-    for item in &items {
-        match item.action {
-            Action::Remove => match apply::apply_prepared(item, &mut state, None) {
-                Ok(applied) => {
-                    println!("  removed: {} -> {}", item.skill, item.host);
-                    applied.print_cleanup_warnings();
-                }
-                Err(Error::StateSave(e)) => return config_error(e),
-                Err(e) => {
-                    failed = true;
-                    println!("  FAILED: {} -> {} ({e})", item.skill, item.host);
-                }
-            },
-            Action::BlockDrift => {
-                warned = true;
-                println!(
-                    "  WARN: {} -> {} was modified locally; not removed",
-                    item.skill, item.host
-                );
-                println!("    {}", display_path(&item.destination));
-            }
-            action if action.is_block() => {
-                warned = true;
-                print_result_line(item, None);
-            }
-            Action::NotManaged => println!(
-                "  skipped: {} -> {} (not managed by my-skills)",
-                item.skill, item.host
-            ),
-            _ => {}
-        }
-    }
-    exit(warned || failed)
-}
-
-// ---------------------------------------------------------------- convert
-
-pub fn convert(args: &ConvertArgs) -> ExitCode {
-    let ConnectManifest {
-        manifest,
-        resolution,
-        _state_lock,
-        ..
-    } = match load_connect_manifest(&CliOverrides::default(), !args.dry_run, false) {
-        Ok(loaded) => loaded,
-        Err(e) => return config_error(e),
-    };
-    // Convert acts on existing connections, so every registered skill is in
-    // scope unless one is named.
-    let (skills, hosts) = match root::select_requested(
-        &manifest,
-        args.skill.as_deref(),
-        true,
-        args.host.as_deref(),
-    ) {
-        Ok(selection) => selection,
-        Err(e) => return config_error(e),
-    };
-    let mut state = match State::load(None) {
-        Ok(s) => s,
-        Err(e) => return config_error(e),
-    };
-    let to: InstallMode = args.to.into();
-    let explicit_host = matches!(args.host.as_deref(), Some(name) if name != "all");
-    let (active_hosts, skipped_hosts) =
-        plan::filter_convert_hosts(&manifest, &hosts, to, explicit_host);
-    let mut items = match plan::plan_convert(&manifest, &state, &skills, &active_hosts, to) {
-        Ok(items) => items,
-        Err(e) => return config_error(e),
-    };
-    let shared = match plan::group_destinations(&manifest, &state, &mut items) {
-        Ok(shared) => shared,
-        Err(err) => return config_error(err),
-    };
-    if shared.incompatible && !args.dry_run {
-        print_plan_results_noop(&items);
-        return ExitCode::from(1);
-    }
-    if args.dry_run {
-        print_write_refusal(resolution.write_refusal().as_deref());
-        println!("Dry run — planned actions (nothing written):");
-        print_plan(&items);
-        print_skipped_convert_hosts(&skipped_hosts);
-        super::print_would_cache_root(&resolution);
-        print_confirmation_hint(&active_hosts, active_hosts.len() > 1 && !args.yes);
-        if shared.incompatible {
-            return ExitCode::from(1);
-        }
-    } else {
-        if !confirm_multi_host_write(&active_hosts, args.yes) {
-            return ExitCode::from(2);
-        }
-        print_skipped_convert_hosts(&skipped_hosts);
-    }
-    let prepared = PreparedPlan::new(&items);
-    let checks = check_targets(
-        &manifest,
-        &skills,
-        &active_hosts,
-        &prepared,
-        CheckScope::ConvertCopies,
-    );
-    let validation = validate_selected(&checks, Some(&prepared));
-    print_validation(&validation, false);
-    if validation.iter().any(|check| !check.ok) {
-        return ExitCode::from(1);
-    }
-    if args.dry_run {
-        return ExitCode::SUCCESS;
-    }
-    remember_write_root(Some(&resolution), &items);
-    let batch = apply_plan(
-        prepared.with_groups(shared.groups),
-        &mut state,
-        false,
-        false,
-    );
-    exit(!batch.succeeded())
-}
-
-fn print_skipped_convert_hosts(skipped: &[(String, InstallMode)]) {
-    for (host, mode) in skipped {
-        println!(
-            "  skipped host {host} ([targets.{host}] install_mode = \"{}\")",
-            mode_label(*mode)
-        );
-    }
-}
-
 // ---------------------------------------------------------------- bootstrap
 
 pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
@@ -575,18 +271,14 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
     if args.all {
         preview.push("--all".into());
     }
+    if let Some(mode) = args.mode {
+        preview.extend(["--mode".into(), mode_label(mode.into()).into()]);
+    }
     if args.dry_run {
         println!("Dry run - bootstrap actions (nothing installed):");
         if !args.skip_skill_install {
             preview.extend(["--yes".into(), "--dry-run".into()]);
             println!("  would run: {}", preview.join(" "));
-            if let Some(mode) = args.mode {
-                let mode: InstallMode = mode.into();
-                println!(
-                    "  with install mode: {} (from bootstrap --mode)",
-                    mode_label(mode)
-                );
-            }
         }
         if !args.no_hooks {
             super::hooks::preview_setup(&resolution.root);
@@ -595,10 +287,6 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
     }
     if !args.skip_skill_install {
         println!("Connecting enabled skills into agent hosts...");
-        let cli = CliOverrides {
-            install_mode: args.mode.map(Into::into),
-            ..CliOverrides::default()
-        };
         let _state_lock = match StateLock::acquire(&default_state_path()) {
             Ok(lock) => lock,
             Err(e) => return config_error(e),
@@ -606,13 +294,14 @@ pub fn bootstrap(args: &BootstrapArgs) -> ExitCode {
         if let Err(err) = resolution.recheck_write() {
             return config_error(err);
         }
-        let manifest = match load_manifest(&resolution.root, &cli) {
+        let manifest = match load_manifest(&resolution.root, &CliOverrides::default()) {
             Ok(m) => m,
             Err(e) => return config_error(e),
         };
         let sync_args = SyncArgs {
             host: args.host.clone(),
             all: args.all,
+            mode: args.mode,
             yes: true,
             ..SyncArgs::default()
         };
@@ -652,13 +341,10 @@ struct ConnectManifest {
     refusal: Option<String>,
 }
 
-fn load_connect_manifest(
-    cli: &CliOverrides,
-    writes: bool,
-    report_refusal: bool,
-) -> crate::Result<ConnectManifest> {
+fn load_connect_manifest(writes: bool, report_refusal: bool) -> crate::Result<ConnectManifest> {
+    let cli = CliOverrides::default();
     if !writes {
-        let (manifest, resolution) = root::load_manifest_resolved(cli, false)?;
+        let (manifest, resolution) = root::load_manifest_resolved(&cli, false)?;
         return Ok(ConnectManifest {
             manifest,
             resolution,
@@ -681,7 +367,7 @@ fn load_connect_manifest(
         }
         refusal = Some(error.to_string());
     }
-    let manifest = load_manifest(&resolution.root, cli)?;
+    let manifest = load_manifest(&resolution.root, &cli)?;
     Ok(ConnectManifest {
         manifest,
         resolution,
@@ -750,7 +436,7 @@ impl<'a> PreparedPlan<'a> {
             .iter()
             .filter(|item| item.action.writes())
             .map(|item| {
-                let connection = if creates_link(item) {
+                let connection = if writes_link(item) {
                     Ok(None)
                 } else {
                     apply::prepare(item, &mut snapshots)
@@ -776,7 +462,7 @@ impl<'a> PreparedPlan<'a> {
         // Check the live canonical targets before creating even temporary
         // links. The old gate covers canonical, then any fallback has its
         // own checks on the bytes that will be installed.
-        for item in self.items.iter().filter(|item| creates_link(item)) {
+        for item in self.items.iter().filter(|item| writes_link(item)) {
             let prepared = apply::prepare(item, &mut self.snapshots);
             let skill = item.skill.as_str();
             let host = item.host.as_str();
@@ -808,15 +494,14 @@ impl<'a> PreparedPlan<'a> {
     }
 }
 
-fn creates_link(item: &PlanItem) -> bool {
-    item.action == Action::Create && item.mode == InstallMode::Link
+fn writes_link(item: &PlanItem) -> bool {
+    matches!(item.action, Action::Create | Action::Convert) && item.mode == InstallMode::Link
 }
 
 #[derive(Clone, Copy)]
 enum CheckScope {
     AllHosts,
     Wanted,
-    ConvertCopies,
 }
 
 struct CheckTarget<'a> {
@@ -841,12 +526,6 @@ fn check_targets<'a>(
             let eligible = match scope {
                 CheckScope::AllHosts => skill.hosts.is_empty() || skill.hosts.contains(host),
                 CheckScope::Wanted => plan::wants(manifest, skill, host),
-                CheckScope::ConvertCopies => prepared.items.iter().any(|item| {
-                    item.skill == skill.name
-                        && item.host == *host
-                        && item.action == Action::Convert
-                        && item.mode == InstallMode::Copy
-                }),
             };
             if !eligible {
                 continue;
@@ -1082,10 +761,12 @@ impl ItemResult {
             Outcome::Created(_) => ApplyStatus::Created,
             Outcome::Updated | Outcome::Converted(_) => ApplyStatus::Updated,
             Outcome::Removed => ApplyStatus::Removed,
-            Outcome::Unchanged => ApplyStatus::Unchanged,
+            Outcome::KeptCopyFallback { .. } | Outcome::Unchanged => ApplyStatus::Unchanged,
         };
         let mut result = Self::new(status, Some(item.mode), None);
-        if let Outcome::Created(Connection::CopyFallback { reason }) = outcome {
+        if let Outcome::Created(Connection::CopyFallback { reason })
+        | Outcome::KeptCopyFallback { reason } = outcome
+        {
             result.mode = Some(InstallMode::Copy);
             result.fallback_reason = Some(reason.clone());
         }
@@ -1241,6 +922,12 @@ fn apply_plan<'a>(
         };
         for target in std::iter::once(index).chain(peers) {
             batch.results[target] = row.clone();
+            if item.action == Action::Update && row.status == ApplyStatus::Updated {
+                let target_item = &plan.items[target];
+                batch.results[target].fallback_reason = state
+                    .get(&target_item.skill, &target_item.host)
+                    .and_then(|record| record.fallback_reason.clone());
+            }
         }
     }
     batch
@@ -1270,8 +957,10 @@ fn print_result_line(item: &PlanItem, outcome: Option<&Outcome>) {
         (_, Some(Outcome::Converted(c))) => {
             println!("  converted: {pair}{}", connection_suffix(c))
         }
+        (_, Some(Outcome::KeptCopyFallback { reason })) => {
+            println!("  unchanged: {pair} [copy fallback: {reason}]")
+        }
         (Action::Noop, _) => println!("  unchanged: {pair}"),
-        (Action::SkipUnsupported, _) => println!("  skipped: {pair} ({})", item.reason),
         (action, _) if action.is_block() => {
             println!("  BLOCKED: {pair}");
             println!("    {}:", item.reason);
@@ -1551,7 +1240,9 @@ mod tests {
         for mode in [InstallMode::Link, InstallMode::Copy] {
             item.mode = mode;
             let items = std::slice::from_ref(&item);
-            let applied = apply_plan(PreparedPlan::new(items), &mut state, false, false);
+            let mut prepared = PreparedPlan::new(items);
+            assert!(prepared.prepare_links().is_empty());
+            let applied = apply_plan(prepared, &mut state, false, false);
             assert!(applied.succeeded());
             assert_eq!(applied.summary().updated, 1);
             let persisted = State::load(Some(&state_path)).unwrap();

@@ -53,8 +53,8 @@ hooks.
 
 ```bash
 my-skills init-registry
-my-skills install --dry-run   # see what will be connected
-my-skills install             # connect the skills to your agents
+my-skills sync --dry-run      # see what will be connected
+my-skills sync --yes          # connect the skills to your agents
 ```
 
 Already have a registry on another machine? Clone it and connect it:
@@ -70,15 +70,18 @@ Run `my-skills` with no command at any time to see these steps again.
 
 ## Everyday use
 
-Add a skill: make a folder with a `SKILL.md`, register it, then connect it.
+Add a skill: create a draft, edit its `SKILL.md`, enable it, then connect it.
 
 ```bash
-cd ~/my-agent-skills
-mkdir skills/my-skill                       # then write skills/my-skill/SKILL.md
-my-skills import skills/my-skill --enable   # register it
-my-skills install my-skill --dry-run
-my-skills install my-skill --yes
+my-skills new my-skill --description "Short summary of when to use this skill"
+# edit skills/my-skill/SKILL.md
+my-skills enable my-skill
+my-skills sync my-skill --dry-run
+my-skills sync my-skill --yes
 ```
+
+Already have a skill folder on disk or inside an agent folder? Import it with
+`my-skills import <directory>` or `my-skills import --from <host> --plan`.
 
 See what you have and where it is connected:
 
