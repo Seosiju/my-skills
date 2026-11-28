@@ -523,7 +523,7 @@ mod public_hygiene {
     #[test]
     fn roadmap_links_seed_design() {
         let roadmap = fs::read_to_string(
-            repo_root().join("docs/2026-06-30-my-skills-open-source-roadmap.md"),
+            repo_root().join("docs/releases/v0.x/2026-06-30-my-skills-open-source-roadmap.md"),
         )
         .unwrap();
         assert!(roadmap.contains("docs/2026-07-01-default-skills-seed-design.md"));

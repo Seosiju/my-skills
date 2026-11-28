@@ -1,6 +1,6 @@
 //! my-skills v1: personal skill drive.
 //!
-//! The spec is `docs/2026-11-23-skill-drive-rust-v1-spec.md`. Section numbers
+//! The spec is `docs/releases/v1.0/2026-11-23-skill-drive-rust-v1-spec.md`. Section numbers
 //! in doc comments (for example "spec §6.1") refer to that document.
 //!
 //! Layout, by function (handoff §7 A):
@@ -18,7 +18,7 @@
 //! | `error` | crate-wide error type |
 //!
 //! Stream ownership during the parallel build is recorded in
-//! `docs/tasks/2026-11-23-rust-v1/` and the handoff document.
+//! `docs/releases/v1.0/tasks/2026-11-23-rust-v1/` and the handoff document.
 
 pub mod check;
 pub mod cli;
